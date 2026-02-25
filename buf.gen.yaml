@@ -1,0 +1,25 @@
+version: v2
+inputs:
+  - directory: proto
+plugins:
+  # Go + Connect-RPC（Pinix server 用）
+  - remote: buf.build/connectrpc/go:v1.19.1
+    out: gen/go
+    opt:
+      - paths=source_relative
+  - remote: buf.build/protocolbuffers/go
+    out: gen/go
+    opt:
+      - paths=source_relative
+
+  # Swift（iOS App 用）
+  - remote: buf.build/apple/swift
+    out: gen/swift
+  - remote: buf.build/connectrpc/swift:v1.2.1
+    out: gen/swift
+
+  # TypeScript（Clip web/ 用）- Connect-ES v2，只需 bufbuild/es
+  - remote: buf.build/bufbuild/es:v2.11.0
+    out: gen/ts
+    opt:
+      - target=ts

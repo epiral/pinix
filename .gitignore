@@ -1,0 +1,10 @@
+# 生成代码（运行 buf generate 重新生成）
+gen/
+
+# Go
+*.exe
+*.test
+/pinix
+
+# macOS
+.DS_Store

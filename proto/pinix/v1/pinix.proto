@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package pinix.v1;
+
+option go_package = "github.com/epiral/pinix/gen/go/pinix/v1;pinixv1";
+
+// ─── PinixService ──────────────────────────────────────────────
+// Super Agent Token 持有者使用，拥有整机权限
+service PinixService {
+  // 管理 Clip
+  rpc CreateClip(CreateClipRequest) returns (CreateClipResponse);
+  rpc ListClips(ListClipsRequest) returns (ListClipsResponse);
+  rpc DeleteClip(DeleteClipRequest) returns (DeleteClipResponse);
+
+  // 管理 Token
+  rpc GenerateToken(GenerateTokenRequest) returns (GenerateTokenResponse);
+  rpc RevokeToken(RevokeTokenRequest) returns (RevokeTokenResponse);
+}
+
+// ─── ClipService ───────────────────────────────────────────────
+// Clip Token 持有者使用，权限绑定特定 workdir
+service ClipService {
+  // 单一原语：执行 commands/ 下的可执行文件
+  rpc Command(CommandRequest) returns (CommandResponse);
+}
+
+// ── Clip 管理 ──
+
+message CreateClipRequest {
+  string name    = 1;
+  string workdir = 2;
+}
+
+message CreateClipResponse {
+  string clip_id = 1;
+}
+
+message ListClipsRequest {}
+
+message ListClipsResponse {
+  repeated Clip clips = 1;
+}
+
+message Clip {
+  string clip_id = 1;
+  string name    = 2;
+  string workdir = 3;
+}
+
+message DeleteClipRequest {
+  string clip_id = 1;
+}
+
+message DeleteClipResponse {}
+
+// ── Token 管理 ──
+
+message GenerateTokenRequest {
+  string clip_id = 1;
+  string label   = 2;
+}
+
+message GenerateTokenResponse {
+  string token = 1;
+}
+
+message RevokeTokenRequest {
+  string token = 1;
+}
+
+message RevokeTokenResponse {}
+
+// ── Command ──
+
+message CommandRequest {
+  string name          = 1;
+  repeated string args = 2;
+  string stdin         = 3;
+}
+
+message CommandResponse {
+  string stdout    = 1;
+  string stderr    = 2;
+  int32  exit_code = 3;
+}
