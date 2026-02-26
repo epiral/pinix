@@ -20,8 +20,11 @@ service PinixService {
 // ─── ClipService ───────────────────────────────────────────────
 // Clip Token 持有者使用，权限绑定特定 workdir
 service ClipService {
-  // 单一原语：执行 commands/ 下的可执行文件
-  rpc Command(CommandRequest) returns (CommandResponse);
+  // 执行 commands/ 下的可执行文件
+  rpc Invoke(InvokeRequest) returns (InvokeResponse);
+
+  // 流式读取 workdir 下的文件
+  rpc ReadFile(ReadFileRequest) returns (stream ReadFileChunk);
 }
 
 // ── Clip 管理 ──
@@ -70,16 +73,31 @@ message RevokeTokenRequest {
 
 message RevokeTokenResponse {}
 
-// ── Command ──
+// ── Invoke ──
 
-message CommandRequest {
+message InvokeRequest {
   string name          = 1;
   repeated string args = 2;
   string stdin         = 3;
 }
 
-message CommandResponse {
+message InvokeResponse {
   string stdout    = 1;
   string stderr    = 2;
   int32  exit_code = 3;
+}
+
+// ── ReadFile ──
+
+message ReadFileRequest {
+  string path   = 1;  // 相对 workdir: "web/index.html", "data/voice.mp3"
+  int64  offset = 2;  // 字节偏移，0 = 从头
+  int64  length = 3;  // 请求字节数，0 = 到末尾
+}
+
+message ReadFileChunk {
+  bytes  data       = 1;  // 本 chunk 数据
+  int64  offset     = 2;  // 本 chunk 在文件中的起始偏移
+  string mime_type  = 3;  // 每个 chunk 都携带（Go 服务端用 mime.TypeByExtension 推断）
+  int64  total_size = 4;  // 文件总大小，每个 chunk 都携带
 }

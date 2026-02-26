@@ -1,4 +1,4 @@
-// Role:    Connect-RPC auth interceptor (Bearer token validation)
+// Role:    Connect-RPC auth interceptor (Bearer token validation, unary + streaming)
 // Depends: internal/config, connectrpc
 // Exports: NewAuthInterceptor, TokenFromContext
 
@@ -20,37 +20,67 @@ func TokenFromContext(ctx context.Context) (config.TokenEntry, bool) {
 	return v, ok
 }
 
-// NewAuthInterceptor returns a Connect interceptor that validates Bearer tokens.
+// authInterceptor validates Bearer tokens for both unary and streaming RPCs.
 //
 // Rules:
 //   - Super Token (ClipID == ""): allows all procedures.
-//   - Clip Token (ClipID != ""): only allows ClipService/Command; rejects PinixService.
+//   - Clip Token (ClipID != ""): only allows ClipService RPCs; rejects PinixService.
 //   - Missing or invalid token: CodeUnauthenticated.
-func NewAuthInterceptor(store *config.Store) connect.UnaryInterceptorFunc {
-	return func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			token := extractBearer(req.Header().Get("Authorization"))
-			if token == "" {
-				return nil, connect.NewError(connect.CodeUnauthenticated, nil)
-			}
+type authInterceptor struct {
+	store *config.Store
+}
 
-			entry, ok := store.GetToken(token)
-			if !ok {
-				return nil, connect.NewError(connect.CodeUnauthenticated, nil)
-			}
+// NewAuthInterceptor returns a Connect interceptor that validates Bearer tokens.
+func NewAuthInterceptor(store *config.Store) connect.Interceptor {
+	return &authInterceptor{store: store}
+}
 
-			// Clip Token can only call ClipService/Command.
-			if entry.ClipID != "" {
-				proc := req.Spec().Procedure
-				if !strings.HasPrefix(proc, "/pinix.v1.ClipService/") {
-					return nil, connect.NewError(connect.CodePermissionDenied, nil)
-				}
-			}
+func (a *authInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
+	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+		entry, err := a.authenticate(req.Header().Get("Authorization"), req.Spec().Procedure)
+		if err != nil {
+			return nil, err
+		}
+		ctx = context.WithValue(ctx, ctxKey{}, entry)
+		return next(ctx, req)
+	}
+}
 
-			ctx = context.WithValue(ctx, ctxKey{}, entry)
-			return next(ctx, req)
+func (a *authInterceptor) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
+	return next
+}
+
+func (a *authInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
+	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
+		entry, err := a.authenticate(conn.RequestHeader().Get("Authorization"), conn.Spec().Procedure)
+		if err != nil {
+			return err
+		}
+		ctx = context.WithValue(ctx, ctxKey{}, entry)
+		return next(ctx, conn)
+	}
+}
+
+// authenticate validates the Bearer token and checks procedure access.
+func (a *authInterceptor) authenticate(authHeader, procedure string) (config.TokenEntry, error) {
+	token := extractBearer(authHeader)
+	if token == "" {
+		return config.TokenEntry{}, connect.NewError(connect.CodeUnauthenticated, nil)
+	}
+
+	entry, ok := a.store.GetToken(token)
+	if !ok {
+		return config.TokenEntry{}, connect.NewError(connect.CodeUnauthenticated, nil)
+	}
+
+	// Clip Token can only call ClipService RPCs.
+	if entry.ClipID != "" {
+		if !strings.HasPrefix(procedure, "/pinix.v1.ClipService/") {
+			return config.TokenEntry{}, connect.NewError(connect.CodePermissionDenied, nil)
 		}
 	}
+
+	return entry, nil
 }
 
 func extractBearer(header string) string {
