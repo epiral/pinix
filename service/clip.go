@@ -70,6 +70,12 @@ func (s *ClipServer) Invoke(
 	defer cancel()
 
 	cmd := exec.CommandContext(execCtx, cmdPath, req.Msg.GetArgs()...)
+	// Set working directory to clip's workdir so relative paths work correctly.
+	if entry, ok := middleware.TokenFromContext(ctx); ok && entry.ClipID != "" {
+		if clip, found := s.store.GetClip(entry.ClipID); found {
+			cmd.Dir = clip.Workdir
+		}
+	}
 	if stdin := req.Msg.GetStdin(); stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
@@ -155,6 +161,17 @@ func (s *ClipServer) ReadFile(
 		mimeType = "application/octet-stream"
 	}
 
+	// ETag 协商
+	etag := computeETag(info)
+	if req.Msg.GetIfNoneMatch() == etag {
+		return stream.Send(&v1.ReadFileChunk{
+			MimeType:    mimeType,
+			TotalSize:   totalSize,
+			Etag:        etag,
+			NotModified: true,
+		})
+	}
+
 	// 处理 offset/length (Range 语义)
 	offset := req.Msg.GetOffset()
 	length := req.Msg.GetLength()
@@ -193,6 +210,7 @@ func (s *ClipServer) ReadFile(
 				Offset:    currentOffset,
 				MimeType:  mimeType,
 				TotalSize: totalSize,
+				Etag:      etag,
 			}); sendErr != nil {
 				return sendErr
 			}
@@ -208,4 +226,8 @@ func (s *ClipServer) ReadFile(
 	}
 
 	return nil
+}
+
+func computeETag(info os.FileInfo) string {
+	return fmt.Sprintf("%x-%x", info.ModTime().UnixNano(), info.Size())
 }

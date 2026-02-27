@@ -90,14 +90,17 @@ message InvokeResponse {
 // ── ReadFile ──
 
 message ReadFileRequest {
-  string path   = 1;  // 相对 workdir: "web/index.html", "data/voice.mp3"
-  int64  offset = 2;  // 字节偏移，0 = 从头
-  int64  length = 3;  // 请求字节数，0 = 到末尾
+  string path          = 1;  // 相对 workdir: "web/index.html", "data/voice.mp3"
+  int64  offset        = 2;  // 字节偏移，0 = 从头
+  int64  length        = 3;  // 请求字节数，0 = 到末尾
+  string if_none_match = 4;  // 客户端持有的 ETag
 }
 
 message ReadFileChunk {
-  bytes  data       = 1;  // 本 chunk 数据
-  int64  offset     = 2;  // 本 chunk 在文件中的起始偏移
-  string mime_type  = 3;  // 每个 chunk 都携带（Go 服务端用 mime.TypeByExtension 推断）
-  int64  total_size = 4;  // 文件总大小，每个 chunk 都携带
+  bytes  data         = 1;  // 本 chunk 数据
+  int64  offset       = 2;  // 本 chunk 在文件中的起始偏移
+  string mime_type    = 3;  // 每个 chunk 都携带（Go 服务端用 mime.TypeByExtension 推断）
+  int64  total_size   = 4;  // 文件总大小，每个 chunk 都携带
+  string etag         = 5;  // 文件当前 ETag
+  bool   not_modified = 6;  // true = 内容未变，客户端用本地缓存
 }
