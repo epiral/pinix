@@ -108,8 +108,40 @@ Pinix Server X
 - **可演进**：Registry 的 UI 和逻辑独立迭代，不影响 Server 内核
 - **跨 Server**：一个 Registry 可以同时连接多个 Server，提供统一的发现视图
 - **一致性**：发现能力本身也是 Clip，用同样的方式访问
-
 ---
+
+## Protocol Design
+
+### ClipService — 最小内核
+
+Clip Client 使用 Clip Instance 的唯一接口。三个 RPC，职责清晰：
+
+| RPC | 说明 | 性质 |
+|-----|------|------|
+| **Invoke** | 执行 `commands/` 下的可执行脚本 | 业务操作的唯一入口，包含所有 mutation |
+| **ReadFile** | 读取 `web/` 和 `data/` 下的文件 | 只读，无副作用，支持 ETag 缓存和流式传输 |
+| **GetInfo** | 返回 Clip 元信息 | 名称、描述、可用 commands 列表、是否有 web UI |
+
+#### 设计原则
+
+**Invoke 收敛所有业务操作**：无论是查询数据（`commands/list`）、上传文件（`commands/upload`）还是修改状态（`commands/delete`），所有业务逻辑都通过 Invoke 执行具体的 command 脚本完成。没有 WriteFile — 写操作是业务特定的，不应该被抽象为通用原语。
+
+**ReadFile 仅服务于无副作用的文件读取**：为 web UI 加载静态资源（`web/index.html`、`web/app.js`），以及为 Agent/Client 读取持久化数据文件（`data/`）。路径沙箱限定在 `web/` 和 `data/`，其他目录（如 `commands/`）不可通过 ReadFile 访问。
+
+**GetInfo 提供自描述能力**：Client 首次连接 Clip 时调用一次，获取该 Clip 的元信息并缓存。使得 Client 无需依赖外部信息就能了解 Clip 的能力。
+
+### AdminService — 管理面
+
+Server 运维者使用，需要 Super Token：
+
+| RPC | 说明 |
+|-----|------|
+| **CreateClip** | 注册 Clip（name + workdir） |
+| **DeleteClip** | 删除 Clip |
+| **ListClips** | 列出所有 Clip（Registry Clip 远程调用此接口实现跨 Server 发现） |
+| **GenerateToken** | 生成 Token（Clip Token 或 Super Token） |
+| **RevokeToken** | 撤销 Token |
+
 
 ## Token Model
 
