@@ -132,25 +132,38 @@ Clip Client 使用 Clip Instance 的唯一接口。三个 RPC，职责清晰：
 
 ### AdminService — 管理面
 
-Server 运维者使用，需要 Super Token：
+Server 运维者使用，需要 Super Token。Super Token 通过配置文件静态设置，API 不可生成。
+
+**Clip 管理：**
 
 | RPC | 说明 |
 |-----|------|
-| **CreateClip** | 注册 Clip（name + workdir） |
-| **DeleteClip** | 删除 Clip |
-| **ListClips** | 列出所有 Clip（Registry Clip 远程调用此接口实现跨 Server 发现） |
-| **GenerateToken** | 生成 Token（Clip Token 或 Super Token） |
-| **RevokeToken** | 撤销 Token |
+| **CreateClip** | 注册 Clip（name + workdir），返回 `{clip_id}` |
+| **DeleteClip** | 注销 Clip（移除注册，不删物理文件） |
+| **ListClips** | 列出所有 Clip，返回 `[{id, name, desc, commands[], has_web}]`。Server 侧主动扫描 workdir 获取命令列表和描述。Registry Clip 远程调用此接口实现跨 Server 发现 |
+
+**Token 管理：**
+
+| RPC | 说明 |
+|-----|------|
+| **GenerateToken** | 生成 Clip Token（`clip_id` 必填），返回 `{id, token}`。仅创建时返回 token 明文 |
+| **ListTokens** | 列出所有 Token，返回 `[{id, clip_id, label, created_at, hint}]`。`hint` 为 token 最后 4 位，不暴露明文 |
+| **RevokeToken** | 通过 `id` 精确撤销 Token |
 
 
 ## Token Model
 
-Pinix Server 通过 Token 管理访问权限。
+Pinix Server 通过 Token 管理访问权限。两种 Token，来源和权限完全分离。
 
-| Token 类型 | 绑定对象 | 权限范围 | 持有者 |
-|-----------|---------|---------|--------|
-| **Super Token** | 无 | Server 全部管理接口 + 全部 Clip | Server 运维者 |
-| **Clip Token** | 特定 Clip Instance | 仅该 Clip 的 Invoke / ReadFile | Clip Client |
+| Token 类型 | 来源 | 绑定对象 | 权限范围 | 持有者 |
+|-----------|------|---------|---------|--------|
+| **Super Token** | 配置文件（静态） | 无 | AdminService 全部接口 | Server 运维者 |
+| **Clip Token** | AdminService.GenerateToken（动态） | 特定 Clip Instance | 仅该 Clip 的 ClipService（Invoke / ReadFile / GetInfo） | Clip Client |
+
+**安全设计：**
+- Super Token 不通过 API 生成，断绝「通过 API 升权」的攻击路径
+- GenerateToken 的 `clip_id` 为必填，不存在生成 Super Token 的可能
+- Clip Token 泄露仅影响单个 Clip，无法触及 AdminService
 
 ### 请求路由
 
