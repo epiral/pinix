@@ -5,7 +5,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -24,7 +23,7 @@ import (
 )
 
 const (
-	defaultTimeoutMs = 30000
+	defaultTimeoutMs = 300000     // 300s for LLM workloads
 	maxStderrBytes   = 100 * 1024 // 100 KB
 	chunkSize        = 64 * 1024  // 64 KB
 )
@@ -57,19 +56,20 @@ func (s *ClipServer) resolveWorkdir(ctx context.Context) (string, error) {
 func (s *ClipServer) Invoke(
 	ctx context.Context,
 	req *connect.Request[v1.InvokeRequest],
-) (*connect.Response[v1.InvokeResponse], error) {
+	stream *connect.ServerStream[v1.InvokeChunk],
+) error {
 	name := req.Msg.GetName()
 
 	if strings.Contains(name, "/") || strings.Contains(name, "..") {
-		return connect.NewResponse(&v1.InvokeResponse{
-			Stderr:   fmt.Sprintf("invalid command name: %s", name),
-			ExitCode: 1,
-		}), nil
+		_ = stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_Stderr{
+			Stderr: []byte(fmt.Sprintf("invalid command name: %s", name)),
+		}})
+		return stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_ExitCode{ExitCode: 1}})
 	}
 
 	workdir, err := s.resolveWorkdir(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	commandsDir := filepath.Join(workdir, "commands")
@@ -84,25 +84,64 @@ func (s *ClipServer) Invoke(
 		cmd.Stdin = strings.NewReader(stdin)
 	}
 
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		_ = stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_Stderr{
+			Stderr: []byte(fmt.Sprintf("stdout pipe: %v", err)),
+		}})
+		return stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_ExitCode{ExitCode: 1}})
+	}
 
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
-		return connect.NewResponse(&v1.InvokeResponse{
-			Stderr:   fmt.Sprintf("stderr pipe: %v", err),
-			ExitCode: 1,
-		}), nil
+		_ = stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_Stderr{
+			Stderr: []byte(fmt.Sprintf("stderr pipe: %v", err)),
+		}})
+		return stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_ExitCode{ExitCode: 1}})
 	}
 
 	if err := cmd.Start(); err != nil {
-		return connect.NewResponse(&v1.InvokeResponse{
-			Stderr:   fmt.Sprintf("command not found: %s", name),
-			ExitCode: 1,
-		}), nil
+		_ = stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_Stderr{
+			Stderr: []byte(fmt.Sprintf("command not found: %s", name)),
+		}})
+		return stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_ExitCode{ExitCode: 1}})
 	}
 
-	stderrBytes, _ := io.ReadAll(io.LimitReader(stderrPipe, maxStderrBytes))
+	// Stream stdout and stderr concurrently.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		buf := make([]byte, chunkSize)
+		for {
+			n, err := stderrPipe.Read(buf)
+			if n > 0 {
+				chunk := make([]byte, n)
+				copy(chunk, buf[:n])
+				_ = stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_Stderr{Stderr: chunk}})
+			}
+			if err != nil {
+				break
+			}
+		}
+	}()
+
+	buf := make([]byte, chunkSize)
+	for {
+		n, readErr := stdoutPipe.Read(buf)
+		if n > 0 {
+			chunk := make([]byte, n)
+			copy(chunk, buf[:n])
+			if sendErr := stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_Stdout{Stdout: chunk}}); sendErr != nil {
+				_ = cmd.Process.Kill()
+				return sendErr
+			}
+		}
+		if readErr != nil {
+			break
+		}
+	}
+
+	<-done // wait for stderr goroutine
 
 	exitCode := int32(0)
 	if err := cmd.Wait(); err != nil {
@@ -115,11 +154,7 @@ func (s *ClipServer) Invoke(
 		}
 	}
 
-	return connect.NewResponse(&v1.InvokeResponse{
-		Stdout:   stdout.String(),
-		Stderr:   string(stderrBytes),
-		ExitCode: exitCode,
-	}), nil
+	return stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_ExitCode{ExitCode: exitCode}})
 }
 
 func (s *ClipServer) ReadFile(

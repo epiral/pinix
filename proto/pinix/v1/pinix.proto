@@ -21,8 +21,8 @@ service AdminService {
 // ─── ClipService ──────────────────────────────────────────────
 // Clip Token holders. Scoped to a single clip's workdir.
 service ClipService {
-  // Execute a command script under commands/
-  rpc Invoke(InvokeRequest) returns (InvokeResponse);
+  // Execute a command script under commands/ (streaming stdout/stderr)
+  rpc Invoke(InvokeRequest) returns (stream InvokeChunk);
 
   // Stream-read a file under web/ or data/
   rpc ReadFile(ReadFileRequest) returns (stream ReadFileChunk);
@@ -106,6 +106,14 @@ message InvokeResponse {
   string stdout    = 1;
   string stderr    = 2;
   int32  exit_code = 3;
+}
+
+message InvokeChunk {
+  oneof payload {
+    bytes stdout    = 1;
+    bytes stderr    = 2;
+    int32 exit_code = 3;  // final chunk — signals command completion
+  }
 }
 
 // ── ReadFile ──

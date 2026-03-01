@@ -39,7 +39,7 @@ var invokeCmd = &cobra.Command{
 			stdin = string(data)
 		}
 
-		resp, err := client.Invoke(context.Background(), connect.NewRequest(&v1.InvokeRequest{
+		stream, err := client.Invoke(context.Background(), connect.NewRequest(&v1.InvokeRequest{
 			Name:  args[0],
 			Args:  args[1:],
 			Stdin: stdin,
@@ -47,15 +47,22 @@ var invokeCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		defer stream.Close()
 
-		if out := resp.Msg.GetStdout(); out != "" {
-			fmt.Print(out)
+		for stream.Receive() {
+			chunk := stream.Msg()
+			if data := chunk.GetStdout(); data != nil {
+				fmt.Print(string(data))
+			}
+			if data := chunk.GetStderr(); data != nil {
+				fmt.Fprint(os.Stderr, string(data))
+			}
+			if chunk.GetExitCode() != 0 {
+				os.Exit(int(chunk.GetExitCode()))
+			}
 		}
-		if se := resp.Msg.GetStderr(); se != "" {
-			fmt.Fprint(os.Stderr, se)
-		}
-		if code := resp.Msg.GetExitCode(); code != 0 {
-			os.Exit(int(code))
+		if err := stream.Err(); err != nil {
+			return err
 		}
 		return nil
 	},
