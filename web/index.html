@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Pinix Clip</title></head>
+<body>
+<h1>Hello from Pinix 🎉</h1>
+<p>This page is served via <code>pinix-web://</code> scheme → ReadFile streaming RPC</p>
+<button onclick="testInvoke()">Test Bridge.invoke</button>
+<pre id="output"></pre>
+<script>
+async function testInvoke() {
+  try {
+    const res = await Bridge.invoke('ls', ['.'])
+    document.getElementById('output').textContent = JSON.stringify(res, null, 2)
+  } catch(e) {
+    document.getElementById('output').textContent = 'Error: ' + e.message
+  }
+}
+</script>
+</body>
+</html>
