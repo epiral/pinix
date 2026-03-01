@@ -1,146 +1,176 @@
 # Pinix
 
-Pinix 是一个去中心化的 Clip 运行时平台。
+A decentralized runtime platform for Clips.
 
 ---
 
-## 核心概念
+## Core Concepts
 
-### Pinix Server
+### Clip Package
 
-托管 Clip Instance 的运行时服务。支持两种形态：
+源码层。一个 Clip Package 是一份代码模板，定义了 Clip 的能力：
 
-- **私有 Server**：个人部署，完全自控
-- **公共 Server**：社区或团队共享
+```
+my-clip/
+  web/         → 面向人的 UI
+  commands/    → 面向 Agent 的可执行脚本（Unix 范式：stdin/stdout/exit code）
+  data/        → 持久化存储
+  config.yaml  → Clip 自身的配置
+```
 
-多个 Pinix Server 之间完全去中心化，互不依赖，无需中央注册服务。
+Clip Package 存在于 Git 仓库中，不依赖任何运行环境。
 
 ### Clip Instance
 
-运行在某个 Pinix Server 上的功能单元。每个 Clip Instance 具备：
+运行时层。一个 Clip Instance 是某个 Clip Package 在某个 Pinix Server 上的运行实例。
 
-- 唯一访问地址（URL + Token）
-- 隔离的 `workdir`（包含 `commands/`、`data/`、`web/`）
-- 对外暴露 RPC 接口（`Invoke` 执行命令，`ReadFile` 读文件）
+每个 Clip Instance 具备：
 
-同一份 Clip 代码（Clip Package）可以部署在多个 Server 上，产生多个 Instance，彼此独立。
+- **URL**：所在 Pinix Server 的地址（host:port）
+- **Token**：Clip Client 用于访问该 Instance 的凭证（由 Server 的 Token 路由表管理）
+- **隔离的 workdir**：包含 web/、commands/、data/，互不干扰
 
-### Clip Registry
+同一个 Clip Package 可以在不同 Server 上部署多个 Instance，彼此完全独立。
 
-**Clip Registry 是 Clip 的一种**，而非 Pinix Server 的附属功能。
+### Pinix Server
 
-职责：声明同一 Pinix Server 上有哪些 Clip Instance 可用。
+运行时管理层。托管 Clip Instance 的节点服务，负责：
 
-- 数据源：读取本 Server 的 `config.yaml`
-- 对外暴露 `list` command，返回所有 Clip 的描述 JSON
-- Web UI：展示 Clip 卡片，提供一键生成 Bookmark 的入口
+- Clip Instance 的注册与生命周期管理
+- Token 路由：Client 发来的请求，根据 Token 路由到对应的 Clip Instance
+- 鉴权：验证 Token 合法性，限制访问范围
 
-去中心化特性：每个 Server 自带一个 Registry Instance，无需中央目录。
+支持两种形态：
+
+- **私有 Server**：个人部署，完全自控
+- **公共 Server**：社区或团队共享，对外开放部分 Clip
+
+多个 Pinix Server 之间**完全去中心化**，互不依赖，无需中央注册服务。一般一个人只需要一个 Pinix Server，所有 Clip Instance 都跑在上面。
 
 ### Clip Client
 
-可添加来自**任意 Pinix Server** 的 Clip Instance 书签（Bookmark）的客户端（Desktop / iOS）。
+聚合层。可以使用来自**任意 Pinix Server** 上的 Clip Instance 的客户端应用（Desktop / iOS）。
 
-**核心原则：Clip Client 与 Pinix Server 无绑定关系，只与 Clip Instance 绑定。**
+**核心原则：Clip Client 与 Pinix Server 无绑定关系，它只与 Clip Instance 绑定。**
 
-通过 URL + Token 直接访问各 Instance，跨 Server 自由聚合能力。
+Client 通过 **Bookmark** 管理对各 Clip Instance 的访问。每个 Bookmark 包含：
 
----
-
-## 架构
-
-```
-Pinix Server A（私有, home）          Pinix Server B（公共）
-┌────────────────────────────┐        ┌──────────────────────┐
-│  Clip Instance: todo       │        │  Clip Instance: news  │
-│  Clip Instance: voice-inbox│        │  Clip Instance: gpt   │
-│  Clip Instance: daily      │        │                       │
-│  Clip Instance: registry ──┼──┐     │  Clip Instance: registry│
-└────────────────────────────┘  │     └──────────────────────┘
-                                │               ↑
-                  Bookmark（直接绑定 URL + Token）
-                                │
-                       ┌─────────────────┐
-                       │   Clip Client   │   Desktop / iOS
-                       │                 │
-                       │  [todo]         │ → Server A
-                       │  [voice-inbox]  │ → Server A
-                       │  [news]         │ → Server B
-                       │  [registry-A]   │ → Server A（用于发现）
-                       └─────────────────┘
+```json
+{
+  "name": "todo",
+  "server_url": "http://100.66.47.40:9875",
+  "token": "clip-token-for-todo"
+}
 ```
 
----
-
-## 发现流程
-
-1. 拿到某个 Clip Registry Instance 的 URL + Token
-2. 在 Clip Client 将其添加为 Bookmark
-3. 打开 Registry，浏览该 Server 上的所有 Clip
-4. 点击 [添加] → Client 创建对应 Clip Instance 的 Bookmark
+Client 可以同时持有来自多个 Server 的 Bookmark，跨 Server 自由聚合能力。
 
 ---
 
-## 鉴权模型
+## Clip Registry
 
-| Token 类型 | clip_id | 权限范围 |
-|-----------|---------|---------|
-| **Super Token** | 空 | 全部接口（PinixService + ClipService） |
-| **Clip Token** | 非空 | 仅 ClipService，workdir 限定为该 Clip |
+Clip Registry 是**一种 Clip**，不是 Pinix Server 的附属功能。
 
----
+它的职责是：帮助 Clip Client 发现**任意 Pinix Server** 上有哪些 Clip Instance 可用。
 
-## RPC 接口
+### 工作方式
 
-### PinixService（需要 Super Token）
+Registry Clip 不绑定它自身所在的 Pinix Server。用户在使用 Registry 时，配置一个**目标 Pinix Server** 的连接信息（host、port、token），Registry 连接过去获取该 Server 的 Clip 目录。
 
-| RPC | 说明 |
-|-----|------|
-| `CreateClip` | 注册 Clip（name + workdir） |
-| `ListClips` | 列出所有 Clip |
-| `DeleteClip` | 按 clip_id 删除 Clip |
-| `GenerateToken` | 生成 Token（clip_id 为空 = Super Token） |
-| `RevokeToken` | 撤销 Token |
-
-### ClipService（Super Token 或 Clip Token）
-
-| RPC | 说明 |
-|-----|------|
-| `Invoke` | 执行 `commands/` 下的可执行文件 |
-| `ReadFile` | 流式读取 workdir 下的文件（支持 ETag 缓存） |
-
----
-
-## 快速开始
-
-```bash
-# 启动
-go run .
-# 默认监听 :8080，可通过 PORT 覆盖
-PORT=9090 go run .
+```
+Clip Client
+  │
+  │  Clip Token
+  ▼
+Pinix Server X
+  └─ Clip Instance: registry
+       │
+       │  用户配置: {target: Server A, host, port, admin_token}
+       │  用户配置: {target: Server B, host, port, admin_token}
+       │
+       ├──→ Server A.ListClips() → 返回 Clip 列表
+       └──→ Server B.ListClips() → 返回 Clip 列表
 ```
 
-初始化 Super Token：
+### 发现流程
 
-```bash
-mkdir -p ~/.config/pinix
-cat > ~/.config/pinix/config.yaml << 'EOF'
-clips: []
-tokens:
-  - token: "my-bootstrap-super-token"
-    clip_id: ""
-    label: "bootstrap"
-EOF
-chmod 600 ~/.config/pinix/config.yaml
+1. 拿到某个 Pinix Server 的地址和管理 Token
+2. 在 Registry Clip 中添加该 Server 的连接配置
+3. Registry 连接目标 Server，列出所有可用 Clip
+4. 选择感兴趣的 Clip → 为其生成 Clip Token → 在 Client 创建 Bookmark
+5. Client 现在可以直接使用该 Clip
+
+### 为什么不是 Server 内置功能？
+
+将发现能力做成 Clip 而非 Server 功能：
+
+- **去中心化**：不依赖任何 Server 的特殊接口，Registry 可以跑在任何地方
+- **可演进**：Registry 的 UI 和逻辑独立迭代，不影响 Server 内核
+- **跨 Server**：一个 Registry 可以同时连接多个 Server，提供统一的发现视图
+- **一致性**：发现能力本身也是 Clip，用同样的方式访问
+
+---
+
+## Token Model
+
+Pinix Server 通过 Token 管理访问权限。
+
+| Token 类型 | 绑定对象 | 权限范围 | 持有者 |
+|-----------|---------|---------|--------|
+| **Super Token** | 无 | Server 全部管理接口 + 全部 Clip | Server 运维者 |
+| **Clip Token** | 特定 Clip Instance | 仅该 Clip 的 Invoke / ReadFile | Clip Client |
+
+### 请求路由
+
+```
+Clip Client
+  │  Bearer: <clip-token>
+  ▼
+Pinix Server
+  │  查 Token 路由表
+  │  ├─ clip-token-A → clip_id: todo    → workdir: /path/to/todo
+  │  ├─ clip-token-B → clip_id: voice   → workdir: /path/to/voice
+  │  └─ super-token  → clip_id: (none)  → 全部权限
+  ▼
+路由到对应 Clip 的 workdir，执行 commands/ 或读取文件
+```
+
+Client 不直接连 Clip Instance，所有请求经过 Pinix Server，由 Server 根据 Token 路由。
+
+---
+
+## Architecture Overview
+
+```
+  ┌──────────────────────┐        ┌──────────────────────┐
+  │  Pinix Server A      │        │  Pinix Server B      │
+  │  (私有, home)         │        │  (公共)               │
+  │                      │        │                      │
+  │  Clip: todo          │        │  Clip: news-feed     │
+  │  Clip: voice-inbox   │        │  Clip: gpt-proxy     │
+  │  Clip: registry      │        │                      │
+  └──────────┬───────────┘        └──────────┬───────────┘
+             │                               │
+             │    Bookmark = URL + Token     │
+             │                               │
+        ┌────┴───────────────────────────────┴────┐
+        │             Clip Client                  │
+        │          (Desktop / iOS)                 │
+        │                                          │
+        │  [todo]         → Server A               │
+        │  [voice-inbox]  → Server A               │
+        │  [news-feed]    → Server B               │
+        │  [registry]     → Server A (发现更多)     │
+        └──────────────────────────────────────────┘
 ```
 
 ---
 
-## 路线图
+## Roadmap
 
-- [x] Connect-RPC 服务骨架（PinixService + ClipService）
-- [x] Token 鉴权（Super / Clip Token）
+- [x] Connect-RPC 服务骨架（AdminService + ClipService）
+- [x] Token 鉴权（Super / Clip Token 路由）
 - [x] ETag 协商缓存（ReadFile）
-- [ ] Clip Registry Clip 实现（Issue #5）
+- [ ] Clip Registry Clip 实现（[#5](https://github.com/epiral/pinix/issues/5)）
 - [ ] Clip Client 通过 Registry 发现并添加 Bookmark
-- [ ] 容器化执行层（boxlite，Phase 2）
+- [ ] 容器化执行层隔离（boxlite）
