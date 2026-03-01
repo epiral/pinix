@@ -1,5 +1,5 @@
 // Role:    Clip + Token persistent storage (YAML, ~/.config/pinix/config.yaml)
-// Depends: gopkg.in/yaml.v3, crypto/rand, sync
+// Depends: gopkg.in/yaml.v3, crypto/rand, sync, time
 // Exports: Store, Config, ClipEntry, TokenEntry
 
 package config
@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -22,17 +23,20 @@ type ClipEntry struct {
 	Workdir string `yaml:"workdir"`
 }
 
-// TokenEntry represents an access token bound to a clip (or super if ClipID is empty).
+// TokenEntry represents a clip-scoped access token.
 type TokenEntry struct {
-	Token  string `yaml:"token"`
-	ClipID string `yaml:"clip_id"` // empty = Super Token
-	Label  string `yaml:"label"`
+	ID        string `yaml:"id"`
+	Token     string `yaml:"token"`
+	ClipID    string `yaml:"clip_id"`
+	Label     string `yaml:"label"`
+	CreatedAt string `yaml:"created_at"`
 }
 
 // Config is the top-level persistent configuration.
 type Config struct {
-	Clips  []ClipEntry  `yaml:"clips"`
-	Tokens []TokenEntry `yaml:"tokens"`
+	SuperToken string       `yaml:"super_token"`
+	Clips      []ClipEntry  `yaml:"clips"`
+	Tokens     []TokenEntry `yaml:"tokens"`
 }
 
 // Store provides thread-safe access to Config with YAML persistence.
@@ -60,7 +64,6 @@ func NewStore(path string) (*Store, error) {
 		if !os.IsNotExist(err) {
 			return nil, fmt.Errorf("read config: %w", err)
 		}
-		// file does not exist yet — use empty config
 	} else {
 		if err := yaml.Unmarshal(data, cfg); err != nil {
 			return nil, fmt.Errorf("parse config: %w", err)
@@ -80,6 +83,15 @@ func (s *Store) save() error {
 		return fmt.Errorf("marshal config: %w", err)
 	}
 	return os.WriteFile(s.path, data, 0o600)
+}
+
+// --- Super Token ---
+
+// GetSuperToken returns the static super token from config.
+func (s *Store) GetSuperToken() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg.SuperToken
 }
 
 // --- Clip operations ---
@@ -147,7 +159,7 @@ func (s *Store) DeleteClip(id string) (bool, error) {
 
 // --- Token operations ---
 
-// AddToken generates a 32-byte hex token. If clipID is empty it's a Super Token.
+// AddToken generates a clip-scoped token with a unique ID.
 func (s *Store) AddToken(clipID, label string) (TokenEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -157,7 +169,18 @@ func (s *Store) AddToken(clipID, label string) (TokenEntry, error) {
 		return TokenEntry{}, err
 	}
 
-	entry := TokenEntry{Token: tok, ClipID: clipID, Label: label}
+	idHex, err := randomHex(6)
+	if err != nil {
+		return TokenEntry{}, err
+	}
+
+	entry := TokenEntry{
+		ID:        "t_" + idHex,
+		Token:     tok,
+		ClipID:    clipID,
+		Label:     label,
+		CreatedAt: time.Now().Format(time.RFC3339),
+	}
 	s.cfg.Tokens = append(s.cfg.Tokens, entry)
 	if err := s.save(); err != nil {
 		return TokenEntry{}, err
@@ -165,8 +188,8 @@ func (s *Store) AddToken(clipID, label string) (TokenEntry, error) {
 	return entry, nil
 }
 
-// GetToken looks up a token string. Returns the entry and true, or zero and false.
-func (s *Store) GetToken(token string) (TokenEntry, bool) {
+// LookupToken finds a token by its value. Used for auth.
+func (s *Store) LookupToken(token string) (TokenEntry, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -178,14 +201,24 @@ func (s *Store) GetToken(token string) (TokenEntry, bool) {
 	return TokenEntry{}, false
 }
 
-// RevokeToken removes a token. Returns false if not found.
-func (s *Store) RevokeToken(token string) (bool, error) {
+// GetTokens returns a copy of all tokens.
+func (s *Store) GetTokens() []TokenEntry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]TokenEntry, len(s.cfg.Tokens))
+	copy(out, s.cfg.Tokens)
+	return out
+}
+
+// RevokeTokenByID removes a token by its ID. Returns false if not found.
+func (s *Store) RevokeTokenByID(id string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	idx := -1
 	for i, t := range s.cfg.Tokens {
-		if t.Token == token {
+		if t.ID == id {
 			idx = i
 			break
 		}

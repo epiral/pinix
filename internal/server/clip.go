@@ -1,8 +1,8 @@
-// Role:    ClipService handler — Invoke (exec scripts), ReadFile (stream files)
-// Depends: pinixv1connect, middleware, internal/config, os/exec, mime
+// Role:    ClipService handler — Invoke (exec scripts), ReadFile (stream files), GetInfo
+// Depends: pinixv1connect, internal/auth, internal/config, os/exec, mime
 // Exports: ClipServer, NewClipServer
 
-package service
+package server
 
 import (
 	"bytes"
@@ -18,8 +18,9 @@ import (
 
 	connect "connectrpc.com/connect"
 	v1 "github.com/epiral/pinix/gen/go/pinix/v1"
+	"github.com/epiral/pinix/gen/go/pinix/v1/pinixv1connect"
+	"github.com/epiral/pinix/internal/auth"
 	"github.com/epiral/pinix/internal/config"
-	"github.com/epiral/pinix/middleware"
 )
 
 const (
@@ -28,16 +29,29 @@ const (
 	chunkSize        = 64 * 1024  // 64 KB
 )
 
+var _ pinixv1connect.ClipServiceHandler = (*ClipServer)(nil)
+
 // ClipServer implements ClipServiceHandler.
 type ClipServer struct {
-	defaultCommandsDir string
-	store              *config.Store
+	store *config.Store
 }
 
-// NewClipServer creates a ClipServer. dir is the fallback commands directory
-// used when no clip-specific workdir is available.
-func NewClipServer(dir string, store *config.Store) *ClipServer {
-	return &ClipServer{defaultCommandsDir: dir, store: store}
+// NewClipServer creates a ClipServer.
+func NewClipServer(store *config.Store) *ClipServer {
+	return &ClipServer{store: store}
+}
+
+// resolveWorkdir returns the workdir for the clip bound to the current token.
+func (s *ClipServer) resolveWorkdir(ctx context.Context) (string, error) {
+	clipID, ok := auth.ClipIDFromContext(ctx)
+	if !ok || clipID == "" {
+		return "", connect.NewError(connect.CodePermissionDenied, fmt.Errorf("no clip bound to token"))
+	}
+	clip, found := s.store.GetClip(clipID)
+	if !found {
+		return "", connect.NewError(connect.CodeNotFound, fmt.Errorf("clip not found: %s", clipID))
+	}
+	return clip.Workdir, nil
 }
 
 func (s *ClipServer) Invoke(
@@ -46,7 +60,6 @@ func (s *ClipServer) Invoke(
 ) (*connect.Response[v1.InvokeResponse], error) {
 	name := req.Msg.GetName()
 
-	// Reject path traversal.
 	if strings.Contains(name, "/") || strings.Contains(name, "..") {
 		return connect.NewResponse(&v1.InvokeResponse{
 			Stderr:   fmt.Sprintf("invalid command name: %s", name),
@@ -54,28 +67,19 @@ func (s *ClipServer) Invoke(
 		}), nil
 	}
 
-	// Resolve commands dir based on token type.
-	commandsDir := s.defaultCommandsDir
-	if entry, ok := middleware.TokenFromContext(ctx); ok && entry.ClipID != "" {
-		// Clip Token: jail to clip's workdir/commands/
-		if clip, found := s.store.GetClip(entry.ClipID); found {
-			commandsDir = filepath.Join(clip.Workdir, "commands")
-		}
+	workdir, err := s.resolveWorkdir(ctx)
+	if err != nil {
+		return nil, err
 	}
 
+	commandsDir := filepath.Join(workdir, "commands")
 	cmdPath := filepath.Join(commandsDir, name)
 
-	// Timeout (30s default).
 	execCtx, cancel := context.WithTimeout(ctx, time.Duration(defaultTimeoutMs)*time.Millisecond)
 	defer cancel()
 
 	cmd := exec.CommandContext(execCtx, cmdPath, req.Msg.GetArgs()...)
-	// Set working directory to clip's workdir so relative paths work correctly.
-	if entry, ok := middleware.TokenFromContext(ctx); ok && entry.ClipID != "" {
-		if clip, found := s.store.GetClip(entry.ClipID); found {
-			cmd.Dir = clip.Workdir
-		}
-	}
+	cmd.Dir = workdir
 	if stdin := req.Msg.GetStdin(); stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
@@ -83,7 +87,6 @@ func (s *ClipServer) Invoke(
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 
-	// Limit stderr to 100 KB.
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
 		return connect.NewResponse(&v1.InvokeResponse{
@@ -126,17 +129,18 @@ func (s *ClipServer) ReadFile(
 ) error {
 	relPath := req.Msg.GetPath()
 
-	// Reject path traversal.
 	if strings.Contains(relPath, "..") {
 		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid path: %s", relPath))
 	}
 
-	// Resolve workdir based on token type.
-	workdir := "."
-	if entry, ok := middleware.TokenFromContext(ctx); ok && entry.ClipID != "" {
-		if clip, found := s.store.GetClip(entry.ClipID); found {
-			workdir = clip.Workdir
-		}
+	// Sandbox: only web/ and data/ are allowed.
+	if !strings.HasPrefix(relPath, "web/") && !strings.HasPrefix(relPath, "data/") {
+		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("path must be under web/ or data/"))
+	}
+
+	workdir, err := s.resolveWorkdir(ctx)
+	if err != nil {
+		return err
 	}
 
 	absPath := filepath.Join(workdir, relPath)
@@ -161,7 +165,6 @@ func (s *ClipServer) ReadFile(
 		mimeType = "application/octet-stream"
 	}
 
-	// ETag 协商
 	etag := computeETag(info)
 	if req.Msg.GetIfNoneMatch() == etag {
 		return stream.Send(&v1.ReadFileChunk{
@@ -172,7 +175,6 @@ func (s *ClipServer) ReadFile(
 		})
 	}
 
-	// 处理 offset/length (Range 语义)
 	offset := req.Msg.GetOffset()
 	length := req.Msg.GetLength()
 
@@ -193,7 +195,6 @@ func (s *ClipServer) ReadFile(
 	currentOffset := offset
 
 	for remaining > 0 {
-		// 检查客户端是否已断开
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -226,6 +227,28 @@ func (s *ClipServer) ReadFile(
 	}
 
 	return nil
+}
+
+func (s *ClipServer) GetInfo(
+	ctx context.Context,
+	_ *connect.Request[v1.GetInfoRequest],
+) (*connect.Response[v1.GetInfoResponse], error) {
+	clipID, ok := auth.ClipIDFromContext(ctx)
+	if !ok || clipID == "" {
+		return nil, connect.NewError(connect.CodePermissionDenied, nil)
+	}
+	clip, found := s.store.GetClip(clipID)
+	if !found {
+		return nil, connect.NewError(connect.CodeNotFound, nil)
+	}
+
+	info := scanClipWorkdir(clip)
+	return connect.NewResponse(&v1.GetInfoResponse{
+		Name:        clip.Name,
+		Description: info.desc,
+		Commands:    info.commands,
+		HasWeb:      info.hasWeb,
+	}), nil
 }
 
 func computeETag(info os.FileInfo) string {

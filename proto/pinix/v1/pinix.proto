@@ -4,30 +4,34 @@ package pinix.v1;
 
 option go_package = "github.com/epiral/pinix/gen/go/pinix/v1;pinixv1";
 
-// ─── PinixService ──────────────────────────────────────────────
-// Super Agent Token 持有者使用，拥有整机权限
-service PinixService {
-  // 管理 Clip
+// ─── AdminService ─────────────────────────────────────────────
+// Super Token holders only. Manages clips and tokens on the server.
+service AdminService {
+  // Clip management
   rpc CreateClip(CreateClipRequest) returns (CreateClipResponse);
   rpc ListClips(ListClipsRequest) returns (ListClipsResponse);
   rpc DeleteClip(DeleteClipRequest) returns (DeleteClipResponse);
 
-  // 管理 Token
+  // Token management
   rpc GenerateToken(GenerateTokenRequest) returns (GenerateTokenResponse);
+  rpc ListTokens(ListTokensRequest) returns (ListTokensResponse);
   rpc RevokeToken(RevokeTokenRequest) returns (RevokeTokenResponse);
 }
 
-// ─── ClipService ───────────────────────────────────────────────
-// Clip Token 持有者使用，权限绑定特定 workdir
+// ─── ClipService ──────────────────────────────────────────────
+// Clip Token holders. Scoped to a single clip's workdir.
 service ClipService {
-  // 执行 commands/ 下的可执行文件
+  // Execute a command script under commands/
   rpc Invoke(InvokeRequest) returns (InvokeResponse);
 
-  // 流式读取 workdir 下的文件
+  // Stream-read a file under web/ or data/
   rpc ReadFile(ReadFileRequest) returns (stream ReadFileChunk);
+
+  // Return clip metadata (name, description, commands, has_web)
+  rpc GetInfo(GetInfoRequest) returns (GetInfoResponse);
 }
 
-// ── Clip 管理 ──
+// ── Clip management ──
 
 message CreateClipRequest {
   string name    = 1;
@@ -41,13 +45,15 @@ message CreateClipResponse {
 message ListClipsRequest {}
 
 message ListClipsResponse {
-  repeated Clip clips = 1;
+  repeated ClipInfo clips = 1;
 }
 
-message Clip {
-  string clip_id = 1;
-  string name    = 2;
-  string workdir = 3;
+message ClipInfo {
+  string          clip_id   = 1;
+  string          name      = 2;
+  string          desc      = 3;
+  repeated string commands  = 4;
+  bool            has_web   = 5;
 }
 
 message DeleteClipRequest {
@@ -56,19 +62,34 @@ message DeleteClipRequest {
 
 message DeleteClipResponse {}
 
-// ── Token 管理 ──
+// ── Token management ──
 
 message GenerateTokenRequest {
-  string clip_id = 1;
+  string clip_id = 1;  // required — cannot generate Super Token via API
   string label   = 2;
 }
 
 message GenerateTokenResponse {
-  string token = 1;
+  string id    = 1;
+  string token = 2;
+}
+
+message ListTokensRequest {}
+
+message ListTokensResponse {
+  repeated TokenInfo tokens = 1;
+}
+
+message TokenInfo {
+  string id         = 1;
+  string clip_id    = 2;
+  string label      = 3;
+  string created_at = 4;  // RFC 3339
+  string hint       = 5;  // last 4 chars of token
 }
 
 message RevokeTokenRequest {
-  string token = 1;
+  string id = 1;  // revoke by token id, not token value
 }
 
 message RevokeTokenResponse {}
@@ -76,9 +97,9 @@ message RevokeTokenResponse {}
 // ── Invoke ──
 
 message InvokeRequest {
-  string name          = 1;
-  repeated string args = 2;
-  string stdin         = 3;
+  string          name  = 1;
+  repeated string args  = 2;
+  string          stdin = 3;
 }
 
 message InvokeResponse {
@@ -90,17 +111,28 @@ message InvokeResponse {
 // ── ReadFile ──
 
 message ReadFileRequest {
-  string path          = 1;  // 相对 workdir: "web/index.html", "data/voice.mp3"
-  int64  offset        = 2;  // 字节偏移，0 = 从头
-  int64  length        = 3;  // 请求字节数，0 = 到末尾
-  string if_none_match = 4;  // 客户端持有的 ETag
+  string path          = 1;  // relative to workdir: "web/index.html", "data/voice.mp3"
+  int64  offset        = 2;  // byte offset, 0 = from start
+  int64  length        = 3;  // requested bytes, 0 = to end
+  string if_none_match = 4;  // client-held ETag
 }
 
 message ReadFileChunk {
-  bytes  data         = 1;  // 本 chunk 数据
-  int64  offset       = 2;  // 本 chunk 在文件中的起始偏移
-  string mime_type    = 3;  // 每个 chunk 都携带（Go 服务端用 mime.TypeByExtension 推断）
-  int64  total_size   = 4;  // 文件总大小，每个 chunk 都携带
-  string etag         = 5;  // 文件当前 ETag
-  bool   not_modified = 6;  // true = 内容未变，客户端用本地缓存
+  bytes  data         = 1;
+  int64  offset       = 2;
+  string mime_type    = 3;
+  int64  total_size   = 4;
+  string etag         = 5;
+  bool   not_modified = 6;
+}
+
+// ── GetInfo ──
+
+message GetInfoRequest {}
+
+message GetInfoResponse {
+  string          name        = 1;
+  string          description = 2;
+  repeated string commands    = 3;
+  bool            has_web     = 4;
 }
