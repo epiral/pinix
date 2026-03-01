@@ -137,6 +137,19 @@ func (s *Store) GetClip(id string) (ClipEntry, bool) {
 	return ClipEntry{}, false
 }
 
+// GetClipByName returns the clip with the given name, or false.
+func (s *Store) GetClipByName(name string) (ClipEntry, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, c := range s.cfg.Clips {
+		if c.Name == name {
+			return c, true
+		}
+	}
+	return ClipEntry{}, false
+}
+
 // DeleteClip removes a clip by ID. Returns false if not found.
 func (s *Store) DeleteClip(id string) (bool, error) {
 	s.mu.Lock()
@@ -229,6 +242,28 @@ func (s *Store) RevokeTokenByID(id string) (bool, error) {
 
 	s.cfg.Tokens = append(s.cfg.Tokens[:idx], s.cfg.Tokens[idx+1:]...)
 	return true, s.save()
+}
+
+// RevokeTokensByClipID removes all tokens associated with a clip.
+// Returns the number of tokens revoked.
+func (s *Store) RevokeTokensByClipID(clipID string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var kept []TokenEntry
+	count := 0
+	for _, t := range s.cfg.Tokens {
+		if t.ClipID == clipID {
+			count++
+		} else {
+			kept = append(kept, t)
+		}
+	}
+	if count == 0 {
+		return 0, nil
+	}
+	s.cfg.Tokens = kept
+	return count, s.save()
 }
 
 func randomHex(n int) (string, error) {
