@@ -1,6 +1,10 @@
 // Role:    ClipService handler — Invoke (exec scripts), ReadFile (stream files), GetInfo
-// Depends: pinixv1connect, internal/auth, internal/config, os/exec, mime
+// Depends: pinixv1connect, internal/auth, internal/config, sandbox, os/exec, mime
 // Exports: ClipServer, NewClipServer
+//
+// Execution path:
+//   BoxLite available  → sandbox.Manager.ExecStream() (Micro-VM isolation)
+//   BoxLite unavailable → os/exec fallback (degraded mode, logs warning)
 
 package server
 
@@ -8,6 +12,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"os"
 	"os/exec"
@@ -20,6 +25,7 @@ import (
 	"github.com/epiral/pinix/gen/go/pinix/v1/pinixv1connect"
 	"github.com/epiral/pinix/internal/auth"
 	"github.com/epiral/pinix/internal/config"
+	"github.com/epiral/pinix/internal/sandbox"
 )
 
 const (
@@ -32,25 +38,48 @@ var _ pinixv1connect.ClipServiceHandler = (*ClipServer)(nil)
 
 // ClipServer implements ClipServiceHandler.
 type ClipServer struct {
-	store *config.Store
+	store   *config.Store
+	sandbox *sandbox.Manager // nil if BoxLite unavailable
 }
 
 // NewClipServer creates a ClipServer.
-func NewClipServer(store *config.Store) *ClipServer {
-	return &ClipServer{store: store}
+// boxliteAddr is the BoxLite daemon address (e.g. "http://127.0.0.1:8080").
+// If empty, sandbox support is disabled and Invoke uses os/exec directly.
+func NewClipServer(store *config.Store, boxliteAddr string) *ClipServer {
+	var mgr *sandbox.Manager
+	if boxliteAddr != "" {
+		mgr = sandbox.NewManager(boxliteAddr)
+		checkCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if !mgr.Healthy(checkCtx) {
+			log.Printf("[sandbox] BoxLite not reachable at %s, falling back to os/exec", boxliteAddr)
+			mgr = nil
+		} else {
+			log.Printf("[sandbox] BoxLite connected at %s", boxliteAddr)
+		}
+	}
+	return &ClipServer{store: store, sandbox: mgr}
 }
 
 // resolveWorkdir returns the workdir for the clip bound to the current token.
 func (s *ClipServer) resolveWorkdir(ctx context.Context) (string, error) {
+	clip, err := s.resolveClip(ctx)
+	if err != nil {
+		return "", err
+	}
+	return clip.Workdir, nil
+}
+
+func (s *ClipServer) resolveClip(ctx context.Context) (config.ClipEntry, error) {
 	clipID, ok := auth.ClipIDFromContext(ctx)
 	if !ok || clipID == "" {
-		return "", connect.NewError(connect.CodePermissionDenied, fmt.Errorf("no clip bound to token"))
+		return config.ClipEntry{}, connect.NewError(connect.CodePermissionDenied, fmt.Errorf("no clip bound to token"))
 	}
 	clip, found := s.store.GetClip(clipID)
 	if !found {
-		return "", connect.NewError(connect.CodeNotFound, fmt.Errorf("clip not found: %s", clipID))
+		return config.ClipEntry{}, connect.NewError(connect.CodeNotFound, fmt.Errorf("clip not found: %s", clipID))
 	}
-	return clip.Workdir, nil
+	return clip, nil
 }
 
 func (s *ClipServer) Invoke(
@@ -67,11 +96,18 @@ func (s *ClipServer) Invoke(
 		return stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_ExitCode{ExitCode: 1}})
 	}
 
-	workdir, err := s.resolveWorkdir(ctx)
+	clip, err := s.resolveClip(ctx)
 	if err != nil {
 		return err
 	}
 
+	// --- Sandbox path: BoxLite available ---
+	if s.sandbox != nil {
+		return s.invokeInSandbox(ctx, clip, name, req.Msg.GetArgs(), req.Msg.GetStdin(), stream)
+	}
+
+	// --- Fallback path: direct os/exec ---
+	workdir := clip.Workdir
 	commandsDir := filepath.Join(workdir, "commands")
 	cmdPath := filepath.Join(commandsDir, name)
 
@@ -152,6 +188,67 @@ func (s *ClipServer) Invoke(
 		} else {
 			exitCode = 1
 		}
+	}
+
+	return stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_ExitCode{ExitCode: exitCode}})
+}
+
+// invokeInSandbox runs the command inside a BoxLite Micro-VM.
+// It streams output chunks back through the gRPC stream.
+func (s *ClipServer) invokeInSandbox(
+	ctx context.Context,
+	clip config.ClipEntry,
+	name string,
+	args []string,
+	stdin string,
+	stream *connect.ServerStream[v1.InvokeChunk],
+) error {
+	// Build sandbox mount list from ClipEntry.Mounts
+	mounts := make([]sandbox.Mount, 0, len(clip.Mounts))
+	for _, m := range clip.Mounts {
+		mounts = append(mounts, sandbox.Mount{
+			Source:   m.Source,
+			Target:   m.Target,
+			ReadOnly: m.ReadOnly,
+		})
+	}
+	cfg := sandbox.BoxConfig{
+		ClipID:  clip.ID,
+		Workdir: clip.Workdir,
+		Mounts:  mounts,
+		Image:   clip.Image,
+	}
+
+	out := make(chan sandbox.ExecChunk, 32)
+	execErr := make(chan error, 1)
+
+	go func() {
+		defer close(out)
+		execErr <- s.sandbox.ExecStream(ctx, cfg, name, args, stdin, out)
+	}()
+
+	exitCode := int32(0)
+	for chunk := range out {
+		if len(chunk.Stdout) > 0 {
+			if err := stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_Stdout{Stdout: chunk.Stdout}}); err != nil {
+				return err
+			}
+		}
+		if len(chunk.Stderr) > 0 {
+			if err := stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_Stderr{Stderr: chunk.Stderr}}); err != nil {
+				return err
+			}
+		}
+		if chunk.ExitCode != nil {
+			exitCode = int32(*chunk.ExitCode)
+		}
+	}
+
+	if err := <-execErr; err != nil {
+		_ = stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_Stderr{
+			Stderr: []byte(fmt.Sprintf("sandbox error: %v", err)),
+		}})
+		return stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_ExitCode{ExitCode: 1}})
 	}
 
 	return stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_ExitCode{ExitCode: exitCode}})

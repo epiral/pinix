@@ -13,6 +13,7 @@ import (
 )
 
 var serveAddr string
+var boxliteAddr string
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
@@ -28,11 +29,12 @@ var serveCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 
-		return server.Run(serveAddr, store)
+		return server.Run(serveAddr, store, boxliteAddr)
 	},
 }
 
 func init() {
 	serveCmd.Flags().StringVar(&serveAddr, "addr", ":8080", "listen address")
+	serveCmd.Flags().StringVar(&boxliteAddr, "boxlite", "", "BoxLite daemon address (e.g. http://127.0.0.1:8080), empty to disable sandbox")
 	rootCmd.AddCommand(serveCmd)
 }
