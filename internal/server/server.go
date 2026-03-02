@@ -19,7 +19,7 @@ import (
 )
 
 // Run starts the Pinix server on the given address.
-func Run(addr string, store *config.Store, boxliteAddr string) error {
+func Run(addr string, store *config.Store, boxliteBin string, noSandbox bool) error {
 	interceptor := auth.NewInterceptor(store)
 
 	mux := http.NewServeMux()
@@ -31,7 +31,7 @@ func Run(addr string, store *config.Store, boxliteAddr string) error {
 	mux.Handle(adminPath, adminHandler)
 
 	clipPath, clipHandler := pinixv1connect.NewClipServiceHandler(
-		NewClipServer(store, boxliteAddr),
+		NewClipServer(store, boxliteBin, noSandbox),
 		connect.WithInterceptors(interceptor),
 	)
 	mux.Handle(clipPath, clipHandler)

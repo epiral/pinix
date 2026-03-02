@@ -1,10 +1,10 @@
 // Role:    ClipService handler — Invoke (exec scripts), ReadFile (stream files), GetInfo
-// Depends: pinixv1connect, internal/auth, internal/config, sandbox, os/exec, mime
+// Depends: pinixv1connect, internal/auth, internal/config, sandbox, mime
 // Exports: ClipServer, NewClipServer
 //
 // Execution path:
 //   BoxLite available  → sandbox.Manager.ExecStream() (Micro-VM isolation)
-//   BoxLite unavailable → os/exec fallback (degraded mode, logs warning)
+//   BoxLite unavailable → sandbox.Manager.ExecStream() degraded (direct os/exec)
 
 package server
 
@@ -15,10 +15,8 @@ import (
 	"log"
 	"mime"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	connect "connectrpc.com/connect"
 	v1 "github.com/epiral/pinix/gen/go/pinix/v1"
@@ -29,9 +27,7 @@ import (
 )
 
 const (
-	defaultTimeoutMs = 300000     // 300s for LLM workloads
-	maxStderrBytes   = 100 * 1024 // 100 KB
-	chunkSize        = 64 * 1024  // 64 KB
+	chunkSize = 64 * 1024 // 64 KB
 )
 
 var _ pinixv1connect.ClipServiceHandler = (*ClipServer)(nil)
@@ -39,24 +35,22 @@ var _ pinixv1connect.ClipServiceHandler = (*ClipServer)(nil)
 // ClipServer implements ClipServiceHandler.
 type ClipServer struct {
 	store   *config.Store
-	sandbox *sandbox.Manager // nil if BoxLite unavailable
+	sandbox *sandbox.Manager
 }
 
 // NewClipServer creates a ClipServer.
-// boxliteAddr is the BoxLite daemon address (e.g. "http://127.0.0.1:8080").
-// If empty, sandbox support is disabled and Invoke uses os/exec directly.
-func NewClipServer(store *config.Store, boxliteAddr string) *ClipServer {
-	var mgr *sandbox.Manager
-	if boxliteAddr != "" {
-		mgr = sandbox.NewManager(boxliteAddr)
-		checkCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		if !mgr.Healthy(checkCtx) {
-			log.Printf("[sandbox] BoxLite not reachable at %s, falling back to os/exec", boxliteAddr)
-			mgr = nil
-		} else {
-			log.Printf("[sandbox] BoxLite connected at %s", boxliteAddr)
-		}
+// boxliteBin is the path to the boxlite CLI binary (empty = auto-detect on PATH).
+// If noSandbox is true, commands run directly via os/exec without isolation.
+func NewClipServer(store *config.Store, boxliteBin string, noSandbox bool) *ClipServer {
+	var opts []sandbox.Option
+	if noSandbox {
+		opts = append(opts, sandbox.WithNoSandbox())
+	}
+	mgr := sandbox.NewManager(boxliteBin, opts...)
+	if mgr.Degraded() {
+		log.Printf("[sandbox] degraded mode (no isolation)")
+	} else {
+		log.Printf("[sandbox] BoxLite CLI: %s", boxliteBin)
 	}
 	return &ClipServer{store: store, sandbox: mgr}
 }
@@ -101,96 +95,7 @@ func (s *ClipServer) Invoke(
 		return err
 	}
 
-	// --- Sandbox path: BoxLite available ---
-	if s.sandbox != nil {
-		return s.invokeInSandbox(ctx, clip, name, req.Msg.GetArgs(), req.Msg.GetStdin(), stream)
-	}
-
-	// --- Fallback path: direct os/exec ---
-	workdir := clip.Workdir
-	commandsDir := filepath.Join(workdir, "commands")
-	cmdPath := filepath.Join(commandsDir, name)
-
-	execCtx, cancel := context.WithTimeout(ctx, time.Duration(defaultTimeoutMs)*time.Millisecond)
-	defer cancel()
-
-	cmd := exec.CommandContext(execCtx, cmdPath, req.Msg.GetArgs()...)
-	cmd.Dir = workdir
-	if stdin := req.Msg.GetStdin(); stdin != "" {
-		cmd.Stdin = strings.NewReader(stdin)
-	}
-
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		_ = stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_Stderr{
-			Stderr: []byte(fmt.Sprintf("stdout pipe: %v", err)),
-		}})
-		return stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_ExitCode{ExitCode: 1}})
-	}
-
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		_ = stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_Stderr{
-			Stderr: []byte(fmt.Sprintf("stderr pipe: %v", err)),
-		}})
-		return stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_ExitCode{ExitCode: 1}})
-	}
-
-	if err := cmd.Start(); err != nil {
-		_ = stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_Stderr{
-			Stderr: []byte(fmt.Sprintf("command not found: %s", name)),
-		}})
-		return stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_ExitCode{ExitCode: 1}})
-	}
-
-	// Stream stdout and stderr concurrently.
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		buf := make([]byte, chunkSize)
-		for {
-			n, err := stderrPipe.Read(buf)
-			if n > 0 {
-				chunk := make([]byte, n)
-				copy(chunk, buf[:n])
-				_ = stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_Stderr{Stderr: chunk}})
-			}
-			if err != nil {
-				break
-			}
-		}
-	}()
-
-	buf := make([]byte, chunkSize)
-	for {
-		n, readErr := stdoutPipe.Read(buf)
-		if n > 0 {
-			chunk := make([]byte, n)
-			copy(chunk, buf[:n])
-			if sendErr := stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_Stdout{Stdout: chunk}}); sendErr != nil {
-				_ = cmd.Process.Kill()
-				return sendErr
-			}
-		}
-		if readErr != nil {
-			break
-		}
-	}
-
-	<-done // wait for stderr goroutine
-
-	exitCode := int32(0)
-	if err := cmd.Wait(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = int32(exitErr.ExitCode())
-		} else if execCtx.Err() == context.DeadlineExceeded {
-			exitCode = 124
-		} else {
-			exitCode = 1
-		}
-	}
-
-	return stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_ExitCode{ExitCode: exitCode}})
+	return s.invokeInSandbox(ctx, clip, name, req.Msg.GetArgs(), req.Msg.GetStdin(), stream)
 }
 
 // invokeInSandbox runs the command inside a BoxLite Micro-VM.

@@ -1,35 +1,33 @@
 // Package sandbox provides a BoxLite-backed execution environment for Clips.
 //
 // Architecture:
-//   ClipService.Invoke → sandbox.Manager.ExecStream() → BoxLite REST API → Micro-VM
+//   ClipService.Invoke → sandbox.Manager.ExecStream() → boxlite CLI (os/exec) → Micro-VM
 //
 // Each Clip corresponds to one persistent Box (created on first use, reused
 // across calls). The Box's workdir is bind-mounted from the Clip's host workdir,
 // so code changes take effect immediately without Box restart.
 //
-// BoxLite daemon must be running at the configured address.
-// If BoxLite is unavailable, Invoke falls back to direct os/exec (degraded mode).
+// If the boxlite binary is unavailable or --no-sandbox is set,
+// ExecStream falls back to direct os/exec (degraded mode, no isolation).
 
 package sandbox
 
 import (
-	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 )
 
 const (
-	defaultBoxliteAddr = "http://127.0.0.1:8080"
-	defaultImage       = "debian:12-slim"
-	startTimeout       = 10 * time.Second
-	execTimeout        = 300 * time.Second
+	defaultImage = "debian:12-slim"
+	startTimeout = 10 * time.Second
+	execTimeout  = 300 * time.Second
+	chunkSize    = 64 * 1024 // 64 KB
 )
 
 // ExecChunk is a streaming output event from a sandboxed command.
@@ -58,271 +56,297 @@ type BoxConfig struct {
 	Image string
 }
 
-// Manager manages a pool of per-Clip BoxLite boxes.
+// Option configures a Manager.
+type Option func(*Manager)
+
+// WithNoSandbox forces degraded mode (direct os/exec, no isolation).
+func WithNoSandbox() Option {
+	return func(m *Manager) { m.noSandbox = true }
+}
+
+// Manager manages a pool of per-Clip BoxLite boxes via the boxlite CLI.
+// When degraded (no binary or --no-sandbox), commands run directly via os/exec.
 type Manager struct {
-	addr   string
-	mu     sync.Mutex
-	boxes  map[string]string // clipID → boxID
-	client *http.Client
+	bin       string // path to boxlite binary (empty = degraded)
+	noSandbox bool
+	mu        sync.Mutex
+	boxes     map[string]string // clipID → box name
 }
 
-// NewManager creates a Manager targeting the given BoxLite daemon address.
-// If addr is empty, defaults to http://127.0.0.1:8080.
-func NewManager(addr string) *Manager {
-	if addr == "" {
-		addr = defaultBoxliteAddr
+// NewManager creates a Manager using the given boxlite CLI binary path.
+// If binPath is empty, it attempts to find "boxlite" on PATH.
+func NewManager(binPath string, opts ...Option) *Manager {
+	m := &Manager{
+		boxes: make(map[string]string),
 	}
-	return &Manager{
-		addr:   addr,
-		boxes:  make(map[string]string),
-		client: &http.Client{Timeout: 30 * time.Second},
+	for _, o := range opts {
+		o(m)
 	}
+	if !m.noSandbox {
+		if binPath == "" {
+			if p, err := exec.LookPath("boxlite"); err == nil {
+				binPath = p
+			}
+		}
+		m.bin = binPath
+	}
+	return m
 }
 
-// Healthy returns true if the BoxLite daemon is reachable.
+// Healthy returns true if the boxlite CLI binary is available and functional.
+// In degraded mode, always returns false.
 func (m *Manager) Healthy(ctx context.Context) bool {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.addr+"/v1/runtime/info", nil)
-	if err != nil {
+	if m.degraded() {
 		return false
 	}
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return false
-	}
-	_ = resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
+	cmd := exec.CommandContext(ctx, m.bin, "info")
+	return cmd.Run() == nil
 }
 
-// boxID returns the BoxLite box ID for a Clip, creating the box if needed.
-func (m *Manager) boxID(ctx context.Context, cfg BoxConfig) (string, error) {
+// Degraded reports whether the Manager is in degraded mode (no sandbox isolation).
+func (m *Manager) Degraded() bool { return m.degraded() }
+
+func (m *Manager) degraded() bool {
+	return m.noSandbox || m.bin == ""
+}
+
+// boxName returns the box name for a Clip, creating the box if needed.
+func (m *Manager) boxName(ctx context.Context, cfg BoxConfig) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if id, ok := m.boxes[cfg.ClipID]; ok {
-		return id, nil
+	name := "pinix-clip-" + cfg.ClipID
+	if _, ok := m.boxes[cfg.ClipID]; ok {
+		return name, nil
 	}
 
-	id, err := m.createBox(ctx, cfg)
-	if err != nil {
+	if err := m.createBox(ctx, cfg, name); err != nil {
 		return "", err
 	}
-	m.boxes[cfg.ClipID] = id
-	return id, nil
+	m.boxes[cfg.ClipID] = name
+	return name, nil
 }
 
-// createBox creates a new BoxLite box for the given Clip config.
-func (m *Manager) createBox(ctx context.Context, cfg BoxConfig) (string, error) {
+// createBox creates and starts a new BoxLite box for the given Clip config.
+func (m *Manager) createBox(ctx context.Context, cfg BoxConfig, name string) error {
 	image := cfg.Image
 	if image == "" {
 		image = defaultImage
 	}
 
-	type mountSpec struct {
-		Source   string `json:"source"`
-		Target   string `json:"target"`
-		ReadOnly bool   `json:"read_only,omitempty"`
+	args := []string{
+		"create",
+		"--name", name,
+		"-v", cfg.Workdir + ":/clip",
+		"-w", "/clip",
 	}
-	// Always mount workdir → /clip
-	mounts := []mountSpec{{Source: cfg.Workdir, Target: "/clip"}}
 	for _, mt := range cfg.Mounts {
-		mounts = append(mounts, mountSpec{Source: mt.Source, Target: mt.Target, ReadOnly: mt.ReadOnly})
+		vol := mt.Source + ":" + mt.Target
+		if mt.ReadOnly {
+			vol += ":ro"
+		}
+		args = append(args, "-v", vol)
 	}
+	args = append(args, image)
 
-	body := map[string]any{
-		"name":        "pinix-clip-" + cfg.ClipID,
-		"image":       image,
-		"working_dir": "/clip",
-		"mounts":      mounts,
-	}
-	data, _ := json.Marshal(body)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.addr+"/v1/boxes", bytes.NewReader(data))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("create box: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("create box: status %d: %s", resp.StatusCode, string(b))
-	}
-
-	var result struct {
-		ID string `json:"id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("create box response: %w", err)
-	}
-	if result.ID == "" {
-		return "", fmt.Errorf("create box: empty ID in response")
-	}
-
-	startCtx, cancel := context.WithTimeout(ctx, startTimeout)
+	createCtx, cancel := context.WithTimeout(ctx, startTimeout)
 	defer cancel()
-	if err := m.startBox(startCtx, result.ID); err != nil {
-		return "", fmt.Errorf("start box %s: %w", result.ID, err)
-	}
-	return result.ID, nil
-}
 
-func (m *Manager) startBox(ctx context.Context, boxID string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		fmt.Sprintf("%s/v1/boxes/%s/start", m.addr, boxID), nil)
-	if err != nil {
-		return err
+	cmd := exec.CommandContext(createCtx, m.bin, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("create box: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return err
+
+	// Start the box.
+	startCtx, cancel2 := context.WithTimeout(ctx, startTimeout)
+	defer cancel2()
+
+	startCmd := exec.CommandContext(startCtx, m.bin, "start", name)
+	stderr.Reset()
+	startCmd.Stderr = &stderr
+	if err := startCmd.Run(); err != nil {
+		return fmt.Errorf("start box %s: %w: %s", name, err, strings.TrimSpace(stderr.String()))
 	}
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("start box: status %d", resp.StatusCode)
-	}
+
 	return nil
 }
 
 // ExecStream runs a command inside the Clip's box and streams output to out.
-// cmd is the command name relative to /clip/commands (e.g. "task-list").
+// In degraded mode, the command runs directly on the host via os/exec.
+//
+// cmdName is the command name relative to commands/ (e.g. "task-list").
 // The caller is responsible for closing or draining out.
 func (m *Manager) ExecStream(
 	ctx context.Context,
 	cfg BoxConfig,
-	cmd string,
+	cmdName string,
 	args []string,
 	stdin string,
 	out chan<- ExecChunk,
 ) error {
-	boxID, err := m.boxID(ctx, cfg)
+	if m.degraded() {
+		return m.execDirect(ctx, cfg, cmdName, args, stdin, out)
+	}
+	return m.execSandboxed(ctx, cfg, cmdName, args, stdin, out)
+}
+
+// execSandboxed runs the command inside a BoxLite micro-VM.
+func (m *Manager) execSandboxed(
+	ctx context.Context,
+	cfg BoxConfig,
+	cmdName string,
+	args []string,
+	stdin string,
+	out chan<- ExecChunk,
+) error {
+	name, err := m.boxName(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("get box for clip %s: %w", cfg.ClipID, err)
 	}
 
-	body := map[string]any{
-		"command":     append([]string{"/clip/commands/" + cmd}, args...),
-		"working_dir": "/clip",
-	}
+	execCtx, cancel := context.WithTimeout(ctx, execTimeout)
+	defer cancel()
+
+	execArgs := []string{"exec", name, "--", "/clip/commands/" + cmdName}
+	execArgs = append(execArgs, args...)
+
+	cmd := exec.CommandContext(execCtx, m.bin, execArgs...)
 	if stdin != "" {
-		body["stdin"] = stdin
+		cmd.Stdin = strings.NewReader(stdin)
 	}
-	data, _ := json.Marshal(body)
+
+	return m.streamCmd(execCtx, cmd, out)
+}
+
+// execDirect runs the command directly on the host (degraded / no-sandbox mode).
+func (m *Manager) execDirect(
+	ctx context.Context,
+	cfg BoxConfig,
+	cmdName string,
+	args []string,
+	stdin string,
+	out chan<- ExecChunk,
+) error {
+	cmdPath := filepath.Join(cfg.Workdir, "commands", cmdName)
 
 	execCtx, cancel := context.WithTimeout(ctx, execTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(execCtx, http.MethodPost,
-		fmt.Sprintf("%s/v1/boxes/%s/exec", m.addr, boxID), bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("exec: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("exec: status %d: %s", resp.StatusCode, string(b))
+	cmd := exec.CommandContext(execCtx, cmdPath, args...)
+	cmd.Dir = cfg.Workdir
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
 	}
 
-	var execResp struct {
-		ExecID string `json:"execution_id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&execResp); err != nil {
-		return fmt.Errorf("exec response decode: %w", err)
-	}
-
-	return m.streamOutput(execCtx, execResp.ExecID, out)
+	return m.streamCmd(execCtx, cmd, out)
 }
 
-// streamOutput reads SSE events from BoxLite and converts them to ExecChunks.
-func (m *Manager) streamOutput(ctx context.Context, execID string, out chan<- ExecChunk) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		fmt.Sprintf("%s/v1/executions/%s/output", m.addr, execID), nil)
+// streamCmd starts cmd and streams stdout/stderr as ExecChunks to out.
+func (m *Manager) streamCmd(ctx context.Context, cmd *exec.Cmd, out chan<- ExecChunk) error {
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		return err
+		return fmt.Errorf("stdout pipe: %w", err)
 	}
-	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := m.client.Do(req)
+	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
-		return fmt.Errorf("stream output: %w", err)
+		return fmt.Errorf("stderr pipe: %w", err)
 	}
-	defer resp.Body.Close()
 
-	scanner := bufio.NewScanner(resp.Body)
-	var eventType, dataLine string
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("exec start: %w", err)
+	}
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			if dataLine != "" {
-				m.dispatchSSE(eventType, dataLine, out)
+	// Read stderr concurrently.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		buf := make([]byte, chunkSize)
+		for {
+			n, err := stderrPipe.Read(buf)
+			if n > 0 {
+				chunk := make([]byte, n)
+				copy(chunk, buf[:n])
+				out <- ExecChunk{Stderr: chunk}
 			}
-			eventType, dataLine = "", ""
-			continue
+			if err != nil {
+				break
+			}
 		}
-		if after, ok := strings.CutPrefix(line, "event: "); ok {
-			eventType = strings.TrimSpace(after)
-		} else if after, ok := strings.CutPrefix(line, "data: "); ok {
-			dataLine = strings.TrimSpace(after)
+	}()
+
+	// Read stdout in calling goroutine.
+	buf := make([]byte, chunkSize)
+	for {
+		n, readErr := stdoutPipe.Read(buf)
+		if n > 0 {
+			chunk := make([]byte, n)
+			copy(chunk, buf[:n])
+			out <- ExecChunk{Stdout: chunk}
+		}
+		if readErr != nil {
+			break
 		}
 	}
-	return scanner.Err()
+
+	<-done // wait for stderr goroutine
+
+	exitCode := 0
+	if err := cmd.Wait(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else if ctx.Err() == context.DeadlineExceeded {
+			exitCode = 124
+		} else {
+			exitCode = 1
+		}
+	}
+
+	out <- ExecChunk{ExitCode: &exitCode}
+	return nil
 }
 
-func (m *Manager) dispatchSSE(eventType, data string, out chan<- ExecChunk) {
-	var payload struct {
-		Data     string `json:"data"`
-		ExitCode *int   `json:"exit_code"`
+// RemoveBox stops and removes the box for the given Clip.
+func (m *Manager) RemoveBox(ctx context.Context, clipID string) error {
+	if m.degraded() {
+		return nil
 	}
-	if err := json.Unmarshal([]byte(data), &payload); err != nil {
-		return
-	}
-	chunk := ExecChunk{}
-	switch eventType {
-	case "stdout":
-		chunk.Stdout = []byte(payload.Data)
-	case "stderr":
-		chunk.Stderr = []byte(payload.Data)
-	case "exit":
-		chunk.ExitCode = payload.ExitCode
-	default:
-		return
-	}
-	select {
-	case out <- chunk:
-	default:
-	}
-}
-
-// StopAll stops all managed boxes. Call on Pinix shutdown.
-func (m *Manager) StopAll(ctx context.Context) {
 	m.mu.Lock()
-	ids := make([]string, 0, len(m.boxes))
-	for _, id := range m.boxes {
-		ids = append(ids, id)
+	name, ok := m.boxes[clipID]
+	if ok {
+		delete(m.boxes, clipID)
 	}
 	m.mu.Unlock()
 
-	for _, boxID := range ids {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-			fmt.Sprintf("%s/v1/boxes/%s/stop", m.addr, boxID), nil)
-		if err != nil {
-			continue
-		}
-		resp, _ := m.client.Do(req)
-		if resp != nil {
-			_ = resp.Body.Close()
-		}
+	if !ok {
+		return nil
+	}
+	cmd := exec.CommandContext(ctx, m.bin, "rm", "-f", name)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("rm box %s: %w: %s", name, err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
+// StopAll stops and removes all managed boxes. Call on Pinix shutdown.
+func (m *Manager) StopAll(ctx context.Context) {
+	if m.degraded() {
+		return
+	}
+
+	m.mu.Lock()
+	names := make([]string, 0, len(m.boxes))
+	for _, name := range m.boxes {
+		names = append(names, name)
+	}
+	m.mu.Unlock()
+
+	for _, name := range names {
+		cmd := exec.CommandContext(ctx, m.bin, "rm", "-f", name)
+		_ = cmd.Run()
 	}
 }

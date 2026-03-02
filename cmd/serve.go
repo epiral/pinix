@@ -12,8 +12,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var serveAddr string
-var boxliteAddr string
+var (
+	serveAddr  string
+	boxliteBin string
+	noSandbox  bool
+)
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
@@ -29,12 +32,13 @@ var serveCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 
-		return server.Run(serveAddr, store, boxliteAddr)
+		return server.Run(serveAddr, store, boxliteBin, noSandbox)
 	},
 }
 
 func init() {
 	serveCmd.Flags().StringVar(&serveAddr, "addr", ":8080", "listen address")
-	serveCmd.Flags().StringVar(&boxliteAddr, "boxlite", "", "BoxLite daemon address (e.g. http://127.0.0.1:8080), empty to disable sandbox")
+	serveCmd.Flags().StringVar(&boxliteBin, "boxlite", "", "path to boxlite CLI binary (empty = auto-detect on PATH)")
+	serveCmd.Flags().BoolVar(&noSandbox, "no-sandbox", false, "disable sandbox isolation, run commands directly")
 	rootCmd.AddCommand(serveCmd)
 }
