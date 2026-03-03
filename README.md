@@ -1,6 +1,8 @@
 # Pinix
 
-A decentralized runtime platform for Clips.
+A decentralized runtime platform for Clips — with sandboxed execution via pluggable backends.
+
+> **[Installation Guide](docs/installation.md)** | **[安装指南（中文）](docs/installation-zh.md)**
 
 ---
 
@@ -216,6 +218,27 @@ Clip Dock 不直接连 Clip Instance，所有请求经过 Pinix Server，由 Ser
 - [x] Connect-RPC 服务骨架（AdminService + ClipService）
 - [x] Token 鉴权（Super / Clip Token 路由）
 - [x] ETag 协商缓存（ReadFile）
-- [ ] Clip Registry Clip 实现（[#5](https://github.com/epiral/pinix/issues/5)）
-- [ ] Clip Dock 通过 Registry 发现并添加 Bookmark
-- [ ] 容器化执行层隔离（boxlite）
+- [x] Clip Registry Clip 实现（[#5](https://github.com/epiral/pinix/issues/5)）
+- [x] Clip Dock 通过 Registry 发现并添加 Bookmark
+- [x] 容器化执行层隔离（BoxLite Backend interface + 11/11 tests）
+
+## Sandbox Architecture
+
+Every Clip command runs inside an isolated sandbox. The execution layer is pluggable via the `Backend` interface:
+
+```
+ClipService.Invoke
+  → sandbox.Manager
+    → Backend interface
+      ├── BoxLiteBackend  (Micro-VM via Hypervisor.framework / KVM)
+      ├── DockerBackend   (planned)
+      └── ...
+```
+
+| Component | File | Role |
+|-----------|------|------|
+| `Backend` interface | `internal/sandbox/backend.go` | Pluggable contract (Name/Healthy/ExecStream/Close) |
+| BoxLite impl | `internal/sandbox/boxlite.go` | Micro-VM execution via BoxLite CLI |
+| Manager | `internal/sandbox/manager.go` | Thin delegation layer |
+
+**No fallback to host `os/exec`.** If the sandbox backend is unavailable, Pinix returns an error.
