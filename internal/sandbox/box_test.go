@@ -195,7 +195,7 @@ func TestSandboxedExecStream(t *testing.T) {
 	}
 
 	cfg := BoxConfig{
-		ClipID:  "e2e-test",
+		ClipID:  testClipID("e2e"),
 		Workdir: t.TempDir(),
 	}
 
