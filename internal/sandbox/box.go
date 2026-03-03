@@ -1,14 +1,5 @@
-// Package sandbox provides a BoxLite-backed execution environment for Clips.
-//
-// Architecture:
-//   ClipService.Invoke → sandbox.Manager.ExecStream() → boxlite CLI (os/exec) → Micro-VM
-//
-// Each Clip corresponds to one persistent Box (created on first use, reused
-// across calls). The Box's workdir is bind-mounted from the Clip's host workdir,
-// so code changes take effect immediately without Box restart.
-//
-// If the boxlite binary is unavailable or --no-sandbox is set,
-// ExecStream falls back to direct os/exec (degraded mode, no isolation).
+// Deprecated: box.go is being replaced by backend.go + boxlite.go + manager.go.
+// This file retains the old Manager for backward compatibility during migration.
 
 package sandbox
 
@@ -20,41 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 )
-
-const (
-	defaultImage = "debian:12-slim"
-	startTimeout = 10 * time.Second
-	execTimeout  = 300 * time.Second
-	chunkSize    = 64 * 1024 // 64 KB
-)
-
-// ExecChunk is a streaming output event from a sandboxed command.
-type ExecChunk struct {
-	Stdout   []byte
-	Stderr   []byte
-	ExitCode *int // non-nil when execution completes
-}
-
-// Mount describes a host→container path mapping.
-type Mount struct {
-	Source   string // host path
-	Target   string // container path
-	ReadOnly bool
-}
-
-// BoxConfig holds per-Clip box configuration.
-type BoxConfig struct {
-	// ClipID is the unique Clip identifier, used as box name.
-	ClipID string
-	// Workdir is the host-side Clip working directory (mounted to /clip).
-	Workdir string
-	// Mounts are additional bind mounts beyond the default workdir→/clip mount.
-	Mounts []Mount
-	// Image is the OCI image for the box (defaults to debian:12-slim).
-	Image string
-}
 
 // Option configures a Manager.
 type Option func(*Manager)
@@ -136,6 +93,7 @@ func (m *Manager) createBox(ctx context.Context, cfg BoxConfig, name string) err
 
 	args := []string{
 		"create",
+		"-d",
 		"--name", name,
 		"-v", cfg.Workdir + ":/clip",
 		"-w", "/clip",
@@ -175,9 +133,6 @@ func (m *Manager) createBox(ctx context.Context, cfg BoxConfig, name string) err
 
 // ExecStream runs a command inside the Clip's box and streams output to out.
 // In degraded mode, the command runs directly on the host via os/exec.
-//
-// cmdName is the command name relative to commands/ (e.g. "task-list").
-// The caller is responsible for closing or draining out.
 func (m *Manager) ExecStream(
 	ctx context.Context,
 	cfg BoxConfig,
@@ -209,13 +164,11 @@ func (m *Manager) execSandboxed(
 	execCtx, cancel := context.WithTimeout(ctx, execTimeout)
 	defer cancel()
 
-	execArgs := []string{"exec", name, "--", "/clip/commands/" + cmdName}
+	execArgs := []string{"exec", "-i", name, "--", "/clip/commands/" + cmdName}
 	execArgs = append(execArgs, args...)
 
 	cmd := exec.CommandContext(execCtx, m.bin, execArgs...)
-	if stdin != "" {
-		cmd.Stdin = strings.NewReader(stdin)
-	}
+	cmd.Stdin = strings.NewReader(stdin)
 
 	return m.streamCmd(execCtx, cmd, out)
 }
