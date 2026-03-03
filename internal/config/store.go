@@ -16,11 +16,23 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// MountEntry describes a host→container bind mount for a Clip's sandbox.
+type MountEntry struct {
+	Source   string `yaml:"source"`   // host path
+	Target   string `yaml:"target"`   // path inside the box
+	ReadOnly bool   `yaml:"read_only,omitempty"`
+}
+
 // ClipEntry represents a registered clip with its working directory.
 type ClipEntry struct {
-	ID      string `yaml:"id"`
-	Name    string `yaml:"name"`
-	Workdir string `yaml:"workdir"`
+	ID      string       `yaml:"id"`
+	Name    string       `yaml:"name"`
+	Workdir string       `yaml:"workdir"`
+	// Mounts declares additional bind mounts for BoxLite sandbox execution.
+	// The Workdir is always mounted to /clip automatically.
+	Mounts []MountEntry `yaml:"mounts,omitempty"`
+	// Image overrides the default OCI image for this Clip's sandbox.
+	Image  string       `yaml:"image,omitempty"`
 }
 
 // TokenEntry represents a clip-scoped access token.
