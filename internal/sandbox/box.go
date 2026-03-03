@@ -118,19 +118,21 @@ func (d *directExecBackend) RemoveClip(_ context.Context, _ string) error { retu
 func (d *directExecBackend) Close(_ context.Context) error                { return nil }
 
 // streamCmd is a package-level helper shared by directExecBackend and BoxLiteBackend.
+// All channel sends are guarded by select+ctx.Done() to prevent goroutine leaks
+// when the consumer exits early.
 func streamCmd(ctx context.Context, cmd *exec.Cmd, out chan<- ExecChunk) error {
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		return fmt.Errorf("stdout pipe: %w", err)
+		return fmt.Errorf("sandbox: stdout pipe: %w", err)
 	}
 
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
-		return fmt.Errorf("stderr pipe: %w", err)
+		return fmt.Errorf("sandbox: stderr pipe: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("exec start: %w", err)
+		return fmt.Errorf("sandbox: exec start: %w", err)
 	}
 
 	// Read stderr concurrently.
@@ -143,7 +145,11 @@ func streamCmd(ctx context.Context, cmd *exec.Cmd, out chan<- ExecChunk) error {
 			if n > 0 {
 				chunk := make([]byte, n)
 				copy(chunk, buf[:n])
-				out <- ExecChunk{Stderr: chunk}
+				select {
+				case out <- ExecChunk{Stderr: chunk}:
+				case <-ctx.Done():
+					return
+				}
 			}
 			if err != nil {
 				break
@@ -158,7 +164,13 @@ func streamCmd(ctx context.Context, cmd *exec.Cmd, out chan<- ExecChunk) error {
 		if n > 0 {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
-			out <- ExecChunk{Stdout: chunk}
+			select {
+			case out <- ExecChunk{Stdout: chunk}:
+			case <-ctx.Done():
+				<-done
+				_ = cmd.Wait()
+				return ctx.Err()
+			}
 		}
 		if readErr != nil {
 			break
@@ -178,6 +190,10 @@ func streamCmd(ctx context.Context, cmd *exec.Cmd, out chan<- ExecChunk) error {
 		}
 	}
 
-	out <- ExecChunk{ExitCode: &exitCode}
+	select {
+	case out <- ExecChunk{ExitCode: &exitCode}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 	return nil
 }

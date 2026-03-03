@@ -21,11 +21,18 @@ const (
 // Compile-time check: BoxLiteBackend implements Backend.
 var _ Backend = (*BoxLiteBackend)(nil)
 
+// boxEntry tracks a per-clip box with lazy initialization.
+type boxEntry struct {
+	once sync.Once
+	name string
+	err  error
+}
+
 // BoxLiteBackend implements Backend using the boxlite CLI.
 type BoxLiteBackend struct {
 	bin   string // path to boxlite binary
 	mu    sync.Mutex
-	boxes map[string]string // clipID → box name
+	boxes map[string]*boxEntry // clipID → box entry
 }
 
 // NewBoxLiteBackend creates a BoxLite backend. If binPath is empty, it attempts
@@ -40,7 +47,7 @@ func NewBoxLiteBackend(binPath string) (*BoxLiteBackend, error) {
 	}
 	return &BoxLiteBackend{
 		bin:   binPath,
-		boxes: make(map[string]string),
+		boxes: make(map[string]*boxEntry),
 	}, nil
 }
 
@@ -66,7 +73,7 @@ func (b *BoxLiteBackend) ExecStream(
 	stdin io.Reader,
 	out chan<- ExecChunk,
 ) error {
-	name, err := b.boxName(ctx, cfg)
+	name, err := b.ensureBox(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("sandbox/boxlite: get box for clip %s: %w", cfg.ClipID, err)
 	}
@@ -90,16 +97,16 @@ func (b *BoxLiteBackend) ExecStream(
 // RemoveClip stops and removes the box for the given clip.
 func (b *BoxLiteBackend) RemoveClip(ctx context.Context, clipID string) error {
 	b.mu.Lock()
-	name, ok := b.boxes[clipID]
+	entry, ok := b.boxes[clipID]
 	if ok {
 		delete(b.boxes, clipID)
 	}
 	b.mu.Unlock()
 
-	if !ok {
+	if !ok || entry.err != nil {
 		return nil
 	}
-	cmd := exec.CommandContext(ctx, b.bin, "rm", "-f", name)
+	cmd := exec.CommandContext(ctx, b.bin, "rm", "-f", entry.name)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -111,18 +118,21 @@ func (b *BoxLiteBackend) RemoveClip(ctx context.Context, clipID string) error {
 // Close releases all resources: stops and removes all managed boxes.
 func (b *BoxLiteBackend) Close(ctx context.Context) error {
 	b.mu.Lock()
-	names := make([]string, 0, len(b.boxes))
-	for _, name := range b.boxes {
-		names = append(names, name)
+	entries := make(map[string]*boxEntry, len(b.boxes))
+	for id, e := range b.boxes {
+		entries[id] = e
 	}
-	b.boxes = make(map[string]string)
+	b.boxes = make(map[string]*boxEntry)
 	b.mu.Unlock()
 
 	var errs []string
-	for _, name := range names {
-		cmd := exec.CommandContext(ctx, b.bin, "rm", "-f", name)
+	for _, e := range entries {
+		if e.err != nil || e.name == "" {
+			continue
+		}
+		cmd := exec.CommandContext(ctx, b.bin, "rm", "-f", e.name)
 		if err := cmd.Run(); err != nil {
-			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+			errs = append(errs, fmt.Sprintf("%s: %v", e.name, err))
 		}
 	}
 	if len(errs) > 0 {
@@ -131,21 +141,24 @@ func (b *BoxLiteBackend) Close(ctx context.Context) error {
 	return nil
 }
 
-// boxName returns the box name for a clip, creating the box if needed.
-func (b *BoxLiteBackend) boxName(ctx context.Context, cfg BoxConfig) (string, error) {
+// ensureBox returns the box name for a clip, creating the box on first call.
+// The lock only protects map access; CLI calls (create/start) run outside the lock,
+// serialized per-clip via sync.Once.
+func (b *BoxLiteBackend) ensureBox(ctx context.Context, cfg BoxConfig) (string, error) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	name := "pinix-clip-" + cfg.ClipID
-	if _, ok := b.boxes[cfg.ClipID]; ok {
-		return name, nil
+	entry, ok := b.boxes[cfg.ClipID]
+	if !ok {
+		entry = &boxEntry{}
+		b.boxes[cfg.ClipID] = entry
 	}
+	b.mu.Unlock()
 
-	if err := b.createBox(ctx, cfg, name); err != nil {
-		return "", err
-	}
-	b.boxes[cfg.ClipID] = name
-	return name, nil
+	entry.once.Do(func() {
+		entry.name = "pinix-clip-" + cfg.ClipID
+		entry.err = b.createBox(ctx, cfg, entry.name)
+	})
+
+	return entry.name, entry.err
 }
 
 // createBox creates and starts a new BoxLite box.
@@ -193,4 +206,3 @@ func (b *BoxLiteBackend) createBox(ctx context.Context, cfg BoxConfig, name stri
 
 	return nil
 }
-
