@@ -3,8 +3,7 @@
 // Exports: ClipServer, NewClipServer
 //
 // Execution path:
-//   BoxLite available  → sandbox.Manager.ExecStream() (Micro-VM isolation)
-//   BoxLite unavailable → sandbox.Manager.ExecStream() degraded (direct os/exec)
+//   sandbox.Manager.ExecStream() → Backend → isolation runtime
 
 package server
 
@@ -50,7 +49,7 @@ func NewClipServer(store *config.Store, boxliteBin string, noSandbox bool) *Clip
 	if mgr.Degraded() {
 		log.Printf("[sandbox] degraded mode (no isolation)")
 	} else {
-		log.Printf("[sandbox] BoxLite CLI: %s", boxliteBin)
+		log.Printf("[sandbox] backend: %s", mgr.Backend().Name())
 	}
 	return &ClipServer{store: store, sandbox: mgr}
 }
@@ -124,12 +123,17 @@ func (s *ClipServer) invokeInSandbox(
 		Image:   clip.Image,
 	}
 
+	var stdinReader io.Reader
+	if stdin != "" {
+		stdinReader = strings.NewReader(stdin)
+	}
+
 	out := make(chan sandbox.ExecChunk, 32)
 	execErr := make(chan error, 1)
 
 	go func() {
 		defer close(out)
-		execErr <- s.sandbox.ExecStream(ctx, cfg, name, args, stdin, out)
+		execErr <- s.sandbox.ExecStream(ctx, cfg, name, args, stdinReader, out)
 	}()
 
 	exitCode := int32(0)

@@ -11,11 +11,9 @@ import (
 )
 
 // TestDegradedExecStream verifies ExecStream in degraded mode (no sandbox).
-// It creates a temporary script and runs it through the Manager.
 func TestDegradedExecStream(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Create commands/hello script.
 	cmdDir := filepath.Join(tmpDir, "commands")
 	if err := os.MkdirAll(cmdDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -37,7 +35,7 @@ func TestDegradedExecStream(t *testing.T) {
 
 	go func() {
 		defer close(out)
-		if err := mgr.ExecStream(ctx, cfg, "hello", nil, "", out); err != nil {
+		if err := mgr.LegacyExecStream(ctx, cfg, "hello", nil, "", out); err != nil {
 			t.Errorf("ExecStream: %v", err)
 		}
 	}()
@@ -81,7 +79,7 @@ func TestDegradedExecStreamWithStdin(t *testing.T) {
 
 	go func() {
 		defer close(out)
-		if err := mgr.ExecStream(ctx, cfg, "cat-stdin", nil, "piped-input", out); err != nil {
+		if err := mgr.LegacyExecStream(ctx, cfg, "cat-stdin", nil, "piped-input", out); err != nil {
 			t.Errorf("ExecStream: %v", err)
 		}
 	}()
@@ -118,7 +116,7 @@ func TestDegradedExecStreamNonZeroExit(t *testing.T) {
 
 	go func() {
 		defer close(out)
-		_ = mgr.ExecStream(ctx, cfg, "fail", nil, "", out)
+		_ = mgr.LegacyExecStream(ctx, cfg, "fail", nil, "", out)
 	}()
 
 	var exitCode *int
@@ -139,19 +137,18 @@ func TestManagerHealthy(t *testing.T) {
 
 	// Degraded manager is not healthy.
 	mgr := NewManager("", WithNoSandbox())
-	if mgr.Healthy(ctx) {
+	if mgr.LegacyHealthy(ctx) {
 		t.Error("degraded manager should not be healthy")
 	}
 
 	// Manager with non-existent binary is not healthy.
 	mgr2 := NewManager("/nonexistent/boxlite")
-	if mgr2.Healthy(ctx) {
+	if mgr2.LegacyHealthy(ctx) {
 		t.Error("manager with missing binary should not be healthy")
 	}
 }
 
 // TestSandboxedExecStream verifies the sandboxed path if boxlite CLI is available.
-// This test is skipped in CI or when the boxlite binary is not available.
 func TestSandboxedExecStream(t *testing.T) {
 	bin := os.Getenv("BOXLITE_BIN")
 	if bin == "" {
@@ -167,7 +164,7 @@ func TestSandboxedExecStream(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if !mgr.Healthy(ctx) {
+	if !mgr.LegacyHealthy(ctx) {
 		t.Skip("boxlite is not healthy, skipping sandboxed test")
 	}
 
@@ -176,7 +173,6 @@ func TestSandboxedExecStream(t *testing.T) {
 		Workdir: t.TempDir(),
 	}
 
-	// Create a script inside the temp workdir.
 	cmdDir := filepath.Join(cfg.Workdir, "commands")
 	if err := os.MkdirAll(cmdDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -190,7 +186,7 @@ func TestSandboxedExecStream(t *testing.T) {
 
 	go func() {
 		defer close(out)
-		if err := mgr.ExecStream(ctx, cfg, "hello", nil, "", out); err != nil {
+		if err := mgr.LegacyExecStream(ctx, cfg, "hello", nil, "", out); err != nil {
 			t.Errorf("ExecStream: %v", err)
 		}
 	}()
@@ -212,6 +208,5 @@ func TestSandboxedExecStream(t *testing.T) {
 		t.Errorf("exit code = %v, want 0", exitCode)
 	}
 
-	// Cleanup.
 	mgr.StopAll(ctx)
 }

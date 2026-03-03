@@ -1,185 +1,103 @@
-// Deprecated: box.go is being replaced by backend.go + boxlite.go + manager.go.
-// This file retains the old Manager for backward compatibility during migration.
+// Deprecated: box.go retains backward-compatible constructors during migration.
+// Will be removed in Phase 4.
 
 package sandbox
 
 import (
-	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 )
 
-// Option configures a Manager.
-type Option func(*Manager)
+// Option configures a Manager via NewManager (legacy constructor).
+type Option func(*managerOpts)
+
+type managerOpts struct {
+	noSandbox bool
+}
 
 // WithNoSandbox forces degraded mode (direct os/exec, no isolation).
 func WithNoSandbox() Option {
-	return func(m *Manager) { m.noSandbox = true }
+	return func(o *managerOpts) { o.noSandbox = true }
 }
 
-// Manager manages a pool of per-Clip BoxLite boxes via the boxlite CLI.
-// When degraded (no binary or --no-sandbox), commands run directly via os/exec.
-type Manager struct {
-	bin       string // path to boxlite binary (empty = degraded)
-	noSandbox bool
-	mu        sync.Mutex
-	boxes     map[string]string // clipID → box name
-}
-
-// NewManager creates a Manager using the given boxlite CLI binary path.
-// If binPath is empty, it attempts to find "boxlite" on PATH.
+// NewManager creates a Manager. This is the legacy constructor that supports
+// degraded mode for backward compatibility. Prefer NewManagerFromBackend.
 func NewManager(binPath string, opts ...Option) *Manager {
-	m := &Manager{
-		boxes: make(map[string]string),
-	}
-	for _, o := range opts {
-		o(m)
-	}
-	if !m.noSandbox {
-		if binPath == "" {
-			if p, err := exec.LookPath("boxlite"); err == nil {
-				binPath = p
-			}
-		}
-		m.bin = binPath
-	}
-	return m
-}
-
-// Healthy returns true if the boxlite CLI binary is available and functional.
-// In degraded mode, always returns false.
-func (m *Manager) Healthy(ctx context.Context) bool {
-	if m.degraded() {
-		return false
-	}
-	cmd := exec.CommandContext(ctx, m.bin, "info")
-	return cmd.Run() == nil
-}
-
-// Degraded reports whether the Manager is in degraded mode (no sandbox isolation).
-func (m *Manager) Degraded() bool { return m.degraded() }
-
-func (m *Manager) degraded() bool {
-	return m.noSandbox || m.bin == ""
-}
-
-// boxName returns the box name for a Clip, creating the box if needed.
-func (m *Manager) boxName(ctx context.Context, cfg BoxConfig) (string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	name := "pinix-clip-" + cfg.ClipID
-	if _, ok := m.boxes[cfg.ClipID]; ok {
-		return name, nil
+	o := &managerOpts{}
+	for _, fn := range opts {
+		fn(o)
 	}
 
-	if err := m.createBox(ctx, cfg, name); err != nil {
-		return "", err
-	}
-	m.boxes[cfg.ClipID] = name
-	return name, nil
-}
-
-// createBox creates and starts a new BoxLite box for the given Clip config.
-func (m *Manager) createBox(ctx context.Context, cfg BoxConfig, name string) error {
-	image := cfg.Image
-	if image == "" {
-		image = defaultImage
+	if o.noSandbox {
+		return NewManagerFromBackend(&directExecBackend{})
 	}
 
-	args := []string{
-		"create",
-		"-d",
-		"--name", name,
-		"-v", cfg.Workdir + ":/clip",
-		"-w", "/clip",
-	}
-	for _, mt := range cfg.Mounts {
-		vol := mt.Source + ":" + mt.Target
-		if mt.ReadOnly {
-			vol += ":ro"
-		}
-		args = append(args, "-v", vol)
-	}
-	args = append(args, image)
-
-	createCtx, cancel := context.WithTimeout(ctx, startTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(createCtx, m.bin, args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("create box: %w: %s", err, strings.TrimSpace(stderr.String()))
-	}
-
-	// Start the box.
-	startCtx, cancel2 := context.WithTimeout(ctx, startTimeout)
-	defer cancel2()
-
-	startCmd := exec.CommandContext(startCtx, m.bin, "start", name)
-	stderr.Reset()
-	startCmd.Stderr = &stderr
-	if err := startCmd.Run(); err != nil {
-		return fmt.Errorf("start box %s: %w: %s", name, err, strings.TrimSpace(stderr.String()))
-	}
-
-	return nil
-}
-
-// ExecStream runs a command inside the Clip's box and streams output to out.
-// In degraded mode, the command runs directly on the host via os/exec.
-func (m *Manager) ExecStream(
-	ctx context.Context,
-	cfg BoxConfig,
-	cmdName string,
-	args []string,
-	stdin string,
-	out chan<- ExecChunk,
-) error {
-	if m.degraded() {
-		return m.execDirect(ctx, cfg, cmdName, args, stdin, out)
-	}
-	return m.execSandboxed(ctx, cfg, cmdName, args, stdin, out)
-}
-
-// execSandboxed runs the command inside a BoxLite micro-VM.
-func (m *Manager) execSandboxed(
-	ctx context.Context,
-	cfg BoxConfig,
-	cmdName string,
-	args []string,
-	stdin string,
-	out chan<- ExecChunk,
-) error {
-	name, err := m.boxName(ctx, cfg)
+	b, err := NewBoxLiteBackend(binPath)
 	if err != nil {
-		return fmt.Errorf("get box for clip %s: %w", cfg.ClipID, err)
+		// Binary not found — fall back to degraded mode.
+		return NewManagerFromBackend(&directExecBackend{})
 	}
-
-	execCtx, cancel := context.WithTimeout(ctx, execTimeout)
-	defer cancel()
-
-	execArgs := []string{"exec", "-i", name, "--", "/clip/commands/" + cmdName}
-	execArgs = append(execArgs, args...)
-
-	cmd := exec.CommandContext(execCtx, m.bin, execArgs...)
-	cmd.Stdin = strings.NewReader(stdin)
-
-	return m.streamCmd(execCtx, cmd, out)
+	return NewManagerFromBackend(b)
 }
 
-// execDirect runs the command directly on the host (degraded / no-sandbox mode).
-func (m *Manager) execDirect(
+// Degraded reports whether the Manager is running without sandbox isolation.
+func (m *Manager) Degraded() bool {
+	_, ok := m.backend.(*directExecBackend)
+	return ok
+}
+
+// LegacyExecStream is the old ExecStream signature (stdin as string).
+// Adapts to the new io.Reader-based Backend interface.
+func (m *Manager) LegacyExecStream(
 	ctx context.Context,
 	cfg BoxConfig,
 	cmdName string,
 	args []string,
 	stdin string,
+	out chan<- ExecChunk,
+) error {
+	var r io.Reader
+	if stdin != "" {
+		r = strings.NewReader(stdin)
+	}
+	return m.ExecStream(ctx, cfg, cmdName, args, r, out)
+}
+
+// LegacyHealthy returns a bool instead of error (old API).
+func (m *Manager) LegacyHealthy(ctx context.Context) bool {
+	return m.Healthy(ctx) == nil
+}
+
+// RemoveBox is the legacy name for RemoveClip.
+func (m *Manager) RemoveBox(ctx context.Context, clipID string) error {
+	return m.RemoveClip(ctx, clipID)
+}
+
+// StopAll is the legacy name for Close (ignores error).
+func (m *Manager) StopAll(ctx context.Context) {
+	_ = m.Close(ctx)
+}
+
+// directExecBackend runs commands directly on the host (no isolation).
+// This is the degraded-mode fallback, to be removed in Phase 4.
+type directExecBackend struct{}
+
+func (d *directExecBackend) Name() string { return "direct" }
+
+func (d *directExecBackend) Healthy(_ context.Context) error {
+	return fmt.Errorf("sandbox/direct: no sandbox backend available")
+}
+
+func (d *directExecBackend) ExecStream(
+	ctx context.Context,
+	cfg BoxConfig,
+	cmdName string,
+	args []string,
+	stdin io.Reader,
 	out chan<- ExecChunk,
 ) error {
 	cmdPath := filepath.Join(cfg.Workdir, "commands", cmdName)
@@ -189,15 +107,18 @@ func (m *Manager) execDirect(
 
 	cmd := exec.CommandContext(execCtx, cmdPath, args...)
 	cmd.Dir = cfg.Workdir
-	if stdin != "" {
-		cmd.Stdin = strings.NewReader(stdin)
+	if stdin != nil {
+		cmd.Stdin = stdin
 	}
 
-	return m.streamCmd(execCtx, cmd, out)
+	return streamCmd(execCtx, cmd, out)
 }
 
-// streamCmd starts cmd and streams stdout/stderr as ExecChunks to out.
-func (m *Manager) streamCmd(ctx context.Context, cmd *exec.Cmd, out chan<- ExecChunk) error {
+func (d *directExecBackend) RemoveClip(_ context.Context, _ string) error { return nil }
+func (d *directExecBackend) Close(_ context.Context) error                { return nil }
+
+// streamCmd is a package-level helper shared by directExecBackend and BoxLiteBackend.
+func streamCmd(ctx context.Context, cmd *exec.Cmd, out chan<- ExecChunk) error {
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("stdout pipe: %w", err)
@@ -259,47 +180,4 @@ func (m *Manager) streamCmd(ctx context.Context, cmd *exec.Cmd, out chan<- ExecC
 
 	out <- ExecChunk{ExitCode: &exitCode}
 	return nil
-}
-
-// RemoveBox stops and removes the box for the given Clip.
-func (m *Manager) RemoveBox(ctx context.Context, clipID string) error {
-	if m.degraded() {
-		return nil
-	}
-	m.mu.Lock()
-	name, ok := m.boxes[clipID]
-	if ok {
-		delete(m.boxes, clipID)
-	}
-	m.mu.Unlock()
-
-	if !ok {
-		return nil
-	}
-	cmd := exec.CommandContext(ctx, m.bin, "rm", "-f", name)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("rm box %s: %w: %s", name, err, strings.TrimSpace(stderr.String()))
-	}
-	return nil
-}
-
-// StopAll stops and removes all managed boxes. Call on Pinix shutdown.
-func (m *Manager) StopAll(ctx context.Context) {
-	if m.degraded() {
-		return
-	}
-
-	m.mu.Lock()
-	names := make([]string, 0, len(m.boxes))
-	for _, name := range m.boxes {
-		names = append(names, name)
-	}
-	m.mu.Unlock()
-
-	for _, name := range names {
-		cmd := exec.CommandContext(ctx, m.bin, "rm", "-f", name)
-		_ = cmd.Run()
-	}
 }

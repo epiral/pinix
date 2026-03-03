@@ -84,7 +84,7 @@ func (b *BoxLiteBackend) ExecStream(
 		cmd.Stdin = strings.NewReader("")
 	}
 
-	return b.streamCmd(execCtx, cmd, out)
+	return streamCmd(execCtx, cmd, out)
 }
 
 // RemoveClip stops and removes the box for the given clip.
@@ -194,67 +194,3 @@ func (b *BoxLiteBackend) createBox(ctx context.Context, cfg BoxConfig, name stri
 	return nil
 }
 
-// streamCmd starts cmd and streams stdout/stderr as ExecChunks to out.
-func (b *BoxLiteBackend) streamCmd(ctx context.Context, cmd *exec.Cmd, out chan<- ExecChunk) error {
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("sandbox/boxlite: stdout pipe: %w", err)
-	}
-
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("sandbox/boxlite: stderr pipe: %w", err)
-	}
-
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("sandbox/boxlite: exec start: %w", err)
-	}
-
-	// Read stderr concurrently.
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		buf := make([]byte, chunkSize)
-		for {
-			n, err := stderrPipe.Read(buf)
-			if n > 0 {
-				chunk := make([]byte, n)
-				copy(chunk, buf[:n])
-				out <- ExecChunk{Stderr: chunk}
-			}
-			if err != nil {
-				break
-			}
-		}
-	}()
-
-	// Read stdout in calling goroutine.
-	buf := make([]byte, chunkSize)
-	for {
-		n, readErr := stdoutPipe.Read(buf)
-		if n > 0 {
-			chunk := make([]byte, n)
-			copy(chunk, buf[:n])
-			out <- ExecChunk{Stdout: chunk}
-		}
-		if readErr != nil {
-			break
-		}
-	}
-
-	<-done // wait for stderr goroutine
-
-	exitCode := 0
-	if err := cmd.Wait(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		} else if ctx.Err() == context.DeadlineExceeded {
-			exitCode = 124
-		} else {
-			exitCode = 1
-		}
-	}
-
-	out <- ExecChunk{ExitCode: &exitCode}
-	return nil
-}
