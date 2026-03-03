@@ -10,8 +10,8 @@ type Manager struct {
 	backend Backend
 }
 
-// NewManagerFromBackend creates a Manager wrapping the given Backend.
-func NewManagerFromBackend(b Backend) *Manager {
+// NewManager creates a Manager wrapping the given Backend.
+func NewManager(b Backend) *Manager {
 	return &Manager{backend: b}
 }
 
@@ -35,9 +35,4 @@ func (m *Manager) RemoveClip(ctx context.Context, clipID string) error {
 // Close releases all resources held by the backend.
 func (m *Manager) Close(ctx context.Context) error {
 	return m.backend.Close(ctx)
-}
-
-// Backend returns the underlying Backend implementation.
-func (m *Manager) Backend() Backend {
-	return m.backend
 }

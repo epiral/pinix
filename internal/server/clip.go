@@ -11,7 +11,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"os"
 	"path/filepath"
@@ -37,20 +36,8 @@ type ClipServer struct {
 	sandbox *sandbox.Manager
 }
 
-// NewClipServer creates a ClipServer.
-// boxliteBin is the path to the boxlite CLI binary (empty = auto-detect on PATH).
-// If noSandbox is true, commands run directly via os/exec without isolation.
-func NewClipServer(store *config.Store, boxliteBin string, noSandbox bool) *ClipServer {
-	var opts []sandbox.Option
-	if noSandbox {
-		opts = append(opts, sandbox.WithNoSandbox())
-	}
-	mgr := sandbox.NewManager(boxliteBin, opts...)
-	if mgr.Degraded() {
-		log.Printf("[sandbox] degraded mode (no isolation)")
-	} else {
-		log.Printf("[sandbox] backend: %s", mgr.Backend().Name())
-	}
+// NewClipServer creates a ClipServer with the given sandbox Manager.
+func NewClipServer(store *config.Store, mgr *sandbox.Manager) *ClipServer {
 	return &ClipServer{store: store, sandbox: mgr}
 }
 

@@ -1,5 +1,5 @@
 // Role:    HTTP/Connect-RPC server startup, registers AdminService + ClipService
-// Depends: internal/auth, internal/config, pinixv1connect, connectrpc, net/http
+// Depends: internal/auth, internal/config, internal/sandbox, pinixv1connect, connectrpc, net/http
 // Exports: Run
 
 package server
@@ -16,10 +16,11 @@ import (
 	"github.com/epiral/pinix/gen/go/pinix/v1/pinixv1connect"
 	"github.com/epiral/pinix/internal/auth"
 	"github.com/epiral/pinix/internal/config"
+	"github.com/epiral/pinix/internal/sandbox"
 )
 
 // Run starts the Pinix server on the given address.
-func Run(addr string, store *config.Store, boxliteBin string, noSandbox bool) error {
+func Run(addr string, store *config.Store, mgr *sandbox.Manager) error {
 	interceptor := auth.NewInterceptor(store)
 
 	mux := http.NewServeMux()
@@ -31,7 +32,7 @@ func Run(addr string, store *config.Store, boxliteBin string, noSandbox bool) er
 	mux.Handle(adminPath, adminHandler)
 
 	clipPath, clipHandler := pinixv1connect.NewClipServiceHandler(
-		NewClipServer(store, boxliteBin, noSandbox),
+		NewClipServer(store, mgr),
 		connect.WithInterceptors(interceptor),
 	)
 	mux.Handle(clipPath, clipHandler)

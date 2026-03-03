@@ -1,5 +1,5 @@
 // Role:    `pinix serve` subcommand — starts the Pinix server
-// Depends: internal/config, internal/server, cobra
+// Depends: internal/config, internal/sandbox, internal/server, cobra
 // Exports: (registered via init)
 
 package cmd
@@ -8,6 +8,7 @@ import (
 	"log"
 
 	"github.com/epiral/pinix/internal/config"
+	"github.com/epiral/pinix/internal/sandbox"
 	"github.com/epiral/pinix/internal/server"
 	"github.com/spf13/cobra"
 )
@@ -15,7 +16,6 @@ import (
 var (
 	serveAddr  string
 	boxliteBin string
-	noSandbox  bool
 )
 
 var serveCmd = &cobra.Command{
@@ -32,13 +32,19 @@ var serveCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 
-		return server.Run(serveAddr, store, boxliteBin, noSandbox)
+		b, err := sandbox.NewBoxLiteBackend(boxliteBin)
+		if err != nil {
+			log.Fatalf("[sandbox] boxlite backend unavailable: %v", err)
+		}
+		mgr := sandbox.NewManager(b)
+		log.Printf("[sandbox] backend: %s", b.Name())
+
+		return server.Run(serveAddr, store, mgr)
 	},
 }
 
 func init() {
 	serveCmd.Flags().StringVar(&serveAddr, "addr", ":8080", "listen address")
 	serveCmd.Flags().StringVar(&boxliteBin, "boxlite", "", "path to boxlite CLI binary (empty = auto-detect on PATH)")
-	serveCmd.Flags().BoolVar(&noSandbox, "no-sandbox", false, "disable sandbox isolation, run commands directly")
 	rootCmd.AddCommand(serveCmd)
 }
