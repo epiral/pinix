@@ -218,8 +218,8 @@ Clip Dock 不直接连 Clip Instance，所有请求经过 Pinix Server，由 Ser
 - [x] Connect-RPC 服务骨架（AdminService + ClipService）
 - [x] Token 鉴权（Super / Clip Token 路由）
 - [x] ETag 协商缓存（ReadFile）
-- [ ] Clip Registry Clip 实现（[#5](https://github.com/epiral/pinix/issues/5)）
-- [ ] Clip Dock 通过 Registry 发现并添加 Bookmark
+- [x] Clip Registry Clip 实现（[#5](https://github.com/epiral/pinix/issues/5)）
+- [x] Clip Dock 通过 Registry 发现并添加 Bookmark
 - [x] 容器化执行层隔离（BoxLite Backend interface + 11/11 tests）
 
 ## Sandbox Architecture
