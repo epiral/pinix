@@ -314,10 +314,10 @@ func (b *RestBackend) createBox(ctx context.Context, cfg BoxConfig, name string)
 	}
 
 	reqBody := map[string]any{
-		"name":        name,
-		"image":       image,
-		"working_dir": "/clip",
-		"volumes":     volumes,
+		"name":         name,
+		"image":        image,
+		"volumes":      volumes,
+		"disk_size_gb": 10,
 	}
 	body, _ := json.Marshal(reqBody)
 
