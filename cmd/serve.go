@@ -14,8 +14,9 @@ import (
 )
 
 var (
-	serveAddr  string
-	boxliteBin string
+	serveAddr   string
+	boxliteBin  string
+	boxliteREST string
 )
 
 var serveCmd = &cobra.Command{
@@ -32,12 +33,25 @@ var serveCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 
-		b, err := sandbox.NewBoxLiteBackend(boxliteBin)
-		if err != nil {
-			log.Fatalf("[sandbox] boxlite backend unavailable: %v", err)
+		var backend sandbox.Backend
+		if boxliteREST != "" {
+			// REST backend — connects to a running boxlite serve
+			b := sandbox.NewRestBackend(boxliteREST)
+			if err := b.Healthy(cmd.Context()); err != nil {
+				log.Fatalf("[sandbox] boxlite REST server unreachable at %s: %v", boxliteREST, err)
+			}
+			backend = b
+		} else {
+			// CLI backend — forks boxlite exec (legacy, has lock contention issues)
+			b, err := sandbox.NewBoxLiteBackend(boxliteBin)
+			if err != nil {
+				log.Fatalf("[sandbox] boxlite backend unavailable: %v", err)
+			}
+			backend = b
 		}
-		mgr := sandbox.NewManager(b)
-		log.Printf("[sandbox] backend: %s", b.Name())
+
+		mgr := sandbox.NewManager(backend)
+		log.Printf("[sandbox] backend: %s", backend.Name())
 
 		return server.Run(serveAddr, store, mgr)
 	},
@@ -46,5 +60,6 @@ var serveCmd = &cobra.Command{
 func init() {
 	serveCmd.Flags().StringVar(&serveAddr, "addr", ":8080", "listen address")
 	serveCmd.Flags().StringVar(&boxliteBin, "boxlite", "", "path to boxlite CLI binary (empty = auto-detect on PATH)")
+	serveCmd.Flags().StringVar(&boxliteREST, "boxlite-rest", "", "boxlite REST server URL (e.g. http://localhost:8100) — replaces CLI backend")
 	rootCmd.AddCommand(serveCmd)
 }
