@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file pinix/v1/pinix.proto.
  */
 export const file_pinix_v1_pinix: GenFile = /*@__PURE__*/
-  fileDesc("ChRwaW5peC92MS9waW5peC5wcm90bxIIcGluaXgudjEiMgoRQ3JlYXRlQ2xpcFJlcXVlc3QSDAoEbmFtZRgBIAEoCRIPCgd3b3JrZGlyGAIgASgJIiUKEkNyZWF0ZUNsaXBSZXNwb25zZRIPCgdjbGlwX2lkGAEgASgJIhIKEExpc3RDbGlwc1JlcXVlc3QiNgoRTGlzdENsaXBzUmVzcG9uc2USIQoFY2xpcHMYASADKAsyEi5waW5peC52MS5DbGlwSW5mbyJaCghDbGlwSW5mbxIPCgdjbGlwX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSDAoEZGVzYxgDIAEoCRIQCghjb21tYW5kcxgEIAMoCRIPCgdoYXNfd2ViGAUgASgIIiQKEURlbGV0ZUNsaXBSZXF1ZXN0Eg8KB2NsaXBfaWQYASABKAkiFAoSRGVsZXRlQ2xpcFJlc3BvbnNlIjYKFEdlbmVyYXRlVG9rZW5SZXF1ZXN0Eg8KB2NsaXBfaWQYASABKAkSDQoFbGFiZWwYAiABKAkiMgoVR2VuZXJhdGVUb2tlblJlc3BvbnNlEgoKAmlkGAEgASgJEg0KBXRva2VuGAIgASgJIhMKEUxpc3RUb2tlbnNSZXF1ZXN0IjkKEkxpc3RUb2tlbnNSZXNwb25zZRIjCgZ0b2tlbnMYASADKAsyEy5waW5peC52MS5Ub2tlbkluZm8iWQoJVG9rZW5JbmZvEgoKAmlkGAEgASgJEg8KB2NsaXBfaWQYAiABKAkSDQoFbGFiZWwYAyABKAkSEgoKY3JlYXRlZF9hdBgEIAEoCRIMCgRoaW50GAUgASgJIiAKElJldm9rZVRva2VuUmVxdWVzdBIKCgJpZBgBIAEoCSIVChNSZXZva2VUb2tlblJlc3BvbnNlIjoKDUludm9rZVJlcXVlc3QSDAoEbmFtZRgBIAEoCRIMCgRhcmdzGAIgAygJEg0KBXN0ZGluGAMgASgJIkMKDkludm9rZVJlc3BvbnNlEg4KBnN0ZG91dBgBIAEoCRIOCgZzdGRlcnIYAiABKAkSEQoJZXhpdF9jb2RlGAMgASgFIlEKC0ludm9rZUNodW5rEhAKBnN0ZG91dBgBIAEoDEgAEhAKBnN0ZGVychgCIAEoDEgAEhMKCWV4aXRfY29kZRgDIAEoBUgAQgkKB3BheWxvYWQiVgoPUmVhZEZpbGVSZXF1ZXN0EgwKBHBhdGgYASABKAkSDgoGb2Zmc2V0GAIgASgDEg4KBmxlbmd0aBgDIAEoAxIVCg1pZl9ub25lX21hdGNoGAQgASgJIngKDVJlYWRGaWxlQ2h1bmsSDAoEZGF0YRgBIAEoDBIOCgZvZmZzZXQYAiABKAMSEQoJbWltZV90eXBlGAMgASgJEhIKCnRvdGFsX3NpemUYBCABKAMSDAoEZXRhZxgFIAEoCRIUCgxub3RfbW9kaWZpZWQYBiABKAgiEAoOR2V0SW5mb1JlcXVlc3QiVwoPR2V0SW5mb1Jlc3BvbnNlEgwKBG5hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSEAoIY29tbWFuZHMYAyADKAkSDwoHaGFzX3dlYhgEIAEoCDLNAwoMQWRtaW5TZXJ2aWNlEkcKCkNyZWF0ZUNsaXASGy5waW5peC52MS5DcmVhdGVDbGlwUmVxdWVzdBocLnBpbml4LnYxLkNyZWF0ZUNsaXBSZXNwb25zZRJECglMaXN0Q2xpcHMSGi5waW5peC52MS5MaXN0Q2xpcHNSZXF1ZXN0GhsucGluaXgudjEuTGlzdENsaXBzUmVzcG9uc2USRwoKRGVsZXRlQ2xpcBIbLnBpbml4LnYxLkRlbGV0ZUNsaXBSZXF1ZXN0GhwucGluaXgudjEuRGVsZXRlQ2xpcFJlc3BvbnNlElAKDUdlbmVyYXRlVG9rZW4SHi5waW5peC52MS5HZW5lcmF0ZVRva2VuUmVxdWVzdBofLnBpbml4LnYxLkdlbmVyYXRlVG9rZW5SZXNwb25zZRJHCgpMaXN0VG9rZW5zEhsucGluaXgudjEuTGlzdFRva2Vuc1JlcXVlc3QaHC5waW5peC52MS5MaXN0VG9rZW5zUmVzcG9uc2USSgoLUmV2b2tlVG9rZW4SHC5waW5peC52MS5SZXZva2VUb2tlblJlcXVlc3QaHS5waW5peC52MS5SZXZva2VUb2tlblJlc3BvbnNlMssBCgtDbGlwU2VydmljZRI6CgZJbnZva2USFy5waW5peC52MS5JbnZva2VSZXF1ZXN0GhUucGluaXgudjEuSW52b2tlQ2h1bmswARJACghSZWFkRmlsZRIZLnBpbml4LnYxLlJlYWRGaWxlUmVxdWVzdBoXLnBpbml4LnYxLlJlYWRGaWxlQ2h1bmswARI+CgdHZXRJbmZvEhgucGluaXgudjEuR2V0SW5mb1JlcXVlc3QaGS5waW5peC52MS5HZXRJbmZvUmVzcG9uc2VCMVovZ2l0aHViLmNvbS9lcGlyYWwvcGluaXgvZ2VuL2dvL3Bpbml4L3YxO3Bpbml4djFiBnByb3RvMw");
+  fileDesc("ChRwaW5peC92MS9waW5peC5wcm90bxIIcGluaXgudjEiMgoRQ3JlYXRlQ2xpcFJlcXVlc3QSDAoEbmFtZRgBIAEoCRIPCgd3b3JrZGlyGAIgASgJIiUKEkNyZWF0ZUNsaXBSZXNwb25zZRIPCgdjbGlwX2lkGAEgASgJIhIKEExpc3RDbGlwc1JlcXVlc3QiNgoRTGlzdENsaXBzUmVzcG9uc2USIQoFY2xpcHMYASADKAsyEi5waW5peC52MS5DbGlwSW5mbyJhCghDbGlwSW5mbxIPCgdjbGlwX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSEAoIY29tbWFuZHMYBCADKAkSDwoHaGFzX3dlYhgFIAEoCCIkChFEZWxldGVDbGlwUmVxdWVzdBIPCgdjbGlwX2lkGAEgASgJIhQKEkRlbGV0ZUNsaXBSZXNwb25zZSI2ChRHZW5lcmF0ZVRva2VuUmVxdWVzdBIPCgdjbGlwX2lkGAEgASgJEg0KBWxhYmVsGAIgASgJIjIKFUdlbmVyYXRlVG9rZW5SZXNwb25zZRIKCgJpZBgBIAEoCRINCgV0b2tlbhgCIAEoCSITChFMaXN0VG9rZW5zUmVxdWVzdCI5ChJMaXN0VG9rZW5zUmVzcG9uc2USIwoGdG9rZW5zGAEgAygLMhMucGluaXgudjEuVG9rZW5JbmZvIlkKCVRva2VuSW5mbxIKCgJpZBgBIAEoCRIPCgdjbGlwX2lkGAIgASgJEg0KBWxhYmVsGAMgASgJEhIKCmNyZWF0ZWRfYXQYBCABKAkSDAoEaGludBgFIAEoCSIgChJSZXZva2VUb2tlblJlcXVlc3QSCgoCaWQYASABKAkiFQoTUmV2b2tlVG9rZW5SZXNwb25zZSI6Cg1JbnZva2VSZXF1ZXN0EgwKBG5hbWUYASABKAkSDAoEYXJncxgCIAMoCRINCgVzdGRpbhgDIAEoCSJRCgtJbnZva2VDaHVuaxIQCgZzdGRvdXQYASABKAxIABIQCgZzdGRlcnIYAiABKAxIABITCglleGl0X2NvZGUYAyABKAVIAEIJCgdwYXlsb2FkIlYKD1JlYWRGaWxlUmVxdWVzdBIMCgRwYXRoGAEgASgJEg4KBm9mZnNldBgCIAEoAxIOCgZsZW5ndGgYAyABKAMSFQoNaWZfbm9uZV9tYXRjaBgEIAEoCSJ4Cg1SZWFkRmlsZUNodW5rEgwKBGRhdGEYASABKAwSDgoGb2Zmc2V0GAIgASgDEhEKCW1pbWVfdHlwZRgDIAEoCRISCgp0b3RhbF9zaXplGAQgASgDEgwKBGV0YWcYBSABKAkSFAoMbm90X21vZGlmaWVkGAYgASgIIhAKDkdldEluZm9SZXF1ZXN0ImgKD0dldEluZm9SZXNwb25zZRIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEhAKCGNvbW1hbmRzGAMgAygJEg8KB2hhc193ZWIYBCABKAgSDwoHdmVyc2lvbhgGIAEoCTLNAwoMQWRtaW5TZXJ2aWNlEkcKCkNyZWF0ZUNsaXASGy5waW5peC52MS5DcmVhdGVDbGlwUmVxdWVzdBocLnBpbml4LnYxLkNyZWF0ZUNsaXBSZXNwb25zZRJECglMaXN0Q2xpcHMSGi5waW5peC52MS5MaXN0Q2xpcHNSZXF1ZXN0GhsucGluaXgudjEuTGlzdENsaXBzUmVzcG9uc2USRwoKRGVsZXRlQ2xpcBIbLnBpbml4LnYxLkRlbGV0ZUNsaXBSZXF1ZXN0GhwucGluaXgudjEuRGVsZXRlQ2xpcFJlc3BvbnNlElAKDUdlbmVyYXRlVG9rZW4SHi5waW5peC52MS5HZW5lcmF0ZVRva2VuUmVxdWVzdBofLnBpbml4LnYxLkdlbmVyYXRlVG9rZW5SZXNwb25zZRJHCgpMaXN0VG9rZW5zEhsucGluaXgudjEuTGlzdFRva2Vuc1JlcXVlc3QaHC5waW5peC52MS5MaXN0VG9rZW5zUmVzcG9uc2USSgoLUmV2b2tlVG9rZW4SHC5waW5peC52MS5SZXZva2VUb2tlblJlcXVlc3QaHS5waW5peC52MS5SZXZva2VUb2tlblJlc3BvbnNlMssBCgtDbGlwU2VydmljZRI6CgZJbnZva2USFy5waW5peC52MS5JbnZva2VSZXF1ZXN0GhUucGluaXgudjEuSW52b2tlQ2h1bmswARJACghSZWFkRmlsZRIZLnBpbml4LnYxLlJlYWRGaWxlUmVxdWVzdBoXLnBpbml4LnYxLlJlYWRGaWxlQ2h1bmswARI+CgdHZXRJbmZvEhgucGluaXgudjEuR2V0SW5mb1JlcXVlc3QaGS5waW5peC52MS5HZXRJbmZvUmVzcG9uc2VCMVovZ2l0aHViLmNvbS9lcGlyYWwvcGluaXgvZ2VuL2dvL3Bpbml4L3YxO3Bpbml4djFiBnByb3RvMw");
 
 /**
  * @generated from message pinix.v1.CreateClipRequest
@@ -96,9 +96,9 @@ export type ClipInfo = Message<"pinix.v1.ClipInfo"> & {
   name: string;
 
   /**
-   * @generated from field: string desc = 3;
+   * @generated from field: string description = 3;
    */
-  desc: string;
+  description: string;
 
   /**
    * @generated from field: repeated string commands = 4;
@@ -325,33 +325,6 @@ export const InvokeRequestSchema: GenMessage<InvokeRequest> = /*@__PURE__*/
   messageDesc(file_pinix_v1_pinix, 14);
 
 /**
- * @generated from message pinix.v1.InvokeResponse
- */
-export type InvokeResponse = Message<"pinix.v1.InvokeResponse"> & {
-  /**
-   * @generated from field: string stdout = 1;
-   */
-  stdout: string;
-
-  /**
-   * @generated from field: string stderr = 2;
-   */
-  stderr: string;
-
-  /**
-   * @generated from field: int32 exit_code = 3;
-   */
-  exitCode: number;
-};
-
-/**
- * Describes the message pinix.v1.InvokeResponse.
- * Use `create(InvokeResponseSchema)` to create a new message.
- */
-export const InvokeResponseSchema: GenMessage<InvokeResponse> = /*@__PURE__*/
-  messageDesc(file_pinix_v1_pinix, 15);
-
-/**
  * @generated from message pinix.v1.InvokeChunk
  */
 export type InvokeChunk = Message<"pinix.v1.InvokeChunk"> & {
@@ -386,7 +359,7 @@ export type InvokeChunk = Message<"pinix.v1.InvokeChunk"> & {
  * Use `create(InvokeChunkSchema)` to create a new message.
  */
 export const InvokeChunkSchema: GenMessage<InvokeChunk> = /*@__PURE__*/
-  messageDesc(file_pinix_v1_pinix, 16);
+  messageDesc(file_pinix_v1_pinix, 15);
 
 /**
  * @generated from message pinix.v1.ReadFileRequest
@@ -426,7 +399,7 @@ export type ReadFileRequest = Message<"pinix.v1.ReadFileRequest"> & {
  * Use `create(ReadFileRequestSchema)` to create a new message.
  */
 export const ReadFileRequestSchema: GenMessage<ReadFileRequest> = /*@__PURE__*/
-  messageDesc(file_pinix_v1_pinix, 17);
+  messageDesc(file_pinix_v1_pinix, 16);
 
 /**
  * @generated from message pinix.v1.ReadFileChunk
@@ -468,7 +441,7 @@ export type ReadFileChunk = Message<"pinix.v1.ReadFileChunk"> & {
  * Use `create(ReadFileChunkSchema)` to create a new message.
  */
 export const ReadFileChunkSchema: GenMessage<ReadFileChunk> = /*@__PURE__*/
-  messageDesc(file_pinix_v1_pinix, 18);
+  messageDesc(file_pinix_v1_pinix, 17);
 
 /**
  * @generated from message pinix.v1.GetInfoRequest
@@ -481,7 +454,7 @@ export type GetInfoRequest = Message<"pinix.v1.GetInfoRequest"> & {
  * Use `create(GetInfoRequestSchema)` to create a new message.
  */
 export const GetInfoRequestSchema: GenMessage<GetInfoRequest> = /*@__PURE__*/
-  messageDesc(file_pinix_v1_pinix, 19);
+  messageDesc(file_pinix_v1_pinix, 18);
 
 /**
  * @generated from message pinix.v1.GetInfoResponse
@@ -506,6 +479,11 @@ export type GetInfoResponse = Message<"pinix.v1.GetInfoResponse"> & {
    * @generated from field: bool has_web = 4;
    */
   hasWeb: boolean;
+
+  /**
+   * @generated from field: string version = 6;
+   */
+  version: string;
 };
 
 /**
@@ -513,7 +491,7 @@ export type GetInfoResponse = Message<"pinix.v1.GetInfoResponse"> & {
  * Use `create(GetInfoResponseSchema)` to create a new message.
  */
 export const GetInfoResponseSchema: GenMessage<GetInfoResponse> = /*@__PURE__*/
-  messageDesc(file_pinix_v1_pinix, 20);
+  messageDesc(file_pinix_v1_pinix, 19);
 
 /**
  * ─── AdminService ─────────────────────────────────────────────
