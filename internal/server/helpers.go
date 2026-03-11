@@ -1,15 +1,17 @@
 // Role:    Filesystem helpers for scanning clip workdirs
-// Depends: os, path/filepath, gopkg.in/yaml.v3
-// Exports: readDirNames, fileExists, readClipDesc
+// Depends: os, path/filepath, gopkg.in/yaml.v3, internal/scheduler
+// Exports: readDirNames, fileExists, readClipDesc, readClipYAMLSchedules
 
 package server
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/epiral/pinix/internal/scheduler"
 	"gopkg.in/yaml.v3"
 )
 
@@ -58,6 +60,33 @@ func readClipYAMLDesc(workdir string) string {
 		return m.Description
 	}
 	return ""
+}
+
+func readClipYAMLSchedules(workdir string) ([]scheduler.ScheduleEntry, error) {
+	data, err := os.ReadFile(filepath.Join(workdir, "clip.yaml"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read clip.yaml: %w", err)
+	}
+
+	var m struct {
+		Schedules []scheduler.ScheduleEntry `yaml:"schedules"`
+	}
+	if err := yaml.Unmarshal(data, &m); err != nil {
+		return nil, fmt.Errorf("parse clip.yaml: %w", err)
+	}
+	out := make([]scheduler.ScheduleEntry, 0, len(m.Schedules))
+	for _, s := range m.Schedules {
+		command := strings.TrimSpace(s.Command)
+		cron := strings.TrimSpace(s.Cron)
+		if command == "" || cron == "" {
+			continue
+		}
+		out = append(out, scheduler.ScheduleEntry{Command: command, Cron: cron})
+	}
+	return out, nil
 }
 
 func readFirstLine(path string) string {

@@ -1,13 +1,18 @@
 // Role:    HTTP/Connect-RPC server startup, registers AdminService + ClipService
-// Depends: internal/auth, internal/config, internal/sandbox, pinixv1connect, connectrpc, net/http
+// Depends: internal/auth, internal/config, internal/sandbox, internal/scheduler, pinixv1connect, connectrpc, net/http
 // Exports: Run
 
 package server
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	connect "connectrpc.com/connect"
 	"golang.org/x/net/http2"
@@ -17,11 +22,29 @@ import (
 	"github.com/epiral/pinix/internal/auth"
 	"github.com/epiral/pinix/internal/config"
 	"github.com/epiral/pinix/internal/sandbox"
+	"github.com/epiral/pinix/internal/scheduler"
 )
 
 // Run starts the Pinix server on the given address.
 func Run(addr string, store *config.Store, mgr *sandbox.Manager) error {
+	defer func() {
+		if err := mgr.Close(context.Background()); err != nil {
+			log.Printf("[sandbox] close error: %v", err)
+		}
+	}()
+
 	interceptor := auth.NewInterceptor(store)
+	sched := scheduler.New(mgr, store)
+	for _, clip := range store.GetClips() {
+		schedules, err := readClipYAMLSchedules(clip.Workdir)
+		if err != nil {
+			log.Printf("[scheduler] skip clip=%s read schedules failed: %v", clip.ID, err)
+			continue
+		}
+		sched.RegisterClip(clip, schedules)
+	}
+	sched.Start()
+	defer sched.Stop()
 
 	mux := http.NewServeMux()
 
@@ -37,9 +60,28 @@ func Run(addr string, store *config.Store, mgr *sandbox.Manager) error {
 	)
 	mux.Handle(clipPath, clipHandler)
 
-	log.Printf("pinix listening on %s", addr)
-	if err := http.ListenAndServe(addr, h2c.NewHandler(mux, &http2.Server{})); err != nil {
-		return fmt.Errorf("listen: %w", err)
+	httpServer := &http.Server{Addr: addr, Handler: h2c.NewHandler(mux, &http2.Server{})}
+	errCh := make(chan error, 1)
+	go func() {
+		log.Printf("pinix listening on %s", addr)
+		errCh <- httpServer.ListenAndServe()
+	}()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil && err != http.ErrServerClosed {
+			return fmt.Errorf("shutdown: %w", err)
+		}
+		return nil
+	case err := <-errCh:
+		if err != nil && err != http.ErrServerClosed {
+			return fmt.Errorf("listen: %w", err)
+		}
+		return nil
 	}
-	return nil
 }
