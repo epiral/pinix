@@ -38,6 +38,7 @@ func (c *LocalClip) GetInfo(_ context.Context) (*clip.Info, error) {
 		Commands:    commands,
 		HasWeb:      fileExists(c.entry.Workdir, "web", "index.html"),
 		Version:     readClipYAMLVersion(c.entry.Workdir),
+		Online:      true,
 	}, nil
 }
 

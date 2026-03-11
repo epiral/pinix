@@ -69,7 +69,7 @@ func (h *AdminHandler) ListClips(ctx context.Context, _ *connect.Request[v1.List
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("get clip info %s: %w", c.ID(), err))
 		}
-		clips = append(clips, &v1.ClipInfo{ClipId: c.ID(), Name: info.Name, Description: info.Description, Commands: info.Commands, HasWeb: info.HasWeb})
+		clips = append(clips, &v1.ClipInfo{ClipId: c.ID(), Name: info.Name, Description: info.Description, Commands: info.Commands, HasWeb: info.HasWeb, Online: info.Online})
 	}
 	return connect.NewResponse(&v1.ListClipsResponse{Clips: clips}), nil
 }

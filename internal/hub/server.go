@@ -37,8 +37,12 @@ func Run(addr string, store *config.Store, mgr *sandbox.Manager) error {
 
 	registry := clipiface.NewRegistry()
 	for _, entry := range store.GetClips() {
+		if entry.Workdir == "" {
+			continue // edge clip — handled by RegisterOfflinePlaceholders
+		}
 		registry.Register(worker.NewLocalClip(entry, mgr))
 	}
+	edge.RegisterOfflinePlaceholders(store, registry)
 
 	interceptor := auth.NewInterceptor(store)
 	sched := scheduler.New(mgr, store)

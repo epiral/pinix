@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync"
 
 	v1 "github.com/epiral/pinix/gen/go/pinix/v1"
 	clipiface "github.com/epiral/pinix/internal/clip"
@@ -13,30 +14,72 @@ var _ clipiface.Clip = (*EdgeClip)(nil)
 
 type EdgeClip struct {
 	clipID   string
+	token    string
+	mu       sync.RWMutex
 	manifest *v1.EdgeManifest
 	session  *Session
-	token    string
+}
+
+func NewEdgeClip(clipID, token string, manifest *v1.EdgeManifest, session *Session) *EdgeClip {
+	return &EdgeClip{clipID: clipID, token: token, manifest: manifest, session: session}
+}
+
+// NewOfflinePlaceholder creates an EdgeClip with no session (offline).
+func NewOfflinePlaceholder(clipID, token, name string) *EdgeClip {
+	return &EdgeClip{clipID: clipID, token: token}
 }
 
 func (e *EdgeClip) ID() string { return e.clipID }
 
-func (e *EdgeClip) GetInfo(_ context.Context) (*clipiface.Info, error) {
-	commands := make([]string, 0, len(e.manifest.GetCommands()))
-	for _, cmd := range e.manifest.GetCommands() {
-		commands = append(commands, cmd.GetName())
+func (e *EdgeClip) SetSession(s *Session, manifest *v1.EdgeManifest) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.session = s
+	if manifest != nil {
+		e.manifest = manifest
 	}
-	return &clipiface.Info{
-		Name:        e.manifest.GetName(),
-		Description: e.manifest.GetDescription(),
-		Commands:    commands,
-		HasWeb:      e.manifest.GetHasWeb(),
-	}, nil
+}
+
+func (e *EdgeClip) ClearSession() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.session = nil
+}
+
+func (e *EdgeClip) IsOnline() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.session != nil
+}
+
+func (e *EdgeClip) GetInfo(_ context.Context) (*clipiface.Info, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	info := &clipiface.Info{
+		Name:   e.clipID,
+		Online: e.session != nil,
+	}
+	if e.manifest != nil {
+		info.Name = e.manifest.GetName()
+		info.Description = e.manifest.GetDescription()
+		info.HasWeb = e.manifest.GetHasWeb()
+		for _, cmd := range e.manifest.GetCommands() {
+			info.Commands = append(info.Commands, cmd.GetName())
+		}
+	}
+	return info, nil
 }
 
 func (e *EdgeClip) Invoke(ctx context.Context, cmd string, args []string, stdin io.Reader, out chan<- clipiface.ExecEvent) error {
-	if e.session == nil {
-		return fmt.Errorf("edge clip unavailable")
+	e.mu.RLock()
+	sess := e.session
+	e.mu.RUnlock()
+
+	if sess == nil {
+		return fmt.Errorf("device offline")
 	}
+
 	var stdinStr string
 	if stdin != nil {
 		input, err := io.ReadAll(stdin)
@@ -49,7 +92,7 @@ func (e *EdgeClip) Invoke(ctx context.Context, cmd string, args []string, stdin 
 	if err != nil {
 		return fmt.Errorf("generate request id: %w", err)
 	}
-	respCh, err := e.session.SendRequest(ctx, &v1.EdgeRequest{
+	respCh, err := sess.SendRequest(ctx, &v1.EdgeRequest{
 		RequestId: requestID,
 		Body:      &v1.EdgeRequest_Invoke{Invoke: &v1.InvokeRequest{Name: cmd, Args: args, Stdin: stdinStr}},
 	})
@@ -59,13 +102,13 @@ func (e *EdgeClip) Invoke(ctx context.Context, cmd string, args []string, stdin 
 	for {
 		select {
 		case <-ctx.Done():
-			_ = e.session.Send(&v1.EdgeDownstream{Msg: &v1.EdgeDownstream_Request{
+			_ = sess.Send(&v1.EdgeDownstream{Msg: &v1.EdgeDownstream_Request{
 				Request: &v1.EdgeRequest{RequestId: requestID, Body: &v1.EdgeRequest_Cancel{Cancel: &v1.EdgeCancel{}}},
 			}})
 			return ctx.Err()
 		case resp, ok := <-respCh:
 			if !ok {
-				return fmt.Errorf("edge session closed")
+				return fmt.Errorf("device disconnected")
 			}
 			switch resp.GetBody().(type) {
 			case *v1.EdgeResponse_InvokeChunk:
@@ -80,7 +123,7 @@ func (e *EdgeClip) Invoke(ctx context.Context, cmd string, args []string, stdin 
 					return nil
 				}
 			case *v1.EdgeResponse_Error:
-				return fmt.Errorf("edge invoke error: %s", resp.GetError().GetMessage())
+				return fmt.Errorf("edge error: %s", resp.GetError().GetMessage())
 			case *v1.EdgeResponse_Complete:
 				return nil
 			}
@@ -89,14 +132,19 @@ func (e *EdgeClip) Invoke(ctx context.Context, cmd string, args []string, stdin 
 }
 
 func (e *EdgeClip) ReadFile(ctx context.Context, path string, offset, length int64, out chan<- clipiface.FileChunk) error {
-	if e.session == nil {
-		return fmt.Errorf("edge clip unavailable")
+	e.mu.RLock()
+	sess := e.session
+	e.mu.RUnlock()
+
+	if sess == nil {
+		return fmt.Errorf("device offline")
 	}
+
 	requestID, err := randomHex(8)
 	if err != nil {
 		return fmt.Errorf("generate request id: %w", err)
 	}
-	respCh, err := e.session.SendRequest(ctx, &v1.EdgeRequest{
+	respCh, err := sess.SendRequest(ctx, &v1.EdgeRequest{
 		RequestId: requestID,
 		Body:      &v1.EdgeRequest_ReadFile{ReadFile: &v1.ReadFileRequest{Path: path, Offset: offset, Length: length}},
 	})
@@ -106,20 +154,17 @@ func (e *EdgeClip) ReadFile(ctx context.Context, path string, offset, length int
 	for {
 		select {
 		case <-ctx.Done():
-			_ = e.session.Send(&v1.EdgeDownstream{Msg: &v1.EdgeDownstream_Request{
-				Request: &v1.EdgeRequest{RequestId: requestID, Body: &v1.EdgeRequest_Cancel{Cancel: &v1.EdgeCancel{}}},
-			}})
 			return ctx.Err()
 		case resp, ok := <-respCh:
 			if !ok {
-				return fmt.Errorf("edge session closed")
+				return fmt.Errorf("device disconnected")
 			}
 			switch resp.GetBody().(type) {
 			case *v1.EdgeResponse_ReadChunk:
 				chunk := resp.GetReadChunk()
 				out <- clipiface.FileChunk{Data: chunk.GetData(), Offset: chunk.GetOffset(), MimeType: chunk.GetMimeType(), TotalSize: chunk.GetTotalSize(), ETag: chunk.GetEtag(), NotModified: chunk.GetNotModified()}
 			case *v1.EdgeResponse_Error:
-				return fmt.Errorf("edge read error: %s", resp.GetError().GetMessage())
+				return fmt.Errorf("edge error: %s", resp.GetError().GetMessage())
 			case *v1.EdgeResponse_Complete:
 				return nil
 			}

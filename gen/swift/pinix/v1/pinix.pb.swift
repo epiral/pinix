@@ -84,6 +84,8 @@ struct Pinix_V1_ClipInfo: Sendable {
 
   var hasWeb_p: Bool = false
 
+  var online: Bool = false
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -810,7 +812,7 @@ extension Pinix_V1_ListClipsResponse: SwiftProtobuf.Message, SwiftProtobuf._Mess
 
 extension Pinix_V1_ClipInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ClipInfo"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}clip_id\0\u{1}name\0\u{1}description\0\u{1}commands\0\u{3}has_web\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}clip_id\0\u{1}name\0\u{1}description\0\u{1}commands\0\u{3}has_web\0\u{1}online\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -823,6 +825,7 @@ extension Pinix_V1_ClipInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplem
       case 3: try { try decoder.decodeSingularStringField(value: &self.description_p) }()
       case 4: try { try decoder.decodeRepeatedStringField(value: &self.commands) }()
       case 5: try { try decoder.decodeSingularBoolField(value: &self.hasWeb_p) }()
+      case 6: try { try decoder.decodeSingularBoolField(value: &self.online) }()
       default: break
       }
     }
@@ -844,6 +847,9 @@ extension Pinix_V1_ClipInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplem
     if self.hasWeb_p != false {
       try visitor.visitSingularBoolField(value: self.hasWeb_p, fieldNumber: 5)
     }
+    if self.online != false {
+      try visitor.visitSingularBoolField(value: self.online, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -853,6 +859,7 @@ extension Pinix_V1_ClipInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplem
     if lhs.description_p != rhs.description_p {return false}
     if lhs.commands != rhs.commands {return false}
     if lhs.hasWeb_p != rhs.hasWeb_p {return false}
+    if lhs.online != rhs.online {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
