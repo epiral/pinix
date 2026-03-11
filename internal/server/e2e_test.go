@@ -103,7 +103,7 @@ tokens: []
 	interceptor := auth.NewInterceptor(store)
 	mux := http.NewServeMux()
 	adminPath, adminHandler := pinixv1connect.NewAdminServiceHandler(
-		server.NewAdminServer(store),
+		server.NewAdminServer(store, mgr),
 		connect.WithInterceptors(interceptor),
 	)
 	mux.Handle(adminPath, adminHandler)

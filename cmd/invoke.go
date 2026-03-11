@@ -30,8 +30,8 @@ var invokeCmd = &cobra.Command{
 
 		// Read stdin if piped.
 		var stdin string
-		stat, _ := os.Stdin.Stat()
-		if (stat.Mode() & os.ModeCharDevice) == 0 {
+		stat, err := os.Stdin.Stat()
+		if err == nil && (stat.Mode()&os.ModeCharDevice) == 0 {
 			data, err := io.ReadAll(os.Stdin)
 			if err != nil {
 				return fmt.Errorf("read stdin: %w", err)

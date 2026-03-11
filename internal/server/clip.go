@@ -115,12 +115,15 @@ func (s *ClipServer) invokeInSandbox(
 		stdinReader = strings.NewReader(stdin)
 	}
 
+	execCtx, execCancel := context.WithCancel(ctx)
+	defer execCancel()
+
 	out := make(chan sandbox.ExecChunk, 32)
 	execErr := make(chan error, 1)
 
 	go func() {
 		defer close(out)
-		execErr <- s.sandbox.ExecStream(ctx, cfg, name, args, stdinReader, out)
+		execErr <- s.sandbox.ExecStream(execCtx, cfg, name, args, stdinReader, out)
 	}()
 
 	exitCode := int32(0)
@@ -171,9 +174,34 @@ func (s *ClipServer) ReadFile(
 		return err
 	}
 
-	absPath := filepath.Join(workdir, relPath)
+	resolvedWorkdir, err := filepath.EvalSymlinks(workdir)
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("resolve workdir: %w", err))
+	}
+	resolvedWorkdir, err = filepath.Abs(resolvedWorkdir)
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("resolve workdir abs path: %w", err))
+	}
 
-	f, err := os.Open(absPath)
+	absPath := filepath.Join(workdir, relPath)
+	resolvedPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return connect.NewError(connect.CodeNotFound, fmt.Errorf("file not found: %s", relPath))
+	}
+	resolvedPath, err = filepath.Abs(resolvedPath)
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("resolve file abs path: %w", err))
+	}
+
+	relResolvedPath, err := filepath.Rel(resolvedWorkdir, resolvedPath)
+	if err != nil {
+		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("path escapes workdir"))
+	}
+	if relResolvedPath == ".." || strings.HasPrefix(relResolvedPath, ".."+string(os.PathSeparator)) {
+		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("path escapes workdir"))
+	}
+
+	f, err := os.Open(resolvedPath)
 	if err != nil {
 		return connect.NewError(connect.CodeNotFound, fmt.Errorf("file not found: %s", relPath))
 	}
@@ -205,6 +233,15 @@ func (s *ClipServer) ReadFile(
 
 	offset := req.Msg.GetOffset()
 	length := req.Msg.GetLength()
+	if offset < 0 {
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("offset must be >= 0"))
+	}
+	if length < 0 {
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("length must be >= 0"))
+	}
+	if offset > totalSize {
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("offset must be <= file size"))
+	}
 
 	if offset > 0 {
 		if _, err := f.Seek(offset, io.SeekStart); err != nil {

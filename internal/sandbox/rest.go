@@ -25,6 +25,7 @@ type RestBackend struct {
 	client  *http.Client
 	mu      sync.Mutex
 	boxes   map[string]string // clipID → boxID
+	onces   sync.Map          // clipID -> *sync.Once
 }
 
 // NewRestBackend creates a REST-backed sandbox. baseURL is e.g. "http://localhost:8100".
@@ -235,30 +236,52 @@ func (b *RestBackend) ensureBox(ctx context.Context, cfg BoxConfig) (string, err
 	}
 	b.mu.Unlock()
 
-	// Check if box already exists via list
-	boxID, err := b.findBox(ctx, boxName)
-	if err == nil && boxID != "" {
+	onceValue, _ := b.onces.LoadOrStore(cfg.ClipID, &sync.Once{})
+	once := onceValue.(*sync.Once)
+	var ensureErr error
+
+	once.Do(func() {
+		// Check if box already exists via list
+		boxID, err := b.findBox(ctx, boxName)
+		if err == nil && boxID != "" {
+			b.mu.Lock()
+			b.boxes[cfg.ClipID] = boxID
+			b.mu.Unlock()
+			return
+		}
+
+		// Create new box
+		boxID, err = b.createBox(ctx, cfg, boxName)
+		if err != nil {
+			ensureErr = err
+			return
+		}
+
+		// Start it
+		if err := b.startBox(ctx, boxID); err != nil {
+			ensureErr = err
+			return
+		}
+
 		b.mu.Lock()
 		b.boxes[cfg.ClipID] = boxID
 		b.mu.Unlock()
-		return boxID, nil
-	}
+	})
 
-	// Create new box
-	boxID, err = b.createBox(ctx, cfg, boxName)
-	if err != nil {
-		return "", err
-	}
-
-	// Start it
-	if err := b.startBox(ctx, boxID); err != nil {
-		return "", err
+	if ensureErr != nil {
+		b.onces.Delete(cfg.ClipID)
+		return "", ensureErr
 	}
 
 	b.mu.Lock()
-	b.boxes[cfg.ClipID] = boxID
+	boxID, ok := b.boxes[cfg.ClipID]
 	b.mu.Unlock()
-	return boxID, nil
+	if ok {
+		return boxID, nil
+	}
+
+	b.onces.Delete(cfg.ClipID)
+	return "", fmt.Errorf("sandbox/rest: ensure box failed for clip %s", cfg.ClipID)
 }
 
 func (b *RestBackend) findBox(ctx context.Context, name string) (string, error) {
@@ -367,6 +390,8 @@ func (b *RestBackend) startBox(ctx context.Context, boxID string) error {
 }
 
 func (b *RestBackend) RemoveClip(ctx context.Context, clipID string) error {
+	b.onces.Delete(clipID)
+
 	b.mu.Lock()
 	boxID, ok := b.boxes[clipID]
 	if ok {
