@@ -78,7 +78,7 @@ func (b *RestBackend) ExecStream(ctx context.Context, cfg BoxConfig, cmd string,
 		execArgs = []string{}
 	}
 	execReq := map[string]any{
-		"command": "/clip/commands/" + cmd,
+		"command": clipCommandPath(cmd),
 		"args":    execArgs,
 		"tty":     false,
 	}
@@ -227,7 +227,7 @@ func decodeSSEData(data string) ([]byte, error) {
 
 // ensureBox creates or finds the box for a clip.
 func (b *RestBackend) ensureBox(ctx context.Context, cfg BoxConfig) (string, error) {
-	boxName := "pinix-clip-" + cfg.ClipID
+	boxName := clipBoxName(cfg.ClipID)
 
 	b.mu.Lock()
 	if id, ok := b.boxes[cfg.ClipID]; ok {
@@ -316,25 +316,8 @@ func (b *RestBackend) findBox(ctx context.Context, name string) (string, error) 
 }
 
 func (b *RestBackend) createBox(ctx context.Context, cfg BoxConfig, name string) (string, error) {
-	image := cfg.Image
-	if image == "" {
-		image = "debian:12-slim"
-	}
-
-	// Build volumes list
-	volumes := []map[string]string{
-		{"host_path": cfg.Workdir, "guest_path": "/clip"},
-	}
-	for _, m := range cfg.Mounts {
-		vol := map[string]string{
-			"host_path":  m.Source,
-			"guest_path": m.Target,
-		}
-		if m.ReadOnly {
-			vol["read_only"] = "true"
-		}
-		volumes = append(volumes, vol)
-	}
+	image := resolveBoxImage(cfg.Image)
+	volumes := buildRESTVolumes(cfg)
 
 	reqBody := map[string]any{
 		"name":         name,

@@ -35,14 +35,7 @@ func Run(addr string, store *config.Store, mgr *sandbox.Manager) error {
 
 	interceptor := auth.NewInterceptor(store)
 	sched := scheduler.New(mgr, store)
-	for _, clip := range store.GetClips() {
-		schedules, err := readClipYAMLSchedules(clip.Workdir)
-		if err != nil {
-			log.Printf("[scheduler] skip clip=%s read schedules failed: %v", clip.ID, err)
-			continue
-		}
-		sched.RegisterClip(clip, schedules)
-	}
+	registerExistingSchedules(store, sched)
 	sched.Start()
 	defer sched.Stop()
 
@@ -88,5 +81,16 @@ func Run(addr string, store *config.Store, mgr *sandbox.Manager) error {
 			return fmt.Errorf("listen: %w", err)
 		}
 		return nil
+	}
+}
+
+func registerExistingSchedules(store *config.Store, sched *scheduler.Scheduler) {
+	for _, clip := range store.GetClips() {
+		schedules, err := readClipYAMLSchedules(clip.Workdir)
+		if err != nil {
+			log.Printf("[scheduler] skip clip=%s read schedules failed: %v", clip.ID, err)
+			continue
+		}
+		sched.RegisterClip(clip, schedules)
 	}
 }

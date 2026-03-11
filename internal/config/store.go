@@ -18,21 +18,21 @@ import (
 
 // MountEntry describes a host→container bind mount for a Clip's sandbox.
 type MountEntry struct {
-	Source   string `yaml:"source"`   // host path
-	Target   string `yaml:"target"`   // path inside the box
+	Source   string `yaml:"source"` // host path
+	Target   string `yaml:"target"` // path inside the box
 	ReadOnly bool   `yaml:"read_only,omitempty"`
 }
 
 // ClipEntry represents a registered clip with its working directory.
 type ClipEntry struct {
-	ID      string       `yaml:"id"`
-	Name    string       `yaml:"name"`
-	Workdir string       `yaml:"workdir"`
+	ID      string `yaml:"id"`
+	Name    string `yaml:"name"`
+	Workdir string `yaml:"workdir"`
 	// Mounts declares additional bind mounts for BoxLite sandbox execution.
 	// The Workdir is always mounted to /clip automatically.
 	Mounts []MountEntry `yaml:"mounts,omitempty"`
 	// Image overrides the default OCI image for this Clip's sandbox.
-	Image  string       `yaml:"image,omitempty"`
+	Image string `yaml:"image,omitempty"`
 }
 
 // TokenEntry represents a clip-scoped access token.
@@ -56,6 +56,13 @@ type Store struct {
 	mu   sync.RWMutex
 	cfg  *Config
 	path string
+}
+
+func (s *Store) mutate(fn func(cfg *Config) error) error {
+	if err := fn(s.cfg); err != nil {
+		return err
+	}
+	return s.save()
 }
 
 // DefaultPath returns ~/.config/pinix/config.yaml.
@@ -119,8 +126,10 @@ func (s *Store) AddClip(name, workdir string) (ClipEntry, error) {
 	}
 
 	entry := ClipEntry{ID: id, Name: name, Workdir: workdir}
-	s.cfg.Clips = append(s.cfg.Clips, entry)
-	if err := s.save(); err != nil {
+	if err := s.mutate(func(cfg *Config) error {
+		cfg.Clips = append(cfg.Clips, entry)
+		return nil
+	}); err != nil {
 		return ClipEntry{}, err
 	}
 	return entry, nil
@@ -178,8 +187,13 @@ func (s *Store) DeleteClip(id string) (bool, error) {
 		return false, nil
 	}
 
-	s.cfg.Clips = append(s.cfg.Clips[:idx], s.cfg.Clips[idx+1:]...)
-	return true, s.save()
+	if err := s.mutate(func(cfg *Config) error {
+		cfg.Clips = append(cfg.Clips[:idx], cfg.Clips[idx+1:]...)
+		return nil
+	}); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // --- Token operations ---
@@ -206,8 +220,10 @@ func (s *Store) AddToken(clipID, label string) (TokenEntry, error) {
 		Label:     label,
 		CreatedAt: time.Now().Format(time.RFC3339),
 	}
-	s.cfg.Tokens = append(s.cfg.Tokens, entry)
-	if err := s.save(); err != nil {
+	if err := s.mutate(func(cfg *Config) error {
+		cfg.Tokens = append(cfg.Tokens, entry)
+		return nil
+	}); err != nil {
 		return TokenEntry{}, err
 	}
 	return entry, nil
@@ -252,8 +268,13 @@ func (s *Store) RevokeTokenByID(id string) (bool, error) {
 		return false, nil
 	}
 
-	s.cfg.Tokens = append(s.cfg.Tokens[:idx], s.cfg.Tokens[idx+1:]...)
-	return true, s.save()
+	if err := s.mutate(func(cfg *Config) error {
+		cfg.Tokens = append(cfg.Tokens[:idx], cfg.Tokens[idx+1:]...)
+		return nil
+	}); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // RevokeTokensByClipID removes all tokens associated with a clip.
@@ -274,8 +295,13 @@ func (s *Store) RevokeTokensByClipID(clipID string) (int, error) {
 	if count == 0 {
 		return 0, nil
 	}
-	s.cfg.Tokens = kept
-	return count, s.save()
+	if err := s.mutate(func(cfg *Config) error {
+		cfg.Tokens = kept
+		return nil
+	}); err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 func randomHex(n int) (string, error) {

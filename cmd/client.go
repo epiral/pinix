@@ -13,6 +13,8 @@ import (
 	"github.com/epiral/pinix/internal/config"
 )
 
+const defaultServerURL = "http://localhost:8080"
+
 // bearerTransport injects an Authorization header into every request.
 type bearerTransport struct {
 	token string
@@ -29,7 +31,7 @@ func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 // If serverURL and token are empty, reads from local config.
 func newAdminClient(serverURL, token string) (pinixv1connect.AdminServiceClient, error) {
 	if serverURL == "" {
-		serverURL = "http://localhost:8080"
+		serverURL = defaultServerURL
 	}
 	if token == "" {
 		t, err := loadSuperToken()
@@ -46,13 +48,20 @@ func newAdminClient(serverURL, token string) (pinixv1connect.AdminServiceClient,
 
 // newClipClient creates a ClipService client with the given server URL and token.
 func newClipClient(serverURL, token string) (pinixv1connect.ClipServiceClient, error) {
-	if serverURL == "" || token == "" {
-		return nil, fmt.Errorf("--server and --token are required")
+	if err := requiredServerToken(serverURL, token); err != nil {
+		return nil, err
 	}
 	httpClient := &http.Client{
 		Transport: &bearerTransport{token: token, base: http.DefaultTransport},
 	}
 	return pinixv1connect.NewClipServiceClient(httpClient, serverURL, connect.WithGRPC()), nil
+}
+
+func requiredServerToken(serverURL, token string) error {
+	if serverURL == "" || token == "" {
+		return fmt.Errorf("--server and --token are required")
+	}
+	return nil
 }
 
 func loadSuperToken() (string, error) {

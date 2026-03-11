@@ -68,10 +68,14 @@ var invokeCmd = &cobra.Command{
 		}
 
 		if len(stdoutBuf) > 0 {
-			os.Stdout.Write(stdoutBuf)
+			if _, err := os.Stdout.Write(stdoutBuf); err != nil {
+				return fmt.Errorf("write stdout: %w", err)
+			}
 		}
 		if len(stderrBuf) > 0 {
-			os.Stderr.Write(stderrBuf)
+			if _, err := os.Stderr.Write(stderrBuf); err != nil {
+				return fmt.Errorf("write stderr: %w", err)
+			}
 		}
 		if exitCode != 0 {
 			os.Exit(int(exitCode))

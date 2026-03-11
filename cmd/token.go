@@ -89,7 +89,7 @@ var tokenRevokeCmd = &cobra.Command{
 }
 
 func init() {
-	tokenCmd.PersistentFlags().StringVar(&tokenServerURL, "server", "", "server URL (default: http://localhost:8080)")
+	tokenCmd.PersistentFlags().StringVar(&tokenServerURL, "server", "", "server URL (default: "+defaultServerURL+")")
 	tokenCmd.PersistentFlags().StringVar(&tokenAuthToken, "token", "", "super token (default: from config)")
 
 	tokenGenerateCmd.Flags().StringVar(&tokenGenClipID, "clip", "", "clip ID (required)")

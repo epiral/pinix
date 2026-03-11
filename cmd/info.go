@@ -34,10 +34,11 @@ var infoCmd = &cobra.Command{
 		fmt.Printf("description: %s\n", resp.Msg.GetDescription())
 		fmt.Printf("has_web:     %v\n", resp.Msg.GetHasWeb())
 		fmt.Println("commands:")
-		for _, c := range resp.Msg.GetCommands() {
+		commands := resp.Msg.GetCommands()
+		for _, c := range commands {
 			fmt.Printf("  - %s\n", c)
 		}
-		if len(resp.Msg.GetCommands()) == 0 {
+		if len(commands) == 0 {
 			fmt.Println("  (none)")
 		}
 		return nil
