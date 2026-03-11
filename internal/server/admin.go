@@ -1,35 +1,57 @@
 // Role:    AdminService implementation (Clip + Token CRUD)
-// Depends: internal/config, pinixv1connect, connectrpc
+// Depends: internal/config, internal/sandbox, pinixv1connect, connectrpc
 // Exports: AdminServer, NewAdminServer
 
 package server
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"strings"
 
 	connect "connectrpc.com/connect"
 	v1 "github.com/epiral/pinix/gen/go/pinix/v1"
 	"github.com/epiral/pinix/gen/go/pinix/v1/pinixv1connect"
 	"github.com/epiral/pinix/internal/config"
+	"github.com/epiral/pinix/internal/sandbox"
 )
 
 var _ pinixv1connect.AdminServiceHandler = (*AdminServer)(nil)
 
 // AdminServer implements AdminServiceHandler backed by a config Store.
 type AdminServer struct {
-	store *config.Store
+	store   *config.Store
+	sandbox *sandbox.Manager
 }
 
-// NewAdminServer creates an AdminServer with the given Store.
-func NewAdminServer(store *config.Store) *AdminServer {
-	return &AdminServer{store: store}
+// NewAdminServer creates an AdminServer with the given Store and sandbox Manager.
+func NewAdminServer(store *config.Store, mgr *sandbox.Manager) *AdminServer {
+	return &AdminServer{store: store, sandbox: mgr}
 }
 
 func (s *AdminServer) CreateClip(
-	_ context.Context,
+	ctx context.Context,
 	req *connect.Request[v1.CreateClipRequest],
 ) (*connect.Response[v1.CreateClipResponse], error) {
-	entry, err := s.store.AddClip(req.Msg.GetName(), req.Msg.GetWorkdir())
+	name := strings.TrimSpace(req.Msg.GetName())
+	if name == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("name is required"))
+	}
+
+	workdir := strings.TrimSpace(req.Msg.GetWorkdir())
+	if workdir == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("workdir is required"))
+	}
+
+	if _, err := os.Stat(workdir); err != nil {
+		if os.IsNotExist(err) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("workdir does not exist: %s", workdir))
+		}
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid workdir: %w", err))
+	}
+
+	entry, err := s.store.AddClip(name, workdir)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -56,15 +78,24 @@ func (s *AdminServer) ListClips(
 }
 
 func (s *AdminServer) DeleteClip(
-	_ context.Context,
+	ctx context.Context,
 	req *connect.Request[v1.DeleteClipRequest],
 ) (*connect.Response[v1.DeleteClipResponse], error) {
-	found, err := s.store.DeleteClip(req.Msg.GetClipId())
+	clipID := req.Msg.GetClipId()
+	found, err := s.store.DeleteClip(clipID)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if !found {
 		return nil, connect.NewError(connect.CodeNotFound, nil)
+	}
+	if _, err := s.store.RevokeTokensByClipID(clipID); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if s.sandbox != nil {
+		if err := s.sandbox.RemoveClip(ctx, clipID); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
 	}
 	return connect.NewResponse(&v1.DeleteClipResponse{}), nil
 }

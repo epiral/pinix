@@ -49,7 +49,7 @@ func Run(addr string, store *config.Store, mgr *sandbox.Manager) error {
 	mux := http.NewServeMux()
 
 	adminPath, adminHandler := pinixv1connect.NewAdminServiceHandler(
-		NewAdminServer(store),
+		NewAdminServer(store, mgr),
 		connect.WithInterceptors(interceptor),
 	)
 	mux.Handle(adminPath, adminHandler)
@@ -60,7 +60,12 @@ func Run(addr string, store *config.Store, mgr *sandbox.Manager) error {
 	)
 	mux.Handle(clipPath, clipHandler)
 
-	httpServer := &http.Server{Addr: addr, Handler: h2c.NewHandler(mux, &http2.Server{})}
+	httpServer := &http.Server{
+		Addr:              addr,
+		Handler:           h2c.NewHandler(mux, &http2.Server{}),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 	errCh := make(chan error, 1)
 	go func() {
 		log.Printf("pinix listening on %s", addr)
