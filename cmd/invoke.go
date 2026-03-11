@@ -49,20 +49,32 @@ var invokeCmd = &cobra.Command{
 		}
 		defer stream.Close()
 
+		// Accumulate raw bytes to avoid splitting UTF-8 across chunks
+		var stdoutBuf, stderrBuf []byte
+		var exitCode int32
 		for stream.Receive() {
 			chunk := stream.Msg()
-			if data := chunk.GetStdout(); data != nil {
-				fmt.Print(string(data))
-			}
-			if data := chunk.GetStderr(); data != nil {
-				fmt.Fprint(os.Stderr, string(data))
-			}
-			if chunk.GetExitCode() != 0 {
-				os.Exit(int(chunk.GetExitCode()))
+			switch p := chunk.Payload.(type) {
+			case *v1.InvokeChunk_Stdout:
+				stdoutBuf = append(stdoutBuf, p.Stdout...)
+			case *v1.InvokeChunk_Stderr:
+				stderrBuf = append(stderrBuf, p.Stderr...)
+			case *v1.InvokeChunk_ExitCode:
+				exitCode = p.ExitCode
 			}
 		}
 		if err := stream.Err(); err != nil {
 			return err
+		}
+
+		if len(stdoutBuf) > 0 {
+			os.Stdout.Write(stdoutBuf)
+		}
+		if len(stderrBuf) > 0 {
+			os.Stderr.Write(stderrBuf)
+		}
+		if exitCode != 0 {
+			os.Exit(int(exitCode))
 		}
 		return nil
 	},
