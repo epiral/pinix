@@ -22,6 +22,7 @@ type Info struct {
 	Commands    []string
 	HasWeb      bool
 	Version     string
+	Online      bool
 }
 
 type ExecEvent struct {

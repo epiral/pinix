@@ -204,6 +204,7 @@ type ClipInfo struct {
 	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
 	Commands      []string               `protobuf:"bytes,4,rep,name=commands,proto3" json:"commands,omitempty"`
 	HasWeb        bool                   `protobuf:"varint,5,opt,name=has_web,json=hasWeb,proto3" json:"has_web,omitempty"`
+	Online        bool                   `protobuf:"varint,6,opt,name=online,proto3" json:"online,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -269,6 +270,13 @@ func (x *ClipInfo) GetCommands() []string {
 func (x *ClipInfo) GetHasWeb() bool {
 	if x != nil {
 		return x.HasWeb
+	}
+	return false
+}
+
+func (x *ClipInfo) GetOnline() bool {
+	if x != nil {
+		return x.Online
 	}
 	return false
 }
@@ -2015,13 +2023,14 @@ const file_pinix_v1_pinix_proto_rawDesc = "" +
 	"\aclip_id\x18\x01 \x01(\tR\x06clipId\"\x12\n" +
 	"\x10ListClipsRequest\"=\n" +
 	"\x11ListClipsResponse\x12(\n" +
-	"\x05clips\x18\x01 \x03(\v2\x12.pinix.v1.ClipInfoR\x05clips\"\x8e\x01\n" +
+	"\x05clips\x18\x01 \x03(\v2\x12.pinix.v1.ClipInfoR\x05clips\"\xa6\x01\n" +
 	"\bClipInfo\x12\x17\n" +
 	"\aclip_id\x18\x01 \x01(\tR\x06clipId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1a\n" +
 	"\bcommands\x18\x04 \x03(\tR\bcommands\x12\x17\n" +
-	"\ahas_web\x18\x05 \x01(\bR\x06hasWeb\",\n" +
+	"\ahas_web\x18\x05 \x01(\bR\x06hasWeb\x12\x16\n" +
+	"\x06online\x18\x06 \x01(\bR\x06online\",\n" +
 	"\x11DeleteClipRequest\x12\x17\n" +
 	"\aclip_id\x18\x01 \x01(\tR\x06clipId\"\x14\n" +
 	"\x12DeleteClipResponse\"E\n" +

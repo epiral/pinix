@@ -57,11 +57,14 @@ var clipListCmd = &cobra.Command{
 			return err
 		}
 		for _, c := range resp.Msg.GetClips() {
-			web := ""
+			tags := ""
 			if c.GetHasWeb() {
-				web = " [web]"
+				tags += " [web]"
 			}
-			fmt.Printf("%-12s %-20s %s%s\n", c.GetClipId(), c.GetName(), c.GetDescription(), web)
+			if !c.GetOnline() {
+				tags += " [offline]"
+			}
+			fmt.Printf("%-12s %-20s %s%s\n", c.GetClipId(), c.GetName(), c.GetDescription(), tags)
 			for _, cmd := range c.GetCommands() {
 				fmt.Printf("  cmd: %s\n", cmd)
 			}
