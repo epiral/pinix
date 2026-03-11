@@ -1,4 +1,4 @@
-package server_test
+package hub_test
 
 import (
 	"context"
@@ -19,9 +19,11 @@ import (
 	v1 "github.com/epiral/pinix/gen/go/pinix/v1"
 	"github.com/epiral/pinix/gen/go/pinix/v1/pinixv1connect"
 	"github.com/epiral/pinix/internal/auth"
+	"github.com/epiral/pinix/internal/clip"
 	"github.com/epiral/pinix/internal/config"
+	"github.com/epiral/pinix/internal/hub"
 	"github.com/epiral/pinix/internal/sandbox"
-	"github.com/epiral/pinix/internal/server"
+	"github.com/epiral/pinix/internal/worker"
 )
 
 const superToken = "test-super-token-e2e"
@@ -100,15 +102,17 @@ tokens: []
 	}
 
 	// 4. Start HTTP server on random port.
+	registry := clip.NewRegistry()
+	registry.Register(worker.NewLocalClip(config.ClipEntry{ID: "e2e-clip", Name: "e2e-clip", Workdir: clipWorkdir}, mgr))
 	interceptor := auth.NewInterceptor(store)
 	mux := http.NewServeMux()
 	adminPath, adminHandler := pinixv1connect.NewAdminServiceHandler(
-		server.NewAdminServer(store, mgr),
+		hub.NewAdminHandler(store, registry, mgr, nil),
 		connect.WithInterceptors(interceptor),
 	)
 	mux.Handle(adminPath, adminHandler)
 	clipPath, clipHandler := pinixv1connect.NewClipServiceHandler(
-		server.NewClipServer(store, mgr),
+		hub.NewClipHandler(registry),
 		connect.WithInterceptors(interceptor),
 	)
 	mux.Handle(clipPath, clipHandler)

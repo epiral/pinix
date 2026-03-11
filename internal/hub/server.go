@@ -1,8 +1,8 @@
-// Role:    HTTP/Connect-RPC server startup, registers AdminService + ClipService
-// Depends: internal/auth, internal/config, internal/sandbox, internal/scheduler, pinixv1connect, connectrpc, net/http
+// Role:    HTTP/Connect server wiring for hub and worker composition
+// Depends: context, fmt, log, net/http, os/signal, syscall, time, connectrpc, http2, internal/auth, internal/clip, internal/config, internal/sandbox, internal/scheduler, internal/worker, pinixv1connect
 // Exports: Run
 
-package server
+package hub
 
 import (
 	"context"
@@ -20,12 +20,14 @@ import (
 
 	"github.com/epiral/pinix/gen/go/pinix/v1/pinixv1connect"
 	"github.com/epiral/pinix/internal/auth"
+	clipiface "github.com/epiral/pinix/internal/clip"
 	"github.com/epiral/pinix/internal/config"
+	"github.com/epiral/pinix/internal/edge"
 	"github.com/epiral/pinix/internal/sandbox"
 	"github.com/epiral/pinix/internal/scheduler"
+	"github.com/epiral/pinix/internal/worker"
 )
 
-// Run starts the Pinix server on the given address.
 func Run(addr string, store *config.Store, mgr *sandbox.Manager) error {
 	defer func() {
 		if err := mgr.Close(context.Background()); err != nil {
@@ -33,32 +35,26 @@ func Run(addr string, store *config.Store, mgr *sandbox.Manager) error {
 		}
 	}()
 
+	registry := clipiface.NewRegistry()
+	for _, entry := range store.GetClips() {
+		registry.Register(worker.NewLocalClip(entry, mgr))
+	}
+
 	interceptor := auth.NewInterceptor(store)
 	sched := scheduler.New(mgr, store)
-	registerExistingSchedules(store, sched)
+	worker.RegisterExistingSchedules(store, sched)
 	sched.Start()
 	defer sched.Stop()
 
 	mux := http.NewServeMux()
-
-	adminPath, adminHandler := pinixv1connect.NewAdminServiceHandler(
-		NewAdminServer(store, mgr),
-		connect.WithInterceptors(interceptor),
-	)
+	adminPath, adminHandler := pinixv1connect.NewAdminServiceHandler(NewAdminHandler(store, registry, mgr, sched), connect.WithInterceptors(interceptor))
 	mux.Handle(adminPath, adminHandler)
-
-	clipPath, clipHandler := pinixv1connect.NewClipServiceHandler(
-		NewClipServer(store, mgr),
-		connect.WithInterceptors(interceptor),
-	)
+	clipPath, clipHandler := pinixv1connect.NewClipServiceHandler(NewClipHandler(registry), connect.WithInterceptors(interceptor))
 	mux.Handle(clipPath, clipHandler)
+	edgePath, edgeHandler := pinixv1connect.NewEdgeServiceHandler(edge.NewService(registry, store), connect.WithInterceptors(interceptor))
+	mux.Handle(edgePath, edgeHandler)
 
-	httpServer := &http.Server{
-		Addr:              addr,
-		Handler:           h2c.NewHandler(mux, &http2.Server{}),
-		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       120 * time.Second,
-	}
+	httpServer := &http.Server{Addr: addr, Handler: h2c.NewHandler(mux, &http2.Server{}), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second}
 	errCh := make(chan error, 1)
 	go func() {
 		log.Printf("pinix listening on %s", addr)
@@ -81,16 +77,5 @@ func Run(addr string, store *config.Store, mgr *sandbox.Manager) error {
 			return fmt.Errorf("listen: %w", err)
 		}
 		return nil
-	}
-}
-
-func registerExistingSchedules(store *config.Store, sched *scheduler.Scheduler) {
-	for _, clip := range store.GetClips() {
-		schedules, err := readClipYAMLSchedules(clip.Workdir)
-		if err != nil {
-			log.Printf("[scheduler] skip clip=%s read schedules failed: %v", clip.ID, err)
-			continue
-		}
-		sched.RegisterClip(clip, schedules)
 	}
 }

@@ -342,6 +342,354 @@ struct Pinix_V1_GetInfoResponse: Sendable {
   init() {}
 }
 
+/// Device → Server
+struct Pinix_V1_EdgeUpstream: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var msg: Pinix_V1_EdgeUpstream.OneOf_Msg? = nil
+
+  /// registration: "here's what I can do"
+  var manifest: Pinix_V1_EdgeManifest {
+    get {
+      if case .manifest(let v)? = msg {return v}
+      return Pinix_V1_EdgeManifest()
+    }
+    set {msg = .manifest(newValue)}
+  }
+
+  /// response to a forwarded request
+  var response: Pinix_V1_EdgeResponse {
+    get {
+      if case .response(let v)? = msg {return v}
+      return Pinix_V1_EdgeResponse()
+    }
+    set {msg = .response(newValue)}
+  }
+
+  var ping: Pinix_V1_EdgePing {
+    get {
+      if case .ping(let v)? = msg {return v}
+      return Pinix_V1_EdgePing()
+    }
+    set {msg = .ping(newValue)}
+  }
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  enum OneOf_Msg: Equatable, Sendable {
+    /// registration: "here's what I can do"
+    case manifest(Pinix_V1_EdgeManifest)
+    /// response to a forwarded request
+    case response(Pinix_V1_EdgeResponse)
+    case ping(Pinix_V1_EdgePing)
+
+  }
+
+  init() {}
+}
+
+/// Server → Device
+struct Pinix_V1_EdgeDownstream: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var msg: Pinix_V1_EdgeDownstream.OneOf_Msg? = nil
+
+  /// registration accepted
+  var accepted: Pinix_V1_EdgeAccepted {
+    get {
+      if case .accepted(let v)? = msg {return v}
+      return Pinix_V1_EdgeAccepted()
+    }
+    set {msg = .accepted(newValue)}
+  }
+
+  /// forwarded request from a caller
+  var request: Pinix_V1_EdgeRequest {
+    get {
+      if case .request(let v)? = msg {return v}
+      return Pinix_V1_EdgeRequest()
+    }
+    set {msg = .request(newValue)}
+  }
+
+  var pong: Pinix_V1_EdgePong {
+    get {
+      if case .pong(let v)? = msg {return v}
+      return Pinix_V1_EdgePong()
+    }
+    set {msg = .pong(newValue)}
+  }
+
+  /// registration rejected
+  var rejected: Pinix_V1_EdgeRejected {
+    get {
+      if case .rejected(let v)? = msg {return v}
+      return Pinix_V1_EdgeRejected()
+    }
+    set {msg = .rejected(newValue)}
+  }
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  enum OneOf_Msg: Equatable, Sendable {
+    /// registration accepted
+    case accepted(Pinix_V1_EdgeAccepted)
+    /// forwarded request from a caller
+    case request(Pinix_V1_EdgeRequest)
+    case pong(Pinix_V1_EdgePong)
+    /// registration rejected
+    case rejected(Pinix_V1_EdgeRejected)
+
+  }
+
+  init() {}
+}
+
+struct Pinix_V1_EdgeManifest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var name: String = String()
+
+  var description_p: String = String()
+
+  var commands: [Pinix_V1_EdgeCommandDef] = []
+
+  var hasWeb_p: Bool = false
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Pinix_V1_EdgeCommandDef: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var name: String = String()
+
+  var description_p: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Pinix_V1_EdgeAccepted: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// assigned clip ID
+  var clipID: String = String()
+
+  /// clip token for callers to invoke this edge clip
+  var token: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Pinix_V1_EdgeRejected: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var reason: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+/// Server → Device: request envelope with correlation ID
+struct Pinix_V1_EdgeRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var requestID: String = String()
+
+  var body: Pinix_V1_EdgeRequest.OneOf_Body? = nil
+
+  var invoke: Pinix_V1_InvokeRequest {
+    get {
+      if case .invoke(let v)? = body {return v}
+      return Pinix_V1_InvokeRequest()
+    }
+    set {body = .invoke(newValue)}
+  }
+
+  var readFile: Pinix_V1_ReadFileRequest {
+    get {
+      if case .readFile(let v)? = body {return v}
+      return Pinix_V1_ReadFileRequest()
+    }
+    set {body = .readFile(newValue)}
+  }
+
+  var getInfo: Pinix_V1_GetInfoRequest {
+    get {
+      if case .getInfo(let v)? = body {return v}
+      return Pinix_V1_GetInfoRequest()
+    }
+    set {body = .getInfo(newValue)}
+  }
+
+  var cancel: Pinix_V1_EdgeCancel {
+    get {
+      if case .cancel(let v)? = body {return v}
+      return Pinix_V1_EdgeCancel()
+    }
+    set {body = .cancel(newValue)}
+  }
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  enum OneOf_Body: Equatable, Sendable {
+    case invoke(Pinix_V1_InvokeRequest)
+    case readFile(Pinix_V1_ReadFileRequest)
+    case getInfo(Pinix_V1_GetInfoRequest)
+    case cancel(Pinix_V1_EdgeCancel)
+
+  }
+
+  init() {}
+}
+
+/// Device → Server: response envelope with correlation ID
+struct Pinix_V1_EdgeResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var requestID: String = String()
+
+  var body: Pinix_V1_EdgeResponse.OneOf_Body? = nil
+
+  /// may send multiple (streaming)
+  var invokeChunk: Pinix_V1_InvokeChunk {
+    get {
+      if case .invokeChunk(let v)? = body {return v}
+      return Pinix_V1_InvokeChunk()
+    }
+    set {body = .invokeChunk(newValue)}
+  }
+
+  /// may send multiple (streaming)
+  var readChunk: Pinix_V1_ReadFileChunk {
+    get {
+      if case .readChunk(let v)? = body {return v}
+      return Pinix_V1_ReadFileChunk()
+    }
+    set {body = .readChunk(newValue)}
+  }
+
+  var getInfo: Pinix_V1_GetInfoResponse {
+    get {
+      if case .getInfo(let v)? = body {return v}
+      return Pinix_V1_GetInfoResponse()
+    }
+    set {body = .getInfo(newValue)}
+  }
+
+  /// request-scoped error
+  var error: Pinix_V1_EdgeError {
+    get {
+      if case .error(let v)? = body {return v}
+      return Pinix_V1_EdgeError()
+    }
+    set {body = .error(newValue)}
+  }
+
+  /// explicit completion signal
+  var complete: Pinix_V1_EdgeComplete {
+    get {
+      if case .complete(let v)? = body {return v}
+      return Pinix_V1_EdgeComplete()
+    }
+    set {body = .complete(newValue)}
+  }
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  enum OneOf_Body: Equatable, Sendable {
+    /// may send multiple (streaming)
+    case invokeChunk(Pinix_V1_InvokeChunk)
+    /// may send multiple (streaming)
+    case readChunk(Pinix_V1_ReadFileChunk)
+    case getInfo(Pinix_V1_GetInfoResponse)
+    /// request-scoped error
+    case error(Pinix_V1_EdgeError)
+    /// explicit completion signal
+    case complete(Pinix_V1_EdgeComplete)
+
+  }
+
+  init() {}
+}
+
+struct Pinix_V1_EdgeCancel: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Pinix_V1_EdgeComplete: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Pinix_V1_EdgePing: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Pinix_V1_EdgePong: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Pinix_V1_EdgeError: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var code: String = String()
+
+  var message: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate let _protobuf_package = "pinix.v1"
@@ -1050,6 +1398,676 @@ extension Pinix_V1_GetInfoResponse: SwiftProtobuf.Message, SwiftProtobuf._Messag
     if lhs.commands != rhs.commands {return false}
     if lhs.hasWeb_p != rhs.hasWeb_p {return false}
     if lhs.version != rhs.version {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Pinix_V1_EdgeUpstream: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".EdgeUpstream"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}manifest\0\u{1}response\0\u{1}ping\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try {
+        var v: Pinix_V1_EdgeManifest?
+        var hadOneofValue = false
+        if let current = self.msg {
+          hadOneofValue = true
+          if case .manifest(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.msg = .manifest(v)
+        }
+      }()
+      case 2: try {
+        var v: Pinix_V1_EdgeResponse?
+        var hadOneofValue = false
+        if let current = self.msg {
+          hadOneofValue = true
+          if case .response(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.msg = .response(v)
+        }
+      }()
+      case 3: try {
+        var v: Pinix_V1_EdgePing?
+        var hadOneofValue = false
+        if let current = self.msg {
+          hadOneofValue = true
+          if case .ping(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.msg = .ping(v)
+        }
+      }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    switch self.msg {
+    case .manifest?: try {
+      guard case .manifest(let v)? = self.msg else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    }()
+    case .response?: try {
+      guard case .response(let v)? = self.msg else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    }()
+    case .ping?: try {
+      guard case .ping(let v)? = self.msg else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+    }()
+    case nil: break
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Pinix_V1_EdgeUpstream, rhs: Pinix_V1_EdgeUpstream) -> Bool {
+    if lhs.msg != rhs.msg {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Pinix_V1_EdgeDownstream: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".EdgeDownstream"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}accepted\0\u{1}request\0\u{1}pong\0\u{1}rejected\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try {
+        var v: Pinix_V1_EdgeAccepted?
+        var hadOneofValue = false
+        if let current = self.msg {
+          hadOneofValue = true
+          if case .accepted(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.msg = .accepted(v)
+        }
+      }()
+      case 2: try {
+        var v: Pinix_V1_EdgeRequest?
+        var hadOneofValue = false
+        if let current = self.msg {
+          hadOneofValue = true
+          if case .request(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.msg = .request(v)
+        }
+      }()
+      case 3: try {
+        var v: Pinix_V1_EdgePong?
+        var hadOneofValue = false
+        if let current = self.msg {
+          hadOneofValue = true
+          if case .pong(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.msg = .pong(v)
+        }
+      }()
+      case 4: try {
+        var v: Pinix_V1_EdgeRejected?
+        var hadOneofValue = false
+        if let current = self.msg {
+          hadOneofValue = true
+          if case .rejected(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.msg = .rejected(v)
+        }
+      }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    switch self.msg {
+    case .accepted?: try {
+      guard case .accepted(let v)? = self.msg else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    }()
+    case .request?: try {
+      guard case .request(let v)? = self.msg else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    }()
+    case .pong?: try {
+      guard case .pong(let v)? = self.msg else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+    }()
+    case .rejected?: try {
+      guard case .rejected(let v)? = self.msg else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    }()
+    case nil: break
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Pinix_V1_EdgeDownstream, rhs: Pinix_V1_EdgeDownstream) -> Bool {
+    if lhs.msg != rhs.msg {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Pinix_V1_EdgeManifest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".EdgeManifest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}description\0\u{1}commands\0\u{3}has_web\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.description_p) }()
+      case 3: try { try decoder.decodeRepeatedMessageField(value: &self.commands) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self.hasWeb_p) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 1)
+    }
+    if !self.description_p.isEmpty {
+      try visitor.visitSingularStringField(value: self.description_p, fieldNumber: 2)
+    }
+    if !self.commands.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.commands, fieldNumber: 3)
+    }
+    if self.hasWeb_p != false {
+      try visitor.visitSingularBoolField(value: self.hasWeb_p, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Pinix_V1_EdgeManifest, rhs: Pinix_V1_EdgeManifest) -> Bool {
+    if lhs.name != rhs.name {return false}
+    if lhs.description_p != rhs.description_p {return false}
+    if lhs.commands != rhs.commands {return false}
+    if lhs.hasWeb_p != rhs.hasWeb_p {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Pinix_V1_EdgeCommandDef: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".EdgeCommandDef"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}description\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.description_p) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 1)
+    }
+    if !self.description_p.isEmpty {
+      try visitor.visitSingularStringField(value: self.description_p, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Pinix_V1_EdgeCommandDef, rhs: Pinix_V1_EdgeCommandDef) -> Bool {
+    if lhs.name != rhs.name {return false}
+    if lhs.description_p != rhs.description_p {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Pinix_V1_EdgeAccepted: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".EdgeAccepted"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}clip_id\0\u{1}token\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.clipID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.token) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.clipID.isEmpty {
+      try visitor.visitSingularStringField(value: self.clipID, fieldNumber: 1)
+    }
+    if !self.token.isEmpty {
+      try visitor.visitSingularStringField(value: self.token, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Pinix_V1_EdgeAccepted, rhs: Pinix_V1_EdgeAccepted) -> Bool {
+    if lhs.clipID != rhs.clipID {return false}
+    if lhs.token != rhs.token {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Pinix_V1_EdgeRejected: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".EdgeRejected"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}reason\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.reason) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.reason.isEmpty {
+      try visitor.visitSingularStringField(value: self.reason, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Pinix_V1_EdgeRejected, rhs: Pinix_V1_EdgeRejected) -> Bool {
+    if lhs.reason != rhs.reason {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Pinix_V1_EdgeRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".EdgeRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}request_id\0\u{2}\u{9}invoke\0\u{3}read_file\0\u{3}get_info\0\u{1}cancel\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.requestID) }()
+      case 10: try {
+        var v: Pinix_V1_InvokeRequest?
+        var hadOneofValue = false
+        if let current = self.body {
+          hadOneofValue = true
+          if case .invoke(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.body = .invoke(v)
+        }
+      }()
+      case 11: try {
+        var v: Pinix_V1_ReadFileRequest?
+        var hadOneofValue = false
+        if let current = self.body {
+          hadOneofValue = true
+          if case .readFile(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.body = .readFile(v)
+        }
+      }()
+      case 12: try {
+        var v: Pinix_V1_GetInfoRequest?
+        var hadOneofValue = false
+        if let current = self.body {
+          hadOneofValue = true
+          if case .getInfo(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.body = .getInfo(v)
+        }
+      }()
+      case 13: try {
+        var v: Pinix_V1_EdgeCancel?
+        var hadOneofValue = false
+        if let current = self.body {
+          hadOneofValue = true
+          if case .cancel(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.body = .cancel(v)
+        }
+      }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.requestID.isEmpty {
+      try visitor.visitSingularStringField(value: self.requestID, fieldNumber: 1)
+    }
+    switch self.body {
+    case .invoke?: try {
+      guard case .invoke(let v)? = self.body else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
+    }()
+    case .readFile?: try {
+      guard case .readFile(let v)? = self.body else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 11)
+    }()
+    case .getInfo?: try {
+      guard case .getInfo(let v)? = self.body else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 12)
+    }()
+    case .cancel?: try {
+      guard case .cancel(let v)? = self.body else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 13)
+    }()
+    case nil: break
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Pinix_V1_EdgeRequest, rhs: Pinix_V1_EdgeRequest) -> Bool {
+    if lhs.requestID != rhs.requestID {return false}
+    if lhs.body != rhs.body {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Pinix_V1_EdgeResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".EdgeResponse"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}request_id\0\u{4}\u{9}invoke_chunk\0\u{3}read_chunk\0\u{3}get_info\0\u{1}error\0\u{1}complete\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.requestID) }()
+      case 10: try {
+        var v: Pinix_V1_InvokeChunk?
+        var hadOneofValue = false
+        if let current = self.body {
+          hadOneofValue = true
+          if case .invokeChunk(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.body = .invokeChunk(v)
+        }
+      }()
+      case 11: try {
+        var v: Pinix_V1_ReadFileChunk?
+        var hadOneofValue = false
+        if let current = self.body {
+          hadOneofValue = true
+          if case .readChunk(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.body = .readChunk(v)
+        }
+      }()
+      case 12: try {
+        var v: Pinix_V1_GetInfoResponse?
+        var hadOneofValue = false
+        if let current = self.body {
+          hadOneofValue = true
+          if case .getInfo(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.body = .getInfo(v)
+        }
+      }()
+      case 13: try {
+        var v: Pinix_V1_EdgeError?
+        var hadOneofValue = false
+        if let current = self.body {
+          hadOneofValue = true
+          if case .error(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.body = .error(v)
+        }
+      }()
+      case 14: try {
+        var v: Pinix_V1_EdgeComplete?
+        var hadOneofValue = false
+        if let current = self.body {
+          hadOneofValue = true
+          if case .complete(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.body = .complete(v)
+        }
+      }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.requestID.isEmpty {
+      try visitor.visitSingularStringField(value: self.requestID, fieldNumber: 1)
+    }
+    switch self.body {
+    case .invokeChunk?: try {
+      guard case .invokeChunk(let v)? = self.body else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
+    }()
+    case .readChunk?: try {
+      guard case .readChunk(let v)? = self.body else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 11)
+    }()
+    case .getInfo?: try {
+      guard case .getInfo(let v)? = self.body else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 12)
+    }()
+    case .error?: try {
+      guard case .error(let v)? = self.body else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 13)
+    }()
+    case .complete?: try {
+      guard case .complete(let v)? = self.body else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 14)
+    }()
+    case nil: break
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Pinix_V1_EdgeResponse, rhs: Pinix_V1_EdgeResponse) -> Bool {
+    if lhs.requestID != rhs.requestID {return false}
+    if lhs.body != rhs.body {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Pinix_V1_EdgeCancel: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".EdgeCancel"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Pinix_V1_EdgeCancel, rhs: Pinix_V1_EdgeCancel) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Pinix_V1_EdgeComplete: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".EdgeComplete"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Pinix_V1_EdgeComplete, rhs: Pinix_V1_EdgeComplete) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Pinix_V1_EdgePing: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".EdgePing"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Pinix_V1_EdgePing, rhs: Pinix_V1_EdgePing) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Pinix_V1_EdgePong: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".EdgePong"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Pinix_V1_EdgePong, rhs: Pinix_V1_EdgePong) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Pinix_V1_EdgeError: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".EdgeError"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}code\0\u{1}message\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.code) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.message) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.code.isEmpty {
+      try visitor.visitSingularStringField(value: self.code, fieldNumber: 1)
+    }
+    if !self.message.isEmpty {
+      try visitor.visitSingularStringField(value: self.message, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Pinix_V1_EdgeError, rhs: Pinix_V1_EdgeError) -> Bool {
+    if lhs.code != rhs.code {return false}
+    if lhs.message != rhs.message {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

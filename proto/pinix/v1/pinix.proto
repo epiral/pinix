@@ -139,3 +139,91 @@ message GetInfoResponse {
   bool            has_web     = 4;
   string          version     = 6;
 }
+
+// ─── EdgeService ─────────────────────────────────────────────
+// Devices connect via bidirectional stream to expose native capabilities
+// as Edge Clips. Requires Super Token authentication.
+service EdgeService {
+  // Device connects and registers its capabilities.
+  // Server forwards Invoke/ReadFile/GetInfo requests through this stream.
+  rpc Connect(stream EdgeUpstream) returns (stream EdgeDownstream);
+}
+
+// Device → Server
+message EdgeUpstream {
+  oneof msg {
+    EdgeManifest  manifest = 1;  // registration: "here's what I can do"
+    EdgeResponse  response = 2;  // response to a forwarded request
+    EdgePing      ping     = 3;
+  }
+}
+
+// Server → Device
+message EdgeDownstream {
+  oneof msg {
+    EdgeAccepted  accepted = 1;  // registration accepted
+    EdgeRequest   request  = 2;  // forwarded request from a caller
+    EdgePong      pong     = 3;
+    EdgeRejected  rejected = 4;  // registration rejected
+  }
+}
+
+// ── Edge Registration ──
+
+message EdgeManifest {
+  string name                    = 1;
+  string description             = 2;
+  repeated EdgeCommandDef commands = 3;
+  bool   has_web                 = 4;
+}
+
+message EdgeCommandDef {
+  string name        = 1;
+  string description = 2;
+}
+
+message EdgeAccepted {
+  string clip_id = 1;  // assigned clip ID
+  string token   = 2;  // clip token for callers to invoke this edge clip
+}
+
+message EdgeRejected {
+  string reason = 1;
+}
+
+// ── Edge Request/Response Envelopes ──
+
+// Server → Device: request envelope with correlation ID
+message EdgeRequest {
+  string request_id = 1;
+  oneof body {
+    InvokeRequest   invoke   = 10;
+    ReadFileRequest read_file = 11;
+    GetInfoRequest  get_info  = 12;
+    EdgeCancel      cancel    = 13;
+  }
+}
+
+// Device → Server: response envelope with correlation ID
+message EdgeResponse {
+  string request_id = 1;
+  oneof body {
+    InvokeChunk     invoke_chunk = 10;  // may send multiple (streaming)
+    ReadFileChunk   read_chunk   = 11;  // may send multiple (streaming)
+    GetInfoResponse get_info     = 12;
+    EdgeError       error        = 13;  // request-scoped error
+    EdgeComplete    complete     = 14;  // explicit completion signal
+  }
+}
+
+// ── Edge Control Messages ──
+
+message EdgeCancel {}
+message EdgeComplete {}
+message EdgePing {}
+message EdgePong {}
+
+message EdgeError {
+  string code    = 1;
+  string message = 2;
+}
