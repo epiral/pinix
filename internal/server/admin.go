@@ -53,7 +53,7 @@ func (s *AdminServer) CreateClip(
 
 	entry, err := s.store.AddClip(name, workdir)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("create clip %q: %w", name, err))
 	}
 	return connect.NewResponse(&v1.CreateClipResponse{ClipId: entry.ID}), nil
 }
@@ -84,17 +84,17 @@ func (s *AdminServer) DeleteClip(
 	clipID := req.Msg.GetClipId()
 	found, err := s.store.DeleteClip(clipID)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("delete clip %s: %w", clipID, err))
 	}
 	if !found {
 		return nil, connect.NewError(connect.CodeNotFound, nil)
 	}
 	if _, err := s.store.RevokeTokensByClipID(clipID); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("revoke clip tokens %s: %w", clipID, err))
 	}
 	if s.sandbox != nil {
 		if err := s.sandbox.RemoveClip(ctx, clipID); err != nil {
-			return nil, connect.NewError(connect.CodeInternal, err)
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("remove sandbox clip %s: %w", clipID, err))
 		}
 	}
 	return connect.NewResponse(&v1.DeleteClipResponse{}), nil
@@ -106,7 +106,7 @@ func (s *AdminServer) GenerateToken(
 ) (*connect.Response[v1.GenerateTokenResponse], error) {
 	clipID := req.Msg.GetClipId()
 	if clipID == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("clip_id is required"))
 	}
 	if _, ok := s.store.GetClip(clipID); !ok {
 		return nil, connect.NewError(connect.CodeNotFound, nil)
@@ -114,7 +114,7 @@ func (s *AdminServer) GenerateToken(
 
 	entry, err := s.store.AddToken(clipID, req.Msg.GetLabel())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("generate token for clip %s: %w", clipID, err))
 	}
 	return connect.NewResponse(&v1.GenerateTokenResponse{Id: entry.ID, Token: entry.Token}), nil
 }
@@ -147,36 +147,10 @@ func (s *AdminServer) RevokeToken(
 ) (*connect.Response[v1.RevokeTokenResponse], error) {
 	found, err := s.store.RevokeTokenByID(req.Msg.GetId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("revoke token %s: %w", req.Msg.GetId(), err))
 	}
 	if !found {
 		return nil, connect.NewError(connect.CodeNotFound, nil)
 	}
 	return connect.NewResponse(&v1.RevokeTokenResponse{}), nil
-}
-
-// clipWorkdirInfo holds metadata scanned from a clip's workdir.
-type clipWorkdirInfo struct {
-	desc     string
-	commands []string
-	hasWeb   bool
-}
-
-// scanClipWorkdir reads a clip's workdir to discover commands, web presence, and description.
-func scanClipWorkdir(clip config.ClipEntry) clipWorkdirInfo {
-	var info clipWorkdirInfo
-
-	// List commands/ directory.
-	entries, err := readDirNames(clip.Workdir, "commands")
-	if err == nil {
-		info.commands = entries
-	}
-
-	// Check for web/index.html.
-	info.hasWeb = fileExists(clip.Workdir, "web", "index.html")
-
-	// Read description from clip.yaml or AGENTS.md (first line).
-	info.desc = readClipDesc(clip.Workdir)
-
-	return info
 }

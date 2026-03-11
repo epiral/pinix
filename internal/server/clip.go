@@ -1,5 +1,5 @@
-// Role:    ClipService handler — Invoke (exec scripts), ReadFile (stream files), GetInfo
-// Depends: pinixv1connect, internal/auth, internal/config, sandbox, mime
+// Role:    ClipService handler — Invoke (exec scripts) and GetInfo metadata
+// Depends: pinixv1connect, internal/auth, internal/config, sandbox
 // Exports: ClipServer, NewClipServer
 //
 // Execution path:
@@ -11,9 +11,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"mime"
-	"os"
-	"path/filepath"
 	"strings"
 
 	connect "connectrpc.com/connect"
@@ -22,10 +19,6 @@ import (
 	"github.com/epiral/pinix/internal/auth"
 	"github.com/epiral/pinix/internal/config"
 	"github.com/epiral/pinix/internal/sandbox"
-)
-
-const (
-	chunkSize = 64 * 1024 // 64 KB
 )
 
 var _ pinixv1connect.ClipServiceHandler = (*ClipServer)(nil)
@@ -39,15 +32,6 @@ type ClipServer struct {
 // NewClipServer creates a ClipServer with the given sandbox Manager.
 func NewClipServer(store *config.Store, mgr *sandbox.Manager) *ClipServer {
 	return &ClipServer{store: store, sandbox: mgr}
-}
-
-// resolveWorkdir returns the workdir for the clip bound to the current token.
-func (s *ClipServer) resolveWorkdir(ctx context.Context) (string, error) {
-	clip, err := s.resolveClip(ctx)
-	if err != nil {
-		return "", err
-	}
-	return clip.Workdir, nil
 }
 
 func (s *ClipServer) resolveClip(ctx context.Context) (config.ClipEntry, error) {
@@ -153,147 +137,6 @@ func (s *ClipServer) invokeInSandbox(
 	return stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_ExitCode{ExitCode: exitCode}})
 }
 
-func (s *ClipServer) ReadFile(
-	ctx context.Context,
-	req *connect.Request[v1.ReadFileRequest],
-	stream *connect.ServerStream[v1.ReadFileChunk],
-) error {
-	relPath := req.Msg.GetPath()
-
-	if strings.Contains(relPath, "..") {
-		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid path: %s", relPath))
-	}
-
-	// Sandbox: only web/ and data/ are allowed.
-	if !strings.HasPrefix(relPath, "web/") && !strings.HasPrefix(relPath, "data/") {
-		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("path must be under web/ or data/"))
-	}
-
-	workdir, err := s.resolveWorkdir(ctx)
-	if err != nil {
-		return err
-	}
-
-	resolvedWorkdir, err := filepath.EvalSymlinks(workdir)
-	if err != nil {
-		return connect.NewError(connect.CodeInternal, fmt.Errorf("resolve workdir: %w", err))
-	}
-	resolvedWorkdir, err = filepath.Abs(resolvedWorkdir)
-	if err != nil {
-		return connect.NewError(connect.CodeInternal, fmt.Errorf("resolve workdir abs path: %w", err))
-	}
-
-	absPath := filepath.Join(workdir, relPath)
-	resolvedPath, err := filepath.EvalSymlinks(absPath)
-	if err != nil {
-		return connect.NewError(connect.CodeNotFound, fmt.Errorf("file not found: %s", relPath))
-	}
-	resolvedPath, err = filepath.Abs(resolvedPath)
-	if err != nil {
-		return connect.NewError(connect.CodeInternal, fmt.Errorf("resolve file abs path: %w", err))
-	}
-
-	relResolvedPath, err := filepath.Rel(resolvedWorkdir, resolvedPath)
-	if err != nil {
-		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("path escapes workdir"))
-	}
-	if relResolvedPath == ".." || strings.HasPrefix(relResolvedPath, ".."+string(os.PathSeparator)) {
-		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("path escapes workdir"))
-	}
-
-	f, err := os.Open(resolvedPath)
-	if err != nil {
-		return connect.NewError(connect.CodeNotFound, fmt.Errorf("file not found: %s", relPath))
-	}
-	defer f.Close()
-
-	info, err := f.Stat()
-	if err != nil {
-		return connect.NewError(connect.CodeInternal, err)
-	}
-	if info.IsDir() {
-		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("path is a directory: %s", relPath))
-	}
-
-	totalSize := info.Size()
-	mimeType := mime.TypeByExtension(filepath.Ext(relPath))
-	if mimeType == "" {
-		mimeType = "application/octet-stream"
-	}
-
-	etag := computeETag(info)
-	if req.Msg.GetIfNoneMatch() == etag {
-		return stream.Send(&v1.ReadFileChunk{
-			MimeType:    mimeType,
-			TotalSize:   totalSize,
-			Etag:        etag,
-			NotModified: true,
-		})
-	}
-
-	offset := req.Msg.GetOffset()
-	length := req.Msg.GetLength()
-	if offset < 0 {
-		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("offset must be >= 0"))
-	}
-	if length < 0 {
-		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("length must be >= 0"))
-	}
-	if offset > totalSize {
-		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("offset must be <= file size"))
-	}
-
-	if offset > 0 {
-		if _, err := f.Seek(offset, io.SeekStart); err != nil {
-			return connect.NewError(connect.CodeInternal, err)
-		}
-	}
-
-	var remaining int64
-	if length > 0 {
-		remaining = length
-	} else {
-		remaining = totalSize - offset
-	}
-
-	buf := make([]byte, chunkSize)
-	currentOffset := offset
-
-	for remaining > 0 {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		toRead := int64(chunkSize)
-		if toRead > remaining {
-			toRead = remaining
-		}
-
-		n, err := f.Read(buf[:toRead])
-		if n > 0 {
-			if sendErr := stream.Send(&v1.ReadFileChunk{
-				Data:      buf[:n],
-				Offset:    currentOffset,
-				MimeType:  mimeType,
-				TotalSize: totalSize,
-				Etag:      etag,
-			}); sendErr != nil {
-				return sendErr
-			}
-			currentOffset += int64(n)
-			remaining -= int64(n)
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return connect.NewError(connect.CodeInternal, err)
-		}
-	}
-
-	return nil
-}
-
 func (s *ClipServer) GetInfo(
 	ctx context.Context,
 	_ *connect.Request[v1.GetInfoRequest],
@@ -314,8 +157,4 @@ func (s *ClipServer) GetInfo(
 		Commands:    info.commands,
 		HasWeb:      info.hasWeb,
 	}), nil
-}
-
-func computeETag(info os.FileInfo) string {
-	return fmt.Sprintf("%x-%x", info.ModTime().UnixNano(), info.Size())
 }

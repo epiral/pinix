@@ -94,7 +94,7 @@ var clipDeleteCmd = &cobra.Command{
 }
 
 func init() {
-	clipCmd.PersistentFlags().StringVar(&clipServerURL, "server", "", "server URL (default: http://localhost:8080)")
+	clipCmd.PersistentFlags().StringVar(&clipServerURL, "server", "", "server URL (default: "+defaultServerURL+")")
 	clipCmd.PersistentFlags().StringVar(&clipToken, "token", "", "super token (default: from config)")
 
 	clipCreateCmd.Flags().StringVar(&clipCreateName, "name", "", "clip name (required)")

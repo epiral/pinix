@@ -42,7 +42,9 @@ var readCmd = &cobra.Command{
 				fmt.Fprintln(os.Stderr, "304 Not Modified")
 				return nil
 			}
-			os.Stdout.Write(chunk.GetData())
+			if _, err := os.Stdout.Write(chunk.GetData()); err != nil {
+				return fmt.Errorf("write stdout: %w", err)
+			}
 		}
 		return stream.Err()
 	},

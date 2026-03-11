@@ -91,7 +91,7 @@ func (b *BoxLiteBackend) ExecStream(
 	execCtx, cancel := context.WithTimeout(ctx, execTimeout)
 	defer cancel()
 
-	execArgs := []string{"exec", "-i", name, "--", "/clip/commands/" + cmdName}
+	execArgs := []string{"exec", "-i", name, "--", clipCommandPath(cmdName)}
 	execArgs = append(execArgs, args...)
 
 	cmd := exec.CommandContext(execCtx, b.bin, execArgs...)
@@ -164,7 +164,7 @@ func (b *BoxLiteBackend) ensureBox(ctx context.Context, cfg BoxConfig) (string, 
 	b.mu.Unlock()
 
 	entry.once.Do(func() {
-		entry.name = "pinix-clip-" + cfg.ClipID
+		entry.name = clipBoxName(cfg.ClipID)
 		entry.err = b.createBox(ctx, cfg, entry.name)
 	})
 
@@ -173,24 +173,16 @@ func (b *BoxLiteBackend) ensureBox(ctx context.Context, cfg BoxConfig) (string, 
 
 // createBox creates and starts a new BoxLite box.
 func (b *BoxLiteBackend) createBox(ctx context.Context, cfg BoxConfig, name string) error {
-	image := cfg.Image
-	if image == "" {
-		image = defaultImage
-	}
+	image := resolveBoxImage(cfg.Image)
 
 	args := []string{
 		"create",
 		"-d",
 		"--name", name,
-		"-v", cfg.Workdir + ":/clip",
-		"-w", "/clip",
+		"-w", clipGuestWorkdir,
 	}
-	for _, mt := range cfg.Mounts {
-		vol := mt.Source + ":" + mt.Target
-		if mt.ReadOnly {
-			vol += ":ro"
-		}
-		args = append(args, "-v", vol)
+	for _, volume := range buildCLIVolumes(cfg) {
+		args = append(args, "-v", volume)
 	}
 	args = append(args, image)
 
