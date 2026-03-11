@@ -201,7 +201,7 @@ type ClipInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ClipId        string                 `protobuf:"bytes,1,opt,name=clip_id,json=clipId,proto3" json:"clip_id,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Desc          string                 `protobuf:"bytes,3,opt,name=desc,proto3" json:"desc,omitempty"`
+	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
 	Commands      []string               `protobuf:"bytes,4,rep,name=commands,proto3" json:"commands,omitempty"`
 	HasWeb        bool                   `protobuf:"varint,5,opt,name=has_web,json=hasWeb,proto3" json:"has_web,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -252,9 +252,9 @@ func (x *ClipInfo) GetName() string {
 	return ""
 }
 
-func (x *ClipInfo) GetDesc() string {
+func (x *ClipInfo) GetDescription() string {
 	if x != nil {
-		return x.Desc
+		return x.Description
 	}
 	return ""
 }
@@ -753,66 +753,6 @@ func (x *InvokeRequest) GetStdin() string {
 	return ""
 }
 
-type InvokeResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Stdout        string                 `protobuf:"bytes,1,opt,name=stdout,proto3" json:"stdout,omitempty"`
-	Stderr        string                 `protobuf:"bytes,2,opt,name=stderr,proto3" json:"stderr,omitempty"`
-	ExitCode      int32                  `protobuf:"varint,3,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *InvokeResponse) Reset() {
-	*x = InvokeResponse{}
-	mi := &file_pinix_v1_pinix_proto_msgTypes[15]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *InvokeResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*InvokeResponse) ProtoMessage() {}
-
-func (x *InvokeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pinix_v1_pinix_proto_msgTypes[15]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use InvokeResponse.ProtoReflect.Descriptor instead.
-func (*InvokeResponse) Descriptor() ([]byte, []int) {
-	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{15}
-}
-
-func (x *InvokeResponse) GetStdout() string {
-	if x != nil {
-		return x.Stdout
-	}
-	return ""
-}
-
-func (x *InvokeResponse) GetStderr() string {
-	if x != nil {
-		return x.Stderr
-	}
-	return ""
-}
-
-func (x *InvokeResponse) GetExitCode() int32 {
-	if x != nil {
-		return x.ExitCode
-	}
-	return 0
-}
-
 type InvokeChunk struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Payload:
@@ -827,7 +767,7 @@ type InvokeChunk struct {
 
 func (x *InvokeChunk) Reset() {
 	*x = InvokeChunk{}
-	mi := &file_pinix_v1_pinix_proto_msgTypes[16]
+	mi := &file_pinix_v1_pinix_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -839,7 +779,7 @@ func (x *InvokeChunk) String() string {
 func (*InvokeChunk) ProtoMessage() {}
 
 func (x *InvokeChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_pinix_v1_pinix_proto_msgTypes[16]
+	mi := &file_pinix_v1_pinix_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -852,7 +792,7 @@ func (x *InvokeChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InvokeChunk.ProtoReflect.Descriptor instead.
 func (*InvokeChunk) Descriptor() ([]byte, []int) {
-	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{16}
+	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *InvokeChunk) GetPayload() isInvokeChunk_Payload {
@@ -923,7 +863,7 @@ type ReadFileRequest struct {
 
 func (x *ReadFileRequest) Reset() {
 	*x = ReadFileRequest{}
-	mi := &file_pinix_v1_pinix_proto_msgTypes[17]
+	mi := &file_pinix_v1_pinix_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -935,7 +875,7 @@ func (x *ReadFileRequest) String() string {
 func (*ReadFileRequest) ProtoMessage() {}
 
 func (x *ReadFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pinix_v1_pinix_proto_msgTypes[17]
+	mi := &file_pinix_v1_pinix_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -948,7 +888,7 @@ func (x *ReadFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadFileRequest.ProtoReflect.Descriptor instead.
 func (*ReadFileRequest) Descriptor() ([]byte, []int) {
-	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{17}
+	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ReadFileRequest) GetPath() string {
@@ -993,7 +933,7 @@ type ReadFileChunk struct {
 
 func (x *ReadFileChunk) Reset() {
 	*x = ReadFileChunk{}
-	mi := &file_pinix_v1_pinix_proto_msgTypes[18]
+	mi := &file_pinix_v1_pinix_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1005,7 +945,7 @@ func (x *ReadFileChunk) String() string {
 func (*ReadFileChunk) ProtoMessage() {}
 
 func (x *ReadFileChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_pinix_v1_pinix_proto_msgTypes[18]
+	mi := &file_pinix_v1_pinix_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1018,7 +958,7 @@ func (x *ReadFileChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadFileChunk.ProtoReflect.Descriptor instead.
 func (*ReadFileChunk) Descriptor() ([]byte, []int) {
-	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{18}
+	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ReadFileChunk) GetData() []byte {
@@ -1071,7 +1011,7 @@ type GetInfoRequest struct {
 
 func (x *GetInfoRequest) Reset() {
 	*x = GetInfoRequest{}
-	mi := &file_pinix_v1_pinix_proto_msgTypes[19]
+	mi := &file_pinix_v1_pinix_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1083,7 +1023,7 @@ func (x *GetInfoRequest) String() string {
 func (*GetInfoRequest) ProtoMessage() {}
 
 func (x *GetInfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pinix_v1_pinix_proto_msgTypes[19]
+	mi := &file_pinix_v1_pinix_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1096,7 +1036,7 @@ func (x *GetInfoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInfoRequest.ProtoReflect.Descriptor instead.
 func (*GetInfoRequest) Descriptor() ([]byte, []int) {
-	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{19}
+	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{18}
 }
 
 type GetInfoResponse struct {
@@ -1105,13 +1045,14 @@ type GetInfoResponse struct {
 	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
 	Commands      []string               `protobuf:"bytes,3,rep,name=commands,proto3" json:"commands,omitempty"`
 	HasWeb        bool                   `protobuf:"varint,4,opt,name=has_web,json=hasWeb,proto3" json:"has_web,omitempty"`
+	Version       string                 `protobuf:"bytes,6,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetInfoResponse) Reset() {
 	*x = GetInfoResponse{}
-	mi := &file_pinix_v1_pinix_proto_msgTypes[20]
+	mi := &file_pinix_v1_pinix_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1123,7 +1064,7 @@ func (x *GetInfoResponse) String() string {
 func (*GetInfoResponse) ProtoMessage() {}
 
 func (x *GetInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pinix_v1_pinix_proto_msgTypes[20]
+	mi := &file_pinix_v1_pinix_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1136,7 +1077,7 @@ func (x *GetInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInfoResponse.ProtoReflect.Descriptor instead.
 func (*GetInfoResponse) Descriptor() ([]byte, []int) {
-	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{20}
+	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GetInfoResponse) GetName() string {
@@ -1167,6 +1108,13 @@ func (x *GetInfoResponse) GetHasWeb() bool {
 	return false
 }
 
+func (x *GetInfoResponse) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
 var File_pinix_v1_pinix_proto protoreflect.FileDescriptor
 
 const file_pinix_v1_pinix_proto_rawDesc = "" +
@@ -1179,11 +1127,11 @@ const file_pinix_v1_pinix_proto_rawDesc = "" +
 	"\aclip_id\x18\x01 \x01(\tR\x06clipId\"\x12\n" +
 	"\x10ListClipsRequest\"=\n" +
 	"\x11ListClipsResponse\x12(\n" +
-	"\x05clips\x18\x01 \x03(\v2\x12.pinix.v1.ClipInfoR\x05clips\"\x80\x01\n" +
+	"\x05clips\x18\x01 \x03(\v2\x12.pinix.v1.ClipInfoR\x05clips\"\x8e\x01\n" +
 	"\bClipInfo\x12\x17\n" +
 	"\aclip_id\x18\x01 \x01(\tR\x06clipId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
-	"\x04desc\x18\x03 \x01(\tR\x04desc\x12\x1a\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1a\n" +
 	"\bcommands\x18\x04 \x03(\tR\bcommands\x12\x17\n" +
 	"\ahas_web\x18\x05 \x01(\bR\x06hasWeb\",\n" +
 	"\x11DeleteClipRequest\x12\x17\n" +
@@ -1211,11 +1159,7 @@ const file_pinix_v1_pinix_proto_rawDesc = "" +
 	"\rInvokeRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04args\x18\x02 \x03(\tR\x04args\x12\x14\n" +
-	"\x05stdin\x18\x03 \x01(\tR\x05stdin\"]\n" +
-	"\x0eInvokeResponse\x12\x16\n" +
-	"\x06stdout\x18\x01 \x01(\tR\x06stdout\x12\x16\n" +
-	"\x06stderr\x18\x02 \x01(\tR\x06stderr\x12\x1b\n" +
-	"\texit_code\x18\x03 \x01(\x05R\bexitCode\"k\n" +
+	"\x05stdin\x18\x03 \x01(\tR\x05stdin\"k\n" +
 	"\vInvokeChunk\x12\x18\n" +
 	"\x06stdout\x18\x01 \x01(\fH\x00R\x06stdout\x12\x18\n" +
 	"\x06stderr\x18\x02 \x01(\fH\x00R\x06stderr\x12\x1d\n" +
@@ -1234,12 +1178,13 @@ const file_pinix_v1_pinix_proto_rawDesc = "" +
 	"total_size\x18\x04 \x01(\x03R\ttotalSize\x12\x12\n" +
 	"\x04etag\x18\x05 \x01(\tR\x04etag\x12!\n" +
 	"\fnot_modified\x18\x06 \x01(\bR\vnotModified\"\x10\n" +
-	"\x0eGetInfoRequest\"|\n" +
+	"\x0eGetInfoRequest\"\x96\x01\n" +
 	"\x0fGetInfoResponse\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x1a\n" +
 	"\bcommands\x18\x03 \x03(\tR\bcommands\x12\x17\n" +
-	"\ahas_web\x18\x04 \x01(\bR\x06hasWeb2\xcd\x03\n" +
+	"\ahas_web\x18\x04 \x01(\bR\x06hasWeb\x12\x18\n" +
+	"\aversion\x18\x06 \x01(\tR\aversion2\xcd\x03\n" +
 	"\fAdminService\x12G\n" +
 	"\n" +
 	"CreateClip\x12\x1b.pinix.v1.CreateClipRequest\x1a\x1c.pinix.v1.CreateClipResponse\x12D\n" +
@@ -1267,7 +1212,7 @@ func file_pinix_v1_pinix_proto_rawDescGZIP() []byte {
 	return file_pinix_v1_pinix_proto_rawDescData
 }
 
-var file_pinix_v1_pinix_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_pinix_v1_pinix_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_pinix_v1_pinix_proto_goTypes = []any{
 	(*CreateClipRequest)(nil),     // 0: pinix.v1.CreateClipRequest
 	(*CreateClipResponse)(nil),    // 1: pinix.v1.CreateClipResponse
@@ -1284,12 +1229,11 @@ var file_pinix_v1_pinix_proto_goTypes = []any{
 	(*RevokeTokenRequest)(nil),    // 12: pinix.v1.RevokeTokenRequest
 	(*RevokeTokenResponse)(nil),   // 13: pinix.v1.RevokeTokenResponse
 	(*InvokeRequest)(nil),         // 14: pinix.v1.InvokeRequest
-	(*InvokeResponse)(nil),        // 15: pinix.v1.InvokeResponse
-	(*InvokeChunk)(nil),           // 16: pinix.v1.InvokeChunk
-	(*ReadFileRequest)(nil),       // 17: pinix.v1.ReadFileRequest
-	(*ReadFileChunk)(nil),         // 18: pinix.v1.ReadFileChunk
-	(*GetInfoRequest)(nil),        // 19: pinix.v1.GetInfoRequest
-	(*GetInfoResponse)(nil),       // 20: pinix.v1.GetInfoResponse
+	(*InvokeChunk)(nil),           // 15: pinix.v1.InvokeChunk
+	(*ReadFileRequest)(nil),       // 16: pinix.v1.ReadFileRequest
+	(*ReadFileChunk)(nil),         // 17: pinix.v1.ReadFileChunk
+	(*GetInfoRequest)(nil),        // 18: pinix.v1.GetInfoRequest
+	(*GetInfoResponse)(nil),       // 19: pinix.v1.GetInfoResponse
 }
 var file_pinix_v1_pinix_proto_depIdxs = []int32{
 	4,  // 0: pinix.v1.ListClipsResponse.clips:type_name -> pinix.v1.ClipInfo
@@ -1301,17 +1245,17 @@ var file_pinix_v1_pinix_proto_depIdxs = []int32{
 	9,  // 6: pinix.v1.AdminService.ListTokens:input_type -> pinix.v1.ListTokensRequest
 	12, // 7: pinix.v1.AdminService.RevokeToken:input_type -> pinix.v1.RevokeTokenRequest
 	14, // 8: pinix.v1.ClipService.Invoke:input_type -> pinix.v1.InvokeRequest
-	17, // 9: pinix.v1.ClipService.ReadFile:input_type -> pinix.v1.ReadFileRequest
-	19, // 10: pinix.v1.ClipService.GetInfo:input_type -> pinix.v1.GetInfoRequest
+	16, // 9: pinix.v1.ClipService.ReadFile:input_type -> pinix.v1.ReadFileRequest
+	18, // 10: pinix.v1.ClipService.GetInfo:input_type -> pinix.v1.GetInfoRequest
 	1,  // 11: pinix.v1.AdminService.CreateClip:output_type -> pinix.v1.CreateClipResponse
 	3,  // 12: pinix.v1.AdminService.ListClips:output_type -> pinix.v1.ListClipsResponse
 	6,  // 13: pinix.v1.AdminService.DeleteClip:output_type -> pinix.v1.DeleteClipResponse
 	8,  // 14: pinix.v1.AdminService.GenerateToken:output_type -> pinix.v1.GenerateTokenResponse
 	10, // 15: pinix.v1.AdminService.ListTokens:output_type -> pinix.v1.ListTokensResponse
 	13, // 16: pinix.v1.AdminService.RevokeToken:output_type -> pinix.v1.RevokeTokenResponse
-	16, // 17: pinix.v1.ClipService.Invoke:output_type -> pinix.v1.InvokeChunk
-	18, // 18: pinix.v1.ClipService.ReadFile:output_type -> pinix.v1.ReadFileChunk
-	20, // 19: pinix.v1.ClipService.GetInfo:output_type -> pinix.v1.GetInfoResponse
+	15, // 17: pinix.v1.ClipService.Invoke:output_type -> pinix.v1.InvokeChunk
+	17, // 18: pinix.v1.ClipService.ReadFile:output_type -> pinix.v1.ReadFileChunk
+	19, // 19: pinix.v1.ClipService.GetInfo:output_type -> pinix.v1.GetInfoResponse
 	11, // [11:20] is the sub-list for method output_type
 	2,  // [2:11] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
@@ -1324,7 +1268,7 @@ func file_pinix_v1_pinix_proto_init() {
 	if File_pinix_v1_pinix_proto != nil {
 		return
 	}
-	file_pinix_v1_pinix_proto_msgTypes[16].OneofWrappers = []any{
+	file_pinix_v1_pinix_proto_msgTypes[15].OneofWrappers = []any{
 		(*InvokeChunk_Stdout)(nil),
 		(*InvokeChunk_Stderr)(nil),
 		(*InvokeChunk_ExitCode)(nil),
@@ -1335,7 +1279,7 @@ func file_pinix_v1_pinix_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pinix_v1_pinix_proto_rawDesc), len(file_pinix_v1_pinix_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   21,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

@@ -61,7 +61,7 @@ var clipListCmd = &cobra.Command{
 			if c.GetHasWeb() {
 				web = " [web]"
 			}
-			fmt.Printf("%-12s %-20s %s%s\n", c.GetClipId(), c.GetName(), c.GetDesc(), web)
+			fmt.Printf("%-12s %-20s %s%s\n", c.GetClipId(), c.GetName(), c.GetDescription(), web)
 			for _, cmd := range c.GetCommands() {
 				fmt.Printf("  cmd: %s\n", cmd)
 			}

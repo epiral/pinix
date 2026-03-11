@@ -1,98 +1,114 @@
 # AGENTS.md — Pinix
 
-Pinix 是基于 Connect-RPC 的 Go 服务，通过 ClipService.Command 将 `commands/` 目录下的可执行文件暴露为 RPC，并通过 Token 鉴权控制访问。
+Pinix 是一个去中心化的 Clip runtime platform，使用 Go + Connect-RPC 提供管理面与 Clip 访问面。服务端负责 Clip 注册、Token 管理、沙箱执行、文件读取与调度；CLI 负责本地安装/升级/卸载 Clip 包，以及远程调用服务。
 
----
+## 项目概览
 
-## 架构
+- **AdminService**：管理 Clip 与 Token（Create/List/Delete Clip，Generate/List/Revoke Token）
+- **ClipService**：面向 Clip 访问（Invoke、ReadFile、GetInfo）
+- **运行时沙箱**：通过可插拔 `Backend` 接口接入 BoxLite CLI 或 BoxLite REST
+- **调度器**：进程内 cron，按各 Clip 的 `clip.yaml` 中 `schedules` 自动执行命令
+- **配置存储**：`~/.config/pinix/config.yaml`，保存 `super_token`、`clips`、`tokens`
 
-```mermaid
-graph LR
-    A[App / Web Client] -->|Bearer Token| I[Auth Interceptor]
-    I -->|Super Token| F[PinixService]
-    I -->|Super / Clip Token| B[ClipService.Command]
-    B --> C[commands/]
-    C -->|exec| D[hello]
-    C -->|exec| E[其他脚本]
-    F --> G[Clip 管理]
-    F --> H[Token 管理]
+## Build & Dev
+
+```bash
+go build -o pinix .
+go test ./...
+pinix serve --addr :8080 --boxlite-rest http://localhost:8100
+buf generate
 ```
 
-**数据流**：客户端发送 `Authorization: Bearer <token>` + `CommandRequest(name, args, stdin)` → Auth Interceptor 验证 Token → ClipService 在对应 `commands/` 目录查找同名可执行文件 → `exec` 执行 → 返回 `stdout, stderr, exit_code`。
-
----
-
-## 鉴权模型
-
-### Token 类型
-
-| 类型 | clip_id | 权限范围 |
-|------|---------|----------|
-| **Super Token** | 空 | 所有接口（PinixService + ClipService） |
-| **Clip Token** | 非空 | 仅 ClipService/Command，workdir 限定为 Clip 的 workdir |
-
-### 鉴权流程
-
-1. 从 `Authorization: Bearer <token>` 提取 Token
-2. 查询 `~/.config/pinix/config.yaml` 中的 tokens 列表
-3. 无 Token / 无效 Token → `CodeUnauthenticated`
-4. Clip Token 调用 PinixService → `CodePermissionDenied`
-5. Clip Token 调用 Command → workdir jail 到 `{clip.workdir}/commands/`
-6. Super Token → 全部放行，Command 使用默认 `commands/` 目录
-
-### 配置文件
-
-存储路径：`~/.config/pinix/config.yaml`（权限 0600）
-
-```yaml
-clips:
-  - id: "a1b2c3d4"
-    name: "my-project"
-    workdir: "/home/user/my-project"
-tokens:
-  - token: "64-char-hex-string"
-    clip_id: ""        # 空 = Super Token
-    label: "admin"
-  - token: "64-char-hex-string"
-    clip_id: "a1b2c3d4" # 绑定到特定 Clip
-    label: "ci-runner"
-```
-
----
-
-## 文件结构
-
-```
-pinix/
-├── main.go                      # 入口，注册 interceptor + 服务
-├── internal/config/store.go     # Clip + Token 持久化存储（YAML + RWMutex）
-├── middleware/auth.go           # Connect-RPC Bearer Token 鉴权 interceptor
-├── service/
-│   ├── pinix.go                 # PinixService 完整实现（CRUD Clip/Token）
-│   └── clip.go                  # ClipService.Command（workdir jail + 30s 超时）
-├── commands/                    # 可执行脚本目录
-├── gen/                         # protoc 自动生成（不要手动编辑）
-└── proto/                       # .proto 定义文件
-```
-
----
-
-## 开发规范
-
-### buf generate 流程
-
-Proto 定义在 `proto/pinix/v1/pinix.proto`，修改后执行：
+Proto 修改后按需执行：
 
 ```bash
 buf generate
-go mod tidy
+go test ./...
 ```
 
-生成代码输出到 `gen/go/`（Go）、`gen/swift/`（iOS）、`gen/ts/`（Web）。**不要手动编辑 `gen/` 下的文件。**
+## 架构
 
-### SELF-DESC Header
+### 服务与鉴权
 
-每个 `.go` 文件顶部必须包含：
+- `AdminService` 只接受 `super_token`
+- `ClipService` 接受 `super_token` 或 clip-scoped token
+- Clip token 绑定单个 `clip_id`，不能访问 `AdminService`
+- Token 从 `Authorization: Bearer <token>` 读取，由 Connect interceptor 统一校验
+
+### 沙箱与调度
+
+- `internal/sandbox.Backend` 是统一抽象，`sandbox.Manager` 负责执行
+- `BoxLiteBackend`：调用本地 `boxlite` CLI
+- `RestBackend`：通过 HTTP 连接外部 BoxLite REST 服务
+- 服务启动时读取各 Clip 的 `clip.yaml`，将 `schedules` 注册到进程内 cron
+- 调度任务通过同一套 sandbox 执行，并避免同一 clip/command 重叠运行
+
+## 配置文件
+
+路径：`~/.config/pinix/config.yaml`
+
+```yaml
+super_token: "<admin-token>"
+clips:
+  - id: "clip_xxx"
+    name: "demo"
+    workdir: "/path/to/clip"
+    mounts: []
+    image: "debian:12-slim"
+tokens:
+  - id: "tok_xxx"
+    clip_id: "clip_xxx"
+    label: "ci"
+    token: "<secret>"
+    created_at: "2026-03-11T00:00:00Z"
+```
+
+- `super_token`：管理员 Token；不会通过 API 生成
+- `clips`：已注册 Clip
+- `tokens`：clip-scoped tokens；由 `AdminService` 管理
+
+## Clip 概念
+
+### clip.yaml
+
+当前代码会读取这些字段：`name`、`version`、`description`、`schedules`。
+
+`schedules` 是 `cron 表达式 -> command 名` 的映射，供服务启动时注册定时任务。
+
+### 三层形态
+
+- **Workspace**：开发中的 Clip 目录，包含 `clip.yaml`、`commands/`、可选 `web/` / `data/`
+- **Package**：`.clip` ZIP 包，CLI 用于安装/升级
+- **Instance**：安装并注册到 Pinix 的 Clip（存在于本地目录，并在 config 中有条目）
+
+### commands/
+
+- 命令在运行时从 `commands/` 目录发现
+- 不需要在 `clip.yaml` 中声明
+- `GetInfo` / `ListClips` 会动态扫描命令列表
+
+## 目录结构
+
+```text
+pinix/
+├── cmd/                   # Cobra CLI：serve、clip、invoke、read、info、token
+├── internal/server/       # AdminService + ClipService handlers 与辅助逻辑
+├── internal/sandbox/      # Backend 接口、BoxLiteBackend、RestBackend、shared helpers
+├── internal/scheduler/    # 基于 cron 的进程内调度器
+├── internal/config/       # YAML 持久化存储（super_token / clips / tokens）
+├── internal/auth/         # Bearer Token interceptor
+├── proto/pinix/v1/        # Protobuf 定义
+├── gen/                   # 生成代码（Go / Swift / TypeScript）
+└── main.go                # CLI 入口
+```
+
+`cmd/` 当前包含：`serve`、`clip install/upgrade/uninstall`、`clip create/list/delete`、`invoke`、`read`、`info`、`token`。
+
+## 开发规范
+
+### 文件头
+
+每个 `.go` 文件顶部保留：
 
 ```go
 // Role:    一句话描述文件职责
@@ -100,127 +116,13 @@ go mod tidy
 // Exports: 对外暴露的类型/接口
 ```
 
-查询方式：
+### 错误处理
 
-```bash
-grep -r "^// Role:" *.go service/ internal/ middleware/
-grep -r "Depends:.*<模块名>" *.go service/ internal/ middleware/
-```
+- 优先返回带上下文的错误：`fmt.Errorf("read clip.yaml: %w", err)`
+- RPC handler 使用 `connect.NewError(...)` 返回明确错误码
+- 常见错误码：`CodeInvalidArgument`、`CodeNotFound`、`CodeInternal`、`CodePermissionDenied`
 
-### commands/ Unix 规范
+### 生成代码
 
-- 每个命令是独立可执行文件（shell 脚本、Go binary 等）
-- 必须 `chmod +x`
-- 从 stdin 读入、stdout 输出、stderr 报错
-- exit code 0 = 成功，非零 = 失败
-- 文件名即命令名，不含路径分隔符
-
----
-
-## 可用 RPC
-
-### PinixService（需要 Super Token）
-
-| RPC | 说明 |
-|-----|------|
-| `CreateClip` | 创建 Clip（name + workdir），返回生成的 clip_id |
-| `ListClips` | 列出所有 Clip |
-| `DeleteClip` | 按 clip_id 删除 Clip |
-| `GenerateToken` | 生成 Token（clip_id 为空 = Super Token），返回 64 字符 hex |
-| `RevokeToken` | 按 token 值撤销 Token |
-
-### ClipService（Super Token 或 Clip Token）
-
-| RPC | 说明 |
-|-----|------|
-| `Command` | 执行 `commands/` 下的可执行文件（30s 超时，stderr 限 100KB） |
-
----
-
-## 本地开发
-
-### 启动
-
-```bash
-go run .
-# 默认监听 :8080，可通过 PORT 环境变量覆盖
-PORT=9090 go run .
-```
-
-### 初始化 Bootstrap Token
-
-首次使用需手动写入一个 Super Token：
-
-```bash
-mkdir -p ~/.config/pinix
-cat > ~/.config/pinix/config.yaml << 'EOF'
-clips: []
-tokens:
-  - token: "my-bootstrap-super-token"
-    clip_id: ""
-    label: "bootstrap"
-EOF
-chmod 600 ~/.config/pinix/config.yaml
-```
-
-### 测试（含 Token）
-
-```bash
-TOKEN="my-bootstrap-super-token"
-
-# 1. 生成真正的 Super Token
-curl -s -X POST http://localhost:8080/pinix.v1.PinixService/GenerateToken \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"clipId":"","label":"admin"}'
-# → {"token":"904571e6..."}
-
-# 2. 创建 Clip
-curl -s -X POST http://localhost:8080/pinix.v1.PinixService/CreateClip \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"name":"my-project","workdir":"/home/user/my-project"}'
-# → {"clipId":"1cce54c4..."}
-
-# 3. 列出 Clips
-curl -s -X POST http://localhost:8080/pinix.v1.PinixService/ListClips \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{}'
-
-# 4. 生成 Clip Token
-curl -s -X POST http://localhost:8080/pinix.v1.PinixService/GenerateToken \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"clipId":"<CLIP_ID>","label":"ci"}'
-
-# 5. 用 Super Token 调用 Command
-curl -s -X POST http://localhost:8080/pinix.v1.ClipService/Command \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"name":"hello"}'
-# → {"stdout":"hello from pinix\n"}
-
-# 6. 无 Token 被拒
-curl -s -X POST http://localhost:8080/pinix.v1.ClipService/Command \
-  -H "Content-Type: application/json" \
-  -d '{"name":"hello"}'
-# → {"code":"unauthenticated"}
-
-# 7. Clip Token 访问 PinixService 被拒
-curl -s -X POST http://localhost:8080/pinix.v1.PinixService/ListClips \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <CLIP_TOKEN>" \
-  -d '{}'
-# → {"code":"permission_denied"}
-```
-
-### 添加新命令
-
-```bash
-cat > commands/my-cmd << 'EOF'
-#!/bin/sh
-echo "result"
-EOF
-chmod +x commands/my-cmd
-```
+- `proto/` 修改后执行 `buf generate`
+- `gen/` 下文件为生成产物，不手动编辑

@@ -67,11 +67,11 @@ func (s *AdminServer) ListClips(
 	for i, e := range entries {
 		info := scanClipWorkdir(e)
 		clips[i] = &v1.ClipInfo{
-			ClipId:   e.ID,
-			Name:     e.Name,
-			Desc:     info.desc,
-			Commands: info.commands,
-			HasWeb:   info.hasWeb,
+			ClipId:      e.ID,
+			Name:        e.Name,
+			Description: info.desc,
+			Commands:    info.commands,
+			HasWeb:      info.hasWeb,
 		}
 	}
 	return connect.NewResponse(&v1.ListClipsResponse{Clips: clips}), nil

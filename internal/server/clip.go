@@ -156,5 +156,6 @@ func (s *ClipServer) GetInfo(
 		Description: info.desc,
 		Commands:    info.commands,
 		HasWeb:      info.hasWeb,
+		Version:     readClipYAMLVersion(clip.Workdir),
 	}), nil
 }

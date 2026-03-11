@@ -51,7 +51,7 @@ message ListClipsResponse {
 message ClipInfo {
   string          clip_id   = 1;
   string          name      = 2;
-  string          desc      = 3;
+  string          description = 3;
   repeated string commands  = 4;
   bool            has_web   = 5;
 }
@@ -102,12 +102,6 @@ message InvokeRequest {
   string          stdin = 3;
 }
 
-message InvokeResponse {
-  string stdout    = 1;
-  string stderr    = 2;
-  int32  exit_code = 3;
-}
-
 message InvokeChunk {
   oneof payload {
     bytes stdout    = 1;
@@ -143,4 +137,5 @@ message GetInfoResponse {
   string          description = 2;
   repeated string commands    = 3;
   bool            has_web     = 4;
+  string          version     = 6;
 }
