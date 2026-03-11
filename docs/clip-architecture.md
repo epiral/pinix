@@ -354,7 +354,54 @@ pinix clip uninstall <name>                  # 删除 instance（提示是否保
 
 ---
 
+---
+
+## 7. Clip 接口与 Edge Clip
+
+### 7.1 Clip 是接口，不是文件系统
+
+上述 Workspace/Package/Instance 模型描述的是**本地 Clip**（Local Clip）——命令以文件系统上的脚本或二进制形式存在，在 BoxLite VM 中执行。
+
+但 Clip 的本质是一个**接口**：
+
+```go
+type Clip interface {
+    GetInfo(ctx)                          → Info
+    Invoke(ctx, command, args, stdin)     → stdout/stderr/exit_code (streaming)
+    ReadFile(ctx, path, offset, length)   → file data (streaming)
+}
+```
+
+实现了这三个方法的任何东西就是 Clip。文件系统只是一种实现方式。
+
+### 7.2 Edge Clip
+
+Edge Clip 是 Clip 接口的第二种实现。设备（iPhone、树莓派、ESP32）通过 EdgeService 双向流连接到 Pinix Server，注册其原生能力为 Clip。
+
+```
+Local Clip:  commands/ → BoxLite VM → stdout
+Edge Clip:   EdgeRequest → device stream → EdgeResponse
+```
+
+两者在 Hub 层面完全对等——路由、Token、调用方式一致。调用方无法区分。
+
+详见 [RFC-001: Clip Interface & Hub/Worker Separation](./rfc/001-clip-interface-hub-worker.md)。
+
+### 7.3 内部架构
+
+```
+internal/
+  clip/        Clip 接口 + Registry（Hub 唯一依赖的抽象）
+  hub/         RPC handler，通过 Clip 接口路由
+  worker/      LocalClip（sandbox + filesystem）
+  edge/        EdgeClip（设备 session）
+  sandbox/     BoxLite 后端（Worker 内部依赖）
+```
+
+---
+
 ## 相关文档
 
+- [RFC-001: Clip Interface & Hub/Worker Separation](./rfc/001-clip-interface-hub-worker.md) — Clip 接口抽象与 Edge Clip 设计
 - [Bridge 跨端兼容规范](./clip-bridge-compat.md) — Clip 前端 JS 调用 Bridge 时的 iOS/Desktop 适配
 - [Clip UI 开发 SOP](./clip-ui-dev-sop.md) — CC 主导的 UI 开发完整流程

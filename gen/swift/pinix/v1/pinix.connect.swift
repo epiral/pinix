@@ -132,3 +132,34 @@ internal final class Pinix_V1_ClipServiceClient: Pinix_V1_ClipServiceClientInter
         }
     }
 }
+
+/// ─── EdgeService ─────────────────────────────────────────────
+/// Devices connect via bidirectional stream to expose native capabilities
+/// as Edge Clips. Requires Super Token authentication.
+internal protocol Pinix_V1_EdgeServiceClientInterface: Sendable {
+
+    /// Device connects and registers its capabilities.
+    /// Server forwards Invoke/ReadFile/GetInfo requests through this stream.
+    @available(iOS 13, *)
+    func `connect`(headers: Connect.Headers) -> any Connect.BidirectionalAsyncStreamInterface<Pinix_V1_EdgeUpstream, Pinix_V1_EdgeDownstream>
+}
+
+/// Concrete implementation of `Pinix_V1_EdgeServiceClientInterface`.
+internal final class Pinix_V1_EdgeServiceClient: Pinix_V1_EdgeServiceClientInterface, Sendable {
+    private let client: Connect.ProtocolClientInterface
+
+    internal init(client: Connect.ProtocolClientInterface) {
+        self.client = client
+    }
+
+    @available(iOS 13, *)
+    internal func `connect`(headers: Connect.Headers = [:]) -> any Connect.BidirectionalAsyncStreamInterface<Pinix_V1_EdgeUpstream, Pinix_V1_EdgeDownstream> {
+        return self.client.bidirectionalStream(path: "/pinix.v1.EdgeService/Connect", headers: headers)
+    }
+
+    internal enum Metadata {
+        internal enum Methods {
+            internal static let connect = Connect.MethodSpec(name: "Connect", service: "pinix.v1.EdgeService", type: .bidirectionalStream)
+        }
+    }
+}

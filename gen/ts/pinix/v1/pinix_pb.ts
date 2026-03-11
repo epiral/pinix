@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file pinix/v1/pinix.proto.
  */
 export const file_pinix_v1_pinix: GenFile = /*@__PURE__*/
-  fileDesc("ChRwaW5peC92MS9waW5peC5wcm90bxIIcGluaXgudjEiMgoRQ3JlYXRlQ2xpcFJlcXVlc3QSDAoEbmFtZRgBIAEoCRIPCgd3b3JrZGlyGAIgASgJIiUKEkNyZWF0ZUNsaXBSZXNwb25zZRIPCgdjbGlwX2lkGAEgASgJIhIKEExpc3RDbGlwc1JlcXVlc3QiNgoRTGlzdENsaXBzUmVzcG9uc2USIQoFY2xpcHMYASADKAsyEi5waW5peC52MS5DbGlwSW5mbyJhCghDbGlwSW5mbxIPCgdjbGlwX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSEAoIY29tbWFuZHMYBCADKAkSDwoHaGFzX3dlYhgFIAEoCCIkChFEZWxldGVDbGlwUmVxdWVzdBIPCgdjbGlwX2lkGAEgASgJIhQKEkRlbGV0ZUNsaXBSZXNwb25zZSI2ChRHZW5lcmF0ZVRva2VuUmVxdWVzdBIPCgdjbGlwX2lkGAEgASgJEg0KBWxhYmVsGAIgASgJIjIKFUdlbmVyYXRlVG9rZW5SZXNwb25zZRIKCgJpZBgBIAEoCRINCgV0b2tlbhgCIAEoCSITChFMaXN0VG9rZW5zUmVxdWVzdCI5ChJMaXN0VG9rZW5zUmVzcG9uc2USIwoGdG9rZW5zGAEgAygLMhMucGluaXgudjEuVG9rZW5JbmZvIlkKCVRva2VuSW5mbxIKCgJpZBgBIAEoCRIPCgdjbGlwX2lkGAIgASgJEg0KBWxhYmVsGAMgASgJEhIKCmNyZWF0ZWRfYXQYBCABKAkSDAoEaGludBgFIAEoCSIgChJSZXZva2VUb2tlblJlcXVlc3QSCgoCaWQYASABKAkiFQoTUmV2b2tlVG9rZW5SZXNwb25zZSI6Cg1JbnZva2VSZXF1ZXN0EgwKBG5hbWUYASABKAkSDAoEYXJncxgCIAMoCRINCgVzdGRpbhgDIAEoCSJRCgtJbnZva2VDaHVuaxIQCgZzdGRvdXQYASABKAxIABIQCgZzdGRlcnIYAiABKAxIABITCglleGl0X2NvZGUYAyABKAVIAEIJCgdwYXlsb2FkIlYKD1JlYWRGaWxlUmVxdWVzdBIMCgRwYXRoGAEgASgJEg4KBm9mZnNldBgCIAEoAxIOCgZsZW5ndGgYAyABKAMSFQoNaWZfbm9uZV9tYXRjaBgEIAEoCSJ4Cg1SZWFkRmlsZUNodW5rEgwKBGRhdGEYASABKAwSDgoGb2Zmc2V0GAIgASgDEhEKCW1pbWVfdHlwZRgDIAEoCRISCgp0b3RhbF9zaXplGAQgASgDEgwKBGV0YWcYBSABKAkSFAoMbm90X21vZGlmaWVkGAYgASgIIhAKDkdldEluZm9SZXF1ZXN0ImgKD0dldEluZm9SZXNwb25zZRIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEhAKCGNvbW1hbmRzGAMgAygJEg8KB2hhc193ZWIYBCABKAgSDwoHdmVyc2lvbhgGIAEoCTLNAwoMQWRtaW5TZXJ2aWNlEkcKCkNyZWF0ZUNsaXASGy5waW5peC52MS5DcmVhdGVDbGlwUmVxdWVzdBocLnBpbml4LnYxLkNyZWF0ZUNsaXBSZXNwb25zZRJECglMaXN0Q2xpcHMSGi5waW5peC52MS5MaXN0Q2xpcHNSZXF1ZXN0GhsucGluaXgudjEuTGlzdENsaXBzUmVzcG9uc2USRwoKRGVsZXRlQ2xpcBIbLnBpbml4LnYxLkRlbGV0ZUNsaXBSZXF1ZXN0GhwucGluaXgudjEuRGVsZXRlQ2xpcFJlc3BvbnNlElAKDUdlbmVyYXRlVG9rZW4SHi5waW5peC52MS5HZW5lcmF0ZVRva2VuUmVxdWVzdBofLnBpbml4LnYxLkdlbmVyYXRlVG9rZW5SZXNwb25zZRJHCgpMaXN0VG9rZW5zEhsucGluaXgudjEuTGlzdFRva2Vuc1JlcXVlc3QaHC5waW5peC52MS5MaXN0VG9rZW5zUmVzcG9uc2USSgoLUmV2b2tlVG9rZW4SHC5waW5peC52MS5SZXZva2VUb2tlblJlcXVlc3QaHS5waW5peC52MS5SZXZva2VUb2tlblJlc3BvbnNlMssBCgtDbGlwU2VydmljZRI6CgZJbnZva2USFy5waW5peC52MS5JbnZva2VSZXF1ZXN0GhUucGluaXgudjEuSW52b2tlQ2h1bmswARJACghSZWFkRmlsZRIZLnBpbml4LnYxLlJlYWRGaWxlUmVxdWVzdBoXLnBpbml4LnYxLlJlYWRGaWxlQ2h1bmswARI+CgdHZXRJbmZvEhgucGluaXgudjEuR2V0SW5mb1JlcXVlc3QaGS5waW5peC52MS5HZXRJbmZvUmVzcG9uc2VCMVovZ2l0aHViLmNvbS9lcGlyYWwvcGluaXgvZ2VuL2dvL3Bpbml4L3YxO3Bpbml4djFiBnByb3RvMw");
+  fileDesc("ChRwaW5peC92MS9waW5peC5wcm90bxIIcGluaXgudjEiMgoRQ3JlYXRlQ2xpcFJlcXVlc3QSDAoEbmFtZRgBIAEoCRIPCgd3b3JrZGlyGAIgASgJIiUKEkNyZWF0ZUNsaXBSZXNwb25zZRIPCgdjbGlwX2lkGAEgASgJIhIKEExpc3RDbGlwc1JlcXVlc3QiNgoRTGlzdENsaXBzUmVzcG9uc2USIQoFY2xpcHMYASADKAsyEi5waW5peC52MS5DbGlwSW5mbyJhCghDbGlwSW5mbxIPCgdjbGlwX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSEAoIY29tbWFuZHMYBCADKAkSDwoHaGFzX3dlYhgFIAEoCCIkChFEZWxldGVDbGlwUmVxdWVzdBIPCgdjbGlwX2lkGAEgASgJIhQKEkRlbGV0ZUNsaXBSZXNwb25zZSI2ChRHZW5lcmF0ZVRva2VuUmVxdWVzdBIPCgdjbGlwX2lkGAEgASgJEg0KBWxhYmVsGAIgASgJIjIKFUdlbmVyYXRlVG9rZW5SZXNwb25zZRIKCgJpZBgBIAEoCRINCgV0b2tlbhgCIAEoCSITChFMaXN0VG9rZW5zUmVxdWVzdCI5ChJMaXN0VG9rZW5zUmVzcG9uc2USIwoGdG9rZW5zGAEgAygLMhMucGluaXgudjEuVG9rZW5JbmZvIlkKCVRva2VuSW5mbxIKCgJpZBgBIAEoCRIPCgdjbGlwX2lkGAIgASgJEg0KBWxhYmVsGAMgASgJEhIKCmNyZWF0ZWRfYXQYBCABKAkSDAoEaGludBgFIAEoCSIgChJSZXZva2VUb2tlblJlcXVlc3QSCgoCaWQYASABKAkiFQoTUmV2b2tlVG9rZW5SZXNwb25zZSI6Cg1JbnZva2VSZXF1ZXN0EgwKBG5hbWUYASABKAkSDAoEYXJncxgCIAMoCRINCgVzdGRpbhgDIAEoCSJRCgtJbnZva2VDaHVuaxIQCgZzdGRvdXQYASABKAxIABIQCgZzdGRlcnIYAiABKAxIABITCglleGl0X2NvZGUYAyABKAVIAEIJCgdwYXlsb2FkIlYKD1JlYWRGaWxlUmVxdWVzdBIMCgRwYXRoGAEgASgJEg4KBm9mZnNldBgCIAEoAxIOCgZsZW5ndGgYAyABKAMSFQoNaWZfbm9uZV9tYXRjaBgEIAEoCSJ4Cg1SZWFkRmlsZUNodW5rEgwKBGRhdGEYASABKAwSDgoGb2Zmc2V0GAIgASgDEhEKCW1pbWVfdHlwZRgDIAEoCRISCgp0b3RhbF9zaXplGAQgASgDEgwKBGV0YWcYBSABKAkSFAoMbm90X21vZGlmaWVkGAYgASgIIhAKDkdldEluZm9SZXF1ZXN0ImgKD0dldEluZm9SZXNwb25zZRIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEhAKCGNvbW1hbmRzGAMgAygJEg8KB2hhc193ZWIYBCABKAgSDwoHdmVyc2lvbhgGIAEoCSKRAQoMRWRnZVVwc3RyZWFtEioKCG1hbmlmZXN0GAEgASgLMhYucGluaXgudjEuRWRnZU1hbmlmZXN0SAASKgoIcmVzcG9uc2UYAiABKAsyFi5waW5peC52MS5FZGdlUmVzcG9uc2VIABIiCgRwaW5nGAMgASgLMhIucGluaXgudjEuRWRnZVBpbmdIAEIFCgNtc2civQEKDkVkZ2VEb3duc3RyZWFtEioKCGFjY2VwdGVkGAEgASgLMhYucGluaXgudjEuRWRnZUFjY2VwdGVkSAASKAoHcmVxdWVzdBgCIAEoCzIVLnBpbml4LnYxLkVkZ2VSZXF1ZXN0SAASIgoEcG9uZxgDIAEoCzISLnBpbml4LnYxLkVkZ2VQb25nSAASKgoIcmVqZWN0ZWQYBCABKAsyFi5waW5peC52MS5FZGdlUmVqZWN0ZWRIAEIFCgNtc2cibgoMRWRnZU1hbmlmZXN0EgwKBG5hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSKgoIY29tbWFuZHMYAyADKAsyGC5waW5peC52MS5FZGdlQ29tbWFuZERlZhIPCgdoYXNfd2ViGAQgASgIIjMKDkVkZ2VDb21tYW5kRGVmEgwKBG5hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkiLgoMRWRnZUFjY2VwdGVkEg8KB2NsaXBfaWQYASABKAkSDQoFdG9rZW4YAiABKAkiHgoMRWRnZVJlamVjdGVkEg4KBnJlYXNvbhgBIAEoCSLaAQoLRWRnZVJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRIpCgZpbnZva2UYCiABKAsyFy5waW5peC52MS5JbnZva2VSZXF1ZXN0SAASLgoJcmVhZF9maWxlGAsgASgLMhkucGluaXgudjEuUmVhZEZpbGVSZXF1ZXN0SAASLAoIZ2V0X2luZm8YDCABKAsyGC5waW5peC52MS5HZXRJbmZvUmVxdWVzdEgAEiYKBmNhbmNlbBgNIAEoCzIULnBpbml4LnYxLkVkZ2VDYW5jZWxIAEIGCgRib2R5IokCCgxFZGdlUmVzcG9uc2USEgoKcmVxdWVzdF9pZBgBIAEoCRItCgxpbnZva2VfY2h1bmsYCiABKAsyFS5waW5peC52MS5JbnZva2VDaHVua0gAEi0KCnJlYWRfY2h1bmsYCyABKAsyFy5waW5peC52MS5SZWFkRmlsZUNodW5rSAASLQoIZ2V0X2luZm8YDCABKAsyGS5waW5peC52MS5HZXRJbmZvUmVzcG9uc2VIABIkCgVlcnJvchgNIAEoCzITLnBpbml4LnYxLkVkZ2VFcnJvckgAEioKCGNvbXBsZXRlGA4gASgLMhYucGluaXgudjEuRWRnZUNvbXBsZXRlSABCBgoEYm9keSIMCgpFZGdlQ2FuY2VsIg4KDEVkZ2VDb21wbGV0ZSIKCghFZGdlUGluZyIKCghFZGdlUG9uZyIqCglFZGdlRXJyb3ISDAoEY29kZRgBIAEoCRIPCgdtZXNzYWdlGAIgASgJMs0DCgxBZG1pblNlcnZpY2USRwoKQ3JlYXRlQ2xpcBIbLnBpbml4LnYxLkNyZWF0ZUNsaXBSZXF1ZXN0GhwucGluaXgudjEuQ3JlYXRlQ2xpcFJlc3BvbnNlEkQKCUxpc3RDbGlwcxIaLnBpbml4LnYxLkxpc3RDbGlwc1JlcXVlc3QaGy5waW5peC52MS5MaXN0Q2xpcHNSZXNwb25zZRJHCgpEZWxldGVDbGlwEhsucGluaXgudjEuRGVsZXRlQ2xpcFJlcXVlc3QaHC5waW5peC52MS5EZWxldGVDbGlwUmVzcG9uc2USUAoNR2VuZXJhdGVUb2tlbhIeLnBpbml4LnYxLkdlbmVyYXRlVG9rZW5SZXF1ZXN0Gh8ucGluaXgudjEuR2VuZXJhdGVUb2tlblJlc3BvbnNlEkcKCkxpc3RUb2tlbnMSGy5waW5peC52MS5MaXN0VG9rZW5zUmVxdWVzdBocLnBpbml4LnYxLkxpc3RUb2tlbnNSZXNwb25zZRJKCgtSZXZva2VUb2tlbhIcLnBpbml4LnYxLlJldm9rZVRva2VuUmVxdWVzdBodLnBpbml4LnYxLlJldm9rZVRva2VuUmVzcG9uc2UyywEKC0NsaXBTZXJ2aWNlEjoKBkludm9rZRIXLnBpbml4LnYxLkludm9rZVJlcXVlc3QaFS5waW5peC52MS5JbnZva2VDaHVuazABEkAKCFJlYWRGaWxlEhkucGluaXgudjEuUmVhZEZpbGVSZXF1ZXN0GhcucGluaXgudjEuUmVhZEZpbGVDaHVuazABEj4KB0dldEluZm8SGC5waW5peC52MS5HZXRJbmZvUmVxdWVzdBoZLnBpbml4LnYxLkdldEluZm9SZXNwb25zZTJOCgtFZGdlU2VydmljZRI/CgdDb25uZWN0EhYucGluaXgudjEuRWRnZVVwc3RyZWFtGhgucGluaXgudjEuRWRnZURvd25zdHJlYW0oATABQjFaL2dpdGh1Yi5jb20vZXBpcmFsL3Bpbml4L2dlbi9nby9waW5peC92MTtwaW5peHYxYgZwcm90bzM");
 
 /**
  * @generated from message pinix.v1.CreateClipRequest
@@ -494,6 +494,377 @@ export const GetInfoResponseSchema: GenMessage<GetInfoResponse> = /*@__PURE__*/
   messageDesc(file_pinix_v1_pinix, 19);
 
 /**
+ * Device → Server
+ *
+ * @generated from message pinix.v1.EdgeUpstream
+ */
+export type EdgeUpstream = Message<"pinix.v1.EdgeUpstream"> & {
+  /**
+   * @generated from oneof pinix.v1.EdgeUpstream.msg
+   */
+  msg: {
+    /**
+     * registration: "here's what I can do"
+     *
+     * @generated from field: pinix.v1.EdgeManifest manifest = 1;
+     */
+    value: EdgeManifest;
+    case: "manifest";
+  } | {
+    /**
+     * response to a forwarded request
+     *
+     * @generated from field: pinix.v1.EdgeResponse response = 2;
+     */
+    value: EdgeResponse;
+    case: "response";
+  } | {
+    /**
+     * @generated from field: pinix.v1.EdgePing ping = 3;
+     */
+    value: EdgePing;
+    case: "ping";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message pinix.v1.EdgeUpstream.
+ * Use `create(EdgeUpstreamSchema)` to create a new message.
+ */
+export const EdgeUpstreamSchema: GenMessage<EdgeUpstream> = /*@__PURE__*/
+  messageDesc(file_pinix_v1_pinix, 20);
+
+/**
+ * Server → Device
+ *
+ * @generated from message pinix.v1.EdgeDownstream
+ */
+export type EdgeDownstream = Message<"pinix.v1.EdgeDownstream"> & {
+  /**
+   * @generated from oneof pinix.v1.EdgeDownstream.msg
+   */
+  msg: {
+    /**
+     * registration accepted
+     *
+     * @generated from field: pinix.v1.EdgeAccepted accepted = 1;
+     */
+    value: EdgeAccepted;
+    case: "accepted";
+  } | {
+    /**
+     * forwarded request from a caller
+     *
+     * @generated from field: pinix.v1.EdgeRequest request = 2;
+     */
+    value: EdgeRequest;
+    case: "request";
+  } | {
+    /**
+     * @generated from field: pinix.v1.EdgePong pong = 3;
+     */
+    value: EdgePong;
+    case: "pong";
+  } | {
+    /**
+     * registration rejected
+     *
+     * @generated from field: pinix.v1.EdgeRejected rejected = 4;
+     */
+    value: EdgeRejected;
+    case: "rejected";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message pinix.v1.EdgeDownstream.
+ * Use `create(EdgeDownstreamSchema)` to create a new message.
+ */
+export const EdgeDownstreamSchema: GenMessage<EdgeDownstream> = /*@__PURE__*/
+  messageDesc(file_pinix_v1_pinix, 21);
+
+/**
+ * @generated from message pinix.v1.EdgeManifest
+ */
+export type EdgeManifest = Message<"pinix.v1.EdgeManifest"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string description = 2;
+   */
+  description: string;
+
+  /**
+   * @generated from field: repeated pinix.v1.EdgeCommandDef commands = 3;
+   */
+  commands: EdgeCommandDef[];
+
+  /**
+   * @generated from field: bool has_web = 4;
+   */
+  hasWeb: boolean;
+};
+
+/**
+ * Describes the message pinix.v1.EdgeManifest.
+ * Use `create(EdgeManifestSchema)` to create a new message.
+ */
+export const EdgeManifestSchema: GenMessage<EdgeManifest> = /*@__PURE__*/
+  messageDesc(file_pinix_v1_pinix, 22);
+
+/**
+ * @generated from message pinix.v1.EdgeCommandDef
+ */
+export type EdgeCommandDef = Message<"pinix.v1.EdgeCommandDef"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string description = 2;
+   */
+  description: string;
+};
+
+/**
+ * Describes the message pinix.v1.EdgeCommandDef.
+ * Use `create(EdgeCommandDefSchema)` to create a new message.
+ */
+export const EdgeCommandDefSchema: GenMessage<EdgeCommandDef> = /*@__PURE__*/
+  messageDesc(file_pinix_v1_pinix, 23);
+
+/**
+ * @generated from message pinix.v1.EdgeAccepted
+ */
+export type EdgeAccepted = Message<"pinix.v1.EdgeAccepted"> & {
+  /**
+   * assigned clip ID
+   *
+   * @generated from field: string clip_id = 1;
+   */
+  clipId: string;
+
+  /**
+   * clip token for callers to invoke this edge clip
+   *
+   * @generated from field: string token = 2;
+   */
+  token: string;
+};
+
+/**
+ * Describes the message pinix.v1.EdgeAccepted.
+ * Use `create(EdgeAcceptedSchema)` to create a new message.
+ */
+export const EdgeAcceptedSchema: GenMessage<EdgeAccepted> = /*@__PURE__*/
+  messageDesc(file_pinix_v1_pinix, 24);
+
+/**
+ * @generated from message pinix.v1.EdgeRejected
+ */
+export type EdgeRejected = Message<"pinix.v1.EdgeRejected"> & {
+  /**
+   * @generated from field: string reason = 1;
+   */
+  reason: string;
+};
+
+/**
+ * Describes the message pinix.v1.EdgeRejected.
+ * Use `create(EdgeRejectedSchema)` to create a new message.
+ */
+export const EdgeRejectedSchema: GenMessage<EdgeRejected> = /*@__PURE__*/
+  messageDesc(file_pinix_v1_pinix, 25);
+
+/**
+ * Server → Device: request envelope with correlation ID
+ *
+ * @generated from message pinix.v1.EdgeRequest
+ */
+export type EdgeRequest = Message<"pinix.v1.EdgeRequest"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from oneof pinix.v1.EdgeRequest.body
+   */
+  body: {
+    /**
+     * @generated from field: pinix.v1.InvokeRequest invoke = 10;
+     */
+    value: InvokeRequest;
+    case: "invoke";
+  } | {
+    /**
+     * @generated from field: pinix.v1.ReadFileRequest read_file = 11;
+     */
+    value: ReadFileRequest;
+    case: "readFile";
+  } | {
+    /**
+     * @generated from field: pinix.v1.GetInfoRequest get_info = 12;
+     */
+    value: GetInfoRequest;
+    case: "getInfo";
+  } | {
+    /**
+     * @generated from field: pinix.v1.EdgeCancel cancel = 13;
+     */
+    value: EdgeCancel;
+    case: "cancel";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message pinix.v1.EdgeRequest.
+ * Use `create(EdgeRequestSchema)` to create a new message.
+ */
+export const EdgeRequestSchema: GenMessage<EdgeRequest> = /*@__PURE__*/
+  messageDesc(file_pinix_v1_pinix, 26);
+
+/**
+ * Device → Server: response envelope with correlation ID
+ *
+ * @generated from message pinix.v1.EdgeResponse
+ */
+export type EdgeResponse = Message<"pinix.v1.EdgeResponse"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from oneof pinix.v1.EdgeResponse.body
+   */
+  body: {
+    /**
+     * may send multiple (streaming)
+     *
+     * @generated from field: pinix.v1.InvokeChunk invoke_chunk = 10;
+     */
+    value: InvokeChunk;
+    case: "invokeChunk";
+  } | {
+    /**
+     * may send multiple (streaming)
+     *
+     * @generated from field: pinix.v1.ReadFileChunk read_chunk = 11;
+     */
+    value: ReadFileChunk;
+    case: "readChunk";
+  } | {
+    /**
+     * @generated from field: pinix.v1.GetInfoResponse get_info = 12;
+     */
+    value: GetInfoResponse;
+    case: "getInfo";
+  } | {
+    /**
+     * request-scoped error
+     *
+     * @generated from field: pinix.v1.EdgeError error = 13;
+     */
+    value: EdgeError;
+    case: "error";
+  } | {
+    /**
+     * explicit completion signal
+     *
+     * @generated from field: pinix.v1.EdgeComplete complete = 14;
+     */
+    value: EdgeComplete;
+    case: "complete";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message pinix.v1.EdgeResponse.
+ * Use `create(EdgeResponseSchema)` to create a new message.
+ */
+export const EdgeResponseSchema: GenMessage<EdgeResponse> = /*@__PURE__*/
+  messageDesc(file_pinix_v1_pinix, 27);
+
+/**
+ * @generated from message pinix.v1.EdgeCancel
+ */
+export type EdgeCancel = Message<"pinix.v1.EdgeCancel"> & {
+};
+
+/**
+ * Describes the message pinix.v1.EdgeCancel.
+ * Use `create(EdgeCancelSchema)` to create a new message.
+ */
+export const EdgeCancelSchema: GenMessage<EdgeCancel> = /*@__PURE__*/
+  messageDesc(file_pinix_v1_pinix, 28);
+
+/**
+ * @generated from message pinix.v1.EdgeComplete
+ */
+export type EdgeComplete = Message<"pinix.v1.EdgeComplete"> & {
+};
+
+/**
+ * Describes the message pinix.v1.EdgeComplete.
+ * Use `create(EdgeCompleteSchema)` to create a new message.
+ */
+export const EdgeCompleteSchema: GenMessage<EdgeComplete> = /*@__PURE__*/
+  messageDesc(file_pinix_v1_pinix, 29);
+
+/**
+ * @generated from message pinix.v1.EdgePing
+ */
+export type EdgePing = Message<"pinix.v1.EdgePing"> & {
+};
+
+/**
+ * Describes the message pinix.v1.EdgePing.
+ * Use `create(EdgePingSchema)` to create a new message.
+ */
+export const EdgePingSchema: GenMessage<EdgePing> = /*@__PURE__*/
+  messageDesc(file_pinix_v1_pinix, 30);
+
+/**
+ * @generated from message pinix.v1.EdgePong
+ */
+export type EdgePong = Message<"pinix.v1.EdgePong"> & {
+};
+
+/**
+ * Describes the message pinix.v1.EdgePong.
+ * Use `create(EdgePongSchema)` to create a new message.
+ */
+export const EdgePongSchema: GenMessage<EdgePong> = /*@__PURE__*/
+  messageDesc(file_pinix_v1_pinix, 31);
+
+/**
+ * @generated from message pinix.v1.EdgeError
+ */
+export type EdgeError = Message<"pinix.v1.EdgeError"> & {
+  /**
+   * @generated from field: string code = 1;
+   */
+  code: string;
+
+  /**
+   * @generated from field: string message = 2;
+   */
+  message: string;
+};
+
+/**
+ * Describes the message pinix.v1.EdgeError.
+ * Use `create(EdgeErrorSchema)` to create a new message.
+ */
+export const EdgeErrorSchema: GenMessage<EdgeError> = /*@__PURE__*/
+  messageDesc(file_pinix_v1_pinix, 32);
+
+/**
  * ─── AdminService ─────────────────────────────────────────────
  * Super Token holders only. Manages clips and tokens on the server.
  *
@@ -594,4 +965,26 @@ export const ClipService: GenService<{
   },
 }> = /*@__PURE__*/
   serviceDesc(file_pinix_v1_pinix, 1);
+
+/**
+ * ─── EdgeService ─────────────────────────────────────────────
+ * Devices connect via bidirectional stream to expose native capabilities
+ * as Edge Clips. Requires Super Token authentication.
+ *
+ * @generated from service pinix.v1.EdgeService
+ */
+export const EdgeService: GenService<{
+  /**
+   * Device connects and registers its capabilities.
+   * Server forwards Invoke/ReadFile/GetInfo requests through this stream.
+   *
+   * @generated from rpc pinix.v1.EdgeService.Connect
+   */
+  connect: {
+    methodKind: "bidi_streaming";
+    input: typeof EdgeUpstreamSchema;
+    output: typeof EdgeDownstreamSchema;
+  },
+}> = /*@__PURE__*/
+  serviceDesc(file_pinix_v1_pinix, 2);
 

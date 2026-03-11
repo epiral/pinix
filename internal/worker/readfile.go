@@ -1,8 +1,8 @@
-// Role:    ClipService ReadFile handler (path validation, range reads, ETag)
-// Depends: internal/server ClipServer, connectrpc, os/path/filepath, mime
-// Exports: (ClipServer.ReadFile method)
+// Role:    Local clip file read helpers
+// Depends: context, io, mime, os, path/filepath, strings, connectrpc, internal/clip
+// Exports: (package-internal helpers)
 
-package server
+package worker
 
 import (
 	"context"
@@ -14,67 +14,26 @@ import (
 	"strings"
 
 	connect "connectrpc.com/connect"
-	v1 "github.com/epiral/pinix/gen/go/pinix/v1"
+	"github.com/epiral/pinix/internal/clip"
 )
 
-const readChunkSize = 64 * 1024 // 64 KB
-
-func (s *ClipServer) ReadFile(
-	ctx context.Context,
-	req *connect.Request[v1.ReadFileRequest],
-	stream *connect.ServerStream[v1.ReadFileChunk],
-) error {
-	relPath := req.Msg.GetPath()
-
-	if strings.Contains(relPath, "..") {
-		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid path: %s", relPath))
-	}
-	if !strings.HasPrefix(relPath, "web/") && !strings.HasPrefix(relPath, "data/") {
-		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("path must be under web/ or data/"))
-	}
-
-	clip, err := s.resolveClip(ctx)
-	if err != nil {
-		return err
-	}
-
-	resolvedPath, err := resolveClipFilePath(clip.Workdir, relPath)
-	if err != nil {
-		return err
-	}
-
-	f, info, err := openRegularFile(resolvedPath, relPath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	totalSize := info.Size()
-	mimeType := mimeTypeFromPath(relPath)
-	etag := computeETag(info)
-	if req.Msg.GetIfNoneMatch() == etag {
-		return stream.Send(&v1.ReadFileChunk{
-			MimeType:    mimeType,
-			TotalSize:   totalSize,
-			Etag:        etag,
-			NotModified: true,
-		})
-	}
-
-	offset, remaining, err := validateReadRange(req.Msg.GetOffset(), req.Msg.GetLength(), totalSize)
-	if err != nil {
-		return err
-	}
-	if offset > 0 {
-		if _, err := f.Seek(offset, io.SeekStart); err != nil {
-			return connect.NewError(connect.CodeInternal, err)
-		}
-	}
-
-	return streamReadFile(ctx, f, stream, mimeType, totalSize, etag, offset, remaining)
-}
+const readChunkSize = 64 * 1024
 
 func resolveClipFilePath(workdir, relPath string) (string, error) {
+	cleanRel := filepath.Clean(relPath)
+	if cleanRel == "." || cleanRel == string(os.PathSeparator) {
+		return "", connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("path is required"))
+	}
+	if strings.HasPrefix(cleanRel, "..") || filepath.IsAbs(relPath) {
+		return "", connect.NewError(connect.CodePermissionDenied, fmt.Errorf("path escapes workdir"))
+	}
+	if cleanRel != filepath.Clean(filepath.ToSlash(relPath)) && filepath.Separator == '\\' {
+		cleanRel = filepath.Clean(relPath)
+	}
+	if !(strings.HasPrefix(filepath.ToSlash(cleanRel), "web/") || strings.HasPrefix(filepath.ToSlash(cleanRel), "data/")) && filepath.ToSlash(cleanRel) != "web" && filepath.ToSlash(cleanRel) != "data" {
+		return "", connect.NewError(connect.CodePermissionDenied, fmt.Errorf("path must be under web/ or data/"))
+	}
+
 	resolvedWorkdir, err := filepath.EvalSymlinks(workdir)
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, fmt.Errorf("resolve workdir: %w", err))
@@ -84,7 +43,7 @@ func resolveClipFilePath(workdir, relPath string) (string, error) {
 		return "", connect.NewError(connect.CodeInternal, fmt.Errorf("resolve workdir abs path: %w", err))
 	}
 
-	absPath := filepath.Join(workdir, relPath)
+	absPath := filepath.Join(workdir, cleanRel)
 	resolvedPath, err := filepath.EvalSymlinks(absPath)
 	if err != nil {
 		return "", connect.NewError(connect.CodeNotFound, fmt.Errorf("file not found: %s", relPath))
@@ -110,7 +69,6 @@ func openRegularFile(path, relPath string) (*os.File, os.FileInfo, error) {
 	if err != nil {
 		return nil, nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("file not found: %s", relPath))
 	}
-
 	info, err := f.Stat()
 	if err != nil {
 		_ = f.Close()
@@ -133,47 +91,28 @@ func validateReadRange(offset, length, totalSize int64) (int64, int64, error) {
 	if offset > totalSize {
 		return 0, 0, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("offset must be <= file size"))
 	}
-
 	if length > 0 {
 		return offset, length, nil
 	}
 	return offset, totalSize - offset, nil
 }
 
-func streamReadFile(
-	ctx context.Context,
-	f *os.File,
-	stream *connect.ServerStream[v1.ReadFileChunk],
-	mimeType string,
-	totalSize int64,
-	etag string,
-	offset int64,
-	remaining int64,
-) error {
+func streamReadFile(ctx context.Context, f *os.File, out chan<- clip.FileChunk, mimeType string, totalSize int64, etag string, offset int64, remaining int64) error {
 	buf := make([]byte, readChunkSize)
 	currentOffset := offset
-
 	for remaining > 0 {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-
 		toRead := int64(readChunkSize)
 		if toRead > remaining {
 			toRead = remaining
 		}
-
 		n, err := f.Read(buf[:toRead])
 		if n > 0 {
-			if sendErr := stream.Send(&v1.ReadFileChunk{
-				Data:      buf[:n],
-				Offset:    currentOffset,
-				MimeType:  mimeType,
-				TotalSize: totalSize,
-				Etag:      etag,
-			}); sendErr != nil {
-				return sendErr
-			}
+			chunk := make([]byte, n)
+			copy(chunk, buf[:n])
+			out <- clip.FileChunk{Data: chunk, Offset: currentOffset, MimeType: mimeType, TotalSize: totalSize, ETag: etag}
 			currentOffset += int64(n)
 			remaining -= int64(n)
 		}

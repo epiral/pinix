@@ -25,6 +25,8 @@ const (
 	AdminServiceName = "pinix.v1.AdminService"
 	// ClipServiceName is the fully-qualified name of the ClipService service.
 	ClipServiceName = "pinix.v1.ClipService"
+	// EdgeServiceName is the fully-qualified name of the EdgeService service.
+	EdgeServiceName = "pinix.v1.EdgeService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -55,6 +57,8 @@ const (
 	ClipServiceReadFileProcedure = "/pinix.v1.ClipService/ReadFile"
 	// ClipServiceGetInfoProcedure is the fully-qualified name of the ClipService's GetInfo RPC.
 	ClipServiceGetInfoProcedure = "/pinix.v1.ClipService/GetInfo"
+	// EdgeServiceConnectProcedure is the fully-qualified name of the EdgeService's Connect RPC.
+	EdgeServiceConnectProcedure = "/pinix.v1.EdgeService/Connect"
 )
 
 // AdminServiceClient is a client for the pinix.v1.AdminService service.
@@ -387,4 +391,78 @@ func (UnimplementedClipServiceHandler) ReadFile(context.Context, *connect.Reques
 
 func (UnimplementedClipServiceHandler) GetInfo(context.Context, *connect.Request[v1.GetInfoRequest]) (*connect.Response[v1.GetInfoResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("pinix.v1.ClipService.GetInfo is not implemented"))
+}
+
+// EdgeServiceClient is a client for the pinix.v1.EdgeService service.
+type EdgeServiceClient interface {
+	// Device connects and registers its capabilities.
+	// Server forwards Invoke/ReadFile/GetInfo requests through this stream.
+	Connect(context.Context) *connect.BidiStreamForClient[v1.EdgeUpstream, v1.EdgeDownstream]
+}
+
+// NewEdgeServiceClient constructs a client for the pinix.v1.EdgeService service. By default, it
+// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
+// connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewEdgeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) EdgeServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	edgeServiceMethods := v1.File_pinix_v1_pinix_proto.Services().ByName("EdgeService").Methods()
+	return &edgeServiceClient{
+		connect: connect.NewClient[v1.EdgeUpstream, v1.EdgeDownstream](
+			httpClient,
+			baseURL+EdgeServiceConnectProcedure,
+			connect.WithSchema(edgeServiceMethods.ByName("Connect")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// edgeServiceClient implements EdgeServiceClient.
+type edgeServiceClient struct {
+	connect *connect.Client[v1.EdgeUpstream, v1.EdgeDownstream]
+}
+
+// Connect calls pinix.v1.EdgeService.Connect.
+func (c *edgeServiceClient) Connect(ctx context.Context) *connect.BidiStreamForClient[v1.EdgeUpstream, v1.EdgeDownstream] {
+	return c.connect.CallBidiStream(ctx)
+}
+
+// EdgeServiceHandler is an implementation of the pinix.v1.EdgeService service.
+type EdgeServiceHandler interface {
+	// Device connects and registers its capabilities.
+	// Server forwards Invoke/ReadFile/GetInfo requests through this stream.
+	Connect(context.Context, *connect.BidiStream[v1.EdgeUpstream, v1.EdgeDownstream]) error
+}
+
+// NewEdgeServiceHandler builds an HTTP handler from the service implementation. It returns the path
+// on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewEdgeServiceHandler(svc EdgeServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	edgeServiceMethods := v1.File_pinix_v1_pinix_proto.Services().ByName("EdgeService").Methods()
+	edgeServiceConnectHandler := connect.NewBidiStreamHandler(
+		EdgeServiceConnectProcedure,
+		svc.Connect,
+		connect.WithSchema(edgeServiceMethods.ByName("Connect")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/pinix.v1.EdgeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case EdgeServiceConnectProcedure:
+			edgeServiceConnectHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedEdgeServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedEdgeServiceHandler struct{}
+
+func (UnimplementedEdgeServiceHandler) Connect(context.Context, *connect.BidiStream[v1.EdgeUpstream, v1.EdgeDownstream]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("pinix.v1.EdgeService.Connect is not implemented"))
 }

@@ -1115,6 +1115,894 @@ func (x *GetInfoResponse) GetVersion() string {
 	return ""
 }
 
+// Device → Server
+type EdgeUpstream struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*EdgeUpstream_Manifest
+	//	*EdgeUpstream_Response
+	//	*EdgeUpstream_Ping
+	Msg           isEdgeUpstream_Msg `protobuf_oneof:"msg"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EdgeUpstream) Reset() {
+	*x = EdgeUpstream{}
+	mi := &file_pinix_v1_pinix_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgeUpstream) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgeUpstream) ProtoMessage() {}
+
+func (x *EdgeUpstream) ProtoReflect() protoreflect.Message {
+	mi := &file_pinix_v1_pinix_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgeUpstream.ProtoReflect.Descriptor instead.
+func (*EdgeUpstream) Descriptor() ([]byte, []int) {
+	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *EdgeUpstream) GetMsg() isEdgeUpstream_Msg {
+	if x != nil {
+		return x.Msg
+	}
+	return nil
+}
+
+func (x *EdgeUpstream) GetManifest() *EdgeManifest {
+	if x != nil {
+		if x, ok := x.Msg.(*EdgeUpstream_Manifest); ok {
+			return x.Manifest
+		}
+	}
+	return nil
+}
+
+func (x *EdgeUpstream) GetResponse() *EdgeResponse {
+	if x != nil {
+		if x, ok := x.Msg.(*EdgeUpstream_Response); ok {
+			return x.Response
+		}
+	}
+	return nil
+}
+
+func (x *EdgeUpstream) GetPing() *EdgePing {
+	if x != nil {
+		if x, ok := x.Msg.(*EdgeUpstream_Ping); ok {
+			return x.Ping
+		}
+	}
+	return nil
+}
+
+type isEdgeUpstream_Msg interface {
+	isEdgeUpstream_Msg()
+}
+
+type EdgeUpstream_Manifest struct {
+	Manifest *EdgeManifest `protobuf:"bytes,1,opt,name=manifest,proto3,oneof"` // registration: "here's what I can do"
+}
+
+type EdgeUpstream_Response struct {
+	Response *EdgeResponse `protobuf:"bytes,2,opt,name=response,proto3,oneof"` // response to a forwarded request
+}
+
+type EdgeUpstream_Ping struct {
+	Ping *EdgePing `protobuf:"bytes,3,opt,name=ping,proto3,oneof"`
+}
+
+func (*EdgeUpstream_Manifest) isEdgeUpstream_Msg() {}
+
+func (*EdgeUpstream_Response) isEdgeUpstream_Msg() {}
+
+func (*EdgeUpstream_Ping) isEdgeUpstream_Msg() {}
+
+// Server → Device
+type EdgeDownstream struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*EdgeDownstream_Accepted
+	//	*EdgeDownstream_Request
+	//	*EdgeDownstream_Pong
+	//	*EdgeDownstream_Rejected
+	Msg           isEdgeDownstream_Msg `protobuf_oneof:"msg"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EdgeDownstream) Reset() {
+	*x = EdgeDownstream{}
+	mi := &file_pinix_v1_pinix_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgeDownstream) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgeDownstream) ProtoMessage() {}
+
+func (x *EdgeDownstream) ProtoReflect() protoreflect.Message {
+	mi := &file_pinix_v1_pinix_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgeDownstream.ProtoReflect.Descriptor instead.
+func (*EdgeDownstream) Descriptor() ([]byte, []int) {
+	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *EdgeDownstream) GetMsg() isEdgeDownstream_Msg {
+	if x != nil {
+		return x.Msg
+	}
+	return nil
+}
+
+func (x *EdgeDownstream) GetAccepted() *EdgeAccepted {
+	if x != nil {
+		if x, ok := x.Msg.(*EdgeDownstream_Accepted); ok {
+			return x.Accepted
+		}
+	}
+	return nil
+}
+
+func (x *EdgeDownstream) GetRequest() *EdgeRequest {
+	if x != nil {
+		if x, ok := x.Msg.(*EdgeDownstream_Request); ok {
+			return x.Request
+		}
+	}
+	return nil
+}
+
+func (x *EdgeDownstream) GetPong() *EdgePong {
+	if x != nil {
+		if x, ok := x.Msg.(*EdgeDownstream_Pong); ok {
+			return x.Pong
+		}
+	}
+	return nil
+}
+
+func (x *EdgeDownstream) GetRejected() *EdgeRejected {
+	if x != nil {
+		if x, ok := x.Msg.(*EdgeDownstream_Rejected); ok {
+			return x.Rejected
+		}
+	}
+	return nil
+}
+
+type isEdgeDownstream_Msg interface {
+	isEdgeDownstream_Msg()
+}
+
+type EdgeDownstream_Accepted struct {
+	Accepted *EdgeAccepted `protobuf:"bytes,1,opt,name=accepted,proto3,oneof"` // registration accepted
+}
+
+type EdgeDownstream_Request struct {
+	Request *EdgeRequest `protobuf:"bytes,2,opt,name=request,proto3,oneof"` // forwarded request from a caller
+}
+
+type EdgeDownstream_Pong struct {
+	Pong *EdgePong `protobuf:"bytes,3,opt,name=pong,proto3,oneof"`
+}
+
+type EdgeDownstream_Rejected struct {
+	Rejected *EdgeRejected `protobuf:"bytes,4,opt,name=rejected,proto3,oneof"` // registration rejected
+}
+
+func (*EdgeDownstream_Accepted) isEdgeDownstream_Msg() {}
+
+func (*EdgeDownstream_Request) isEdgeDownstream_Msg() {}
+
+func (*EdgeDownstream_Pong) isEdgeDownstream_Msg() {}
+
+func (*EdgeDownstream_Rejected) isEdgeDownstream_Msg() {}
+
+type EdgeManifest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	Commands      []*EdgeCommandDef      `protobuf:"bytes,3,rep,name=commands,proto3" json:"commands,omitempty"`
+	HasWeb        bool                   `protobuf:"varint,4,opt,name=has_web,json=hasWeb,proto3" json:"has_web,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EdgeManifest) Reset() {
+	*x = EdgeManifest{}
+	mi := &file_pinix_v1_pinix_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgeManifest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgeManifest) ProtoMessage() {}
+
+func (x *EdgeManifest) ProtoReflect() protoreflect.Message {
+	mi := &file_pinix_v1_pinix_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgeManifest.ProtoReflect.Descriptor instead.
+func (*EdgeManifest) Descriptor() ([]byte, []int) {
+	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *EdgeManifest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *EdgeManifest) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *EdgeManifest) GetCommands() []*EdgeCommandDef {
+	if x != nil {
+		return x.Commands
+	}
+	return nil
+}
+
+func (x *EdgeManifest) GetHasWeb() bool {
+	if x != nil {
+		return x.HasWeb
+	}
+	return false
+}
+
+type EdgeCommandDef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EdgeCommandDef) Reset() {
+	*x = EdgeCommandDef{}
+	mi := &file_pinix_v1_pinix_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgeCommandDef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgeCommandDef) ProtoMessage() {}
+
+func (x *EdgeCommandDef) ProtoReflect() protoreflect.Message {
+	mi := &file_pinix_v1_pinix_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgeCommandDef.ProtoReflect.Descriptor instead.
+func (*EdgeCommandDef) Descriptor() ([]byte, []int) {
+	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *EdgeCommandDef) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *EdgeCommandDef) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+type EdgeAccepted struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ClipId        string                 `protobuf:"bytes,1,opt,name=clip_id,json=clipId,proto3" json:"clip_id,omitempty"` // assigned clip ID
+	Token         string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`                 // clip token for callers to invoke this edge clip
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EdgeAccepted) Reset() {
+	*x = EdgeAccepted{}
+	mi := &file_pinix_v1_pinix_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgeAccepted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgeAccepted) ProtoMessage() {}
+
+func (x *EdgeAccepted) ProtoReflect() protoreflect.Message {
+	mi := &file_pinix_v1_pinix_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgeAccepted.ProtoReflect.Descriptor instead.
+func (*EdgeAccepted) Descriptor() ([]byte, []int) {
+	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *EdgeAccepted) GetClipId() string {
+	if x != nil {
+		return x.ClipId
+	}
+	return ""
+}
+
+func (x *EdgeAccepted) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+type EdgeRejected struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Reason        string                 `protobuf:"bytes,1,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EdgeRejected) Reset() {
+	*x = EdgeRejected{}
+	mi := &file_pinix_v1_pinix_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgeRejected) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgeRejected) ProtoMessage() {}
+
+func (x *EdgeRejected) ProtoReflect() protoreflect.Message {
+	mi := &file_pinix_v1_pinix_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgeRejected.ProtoReflect.Descriptor instead.
+func (*EdgeRejected) Descriptor() ([]byte, []int) {
+	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *EdgeRejected) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+// Server → Device: request envelope with correlation ID
+type EdgeRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	// Types that are valid to be assigned to Body:
+	//
+	//	*EdgeRequest_Invoke
+	//	*EdgeRequest_ReadFile
+	//	*EdgeRequest_GetInfo
+	//	*EdgeRequest_Cancel
+	Body          isEdgeRequest_Body `protobuf_oneof:"body"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EdgeRequest) Reset() {
+	*x = EdgeRequest{}
+	mi := &file_pinix_v1_pinix_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgeRequest) ProtoMessage() {}
+
+func (x *EdgeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pinix_v1_pinix_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgeRequest.ProtoReflect.Descriptor instead.
+func (*EdgeRequest) Descriptor() ([]byte, []int) {
+	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *EdgeRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *EdgeRequest) GetBody() isEdgeRequest_Body {
+	if x != nil {
+		return x.Body
+	}
+	return nil
+}
+
+func (x *EdgeRequest) GetInvoke() *InvokeRequest {
+	if x != nil {
+		if x, ok := x.Body.(*EdgeRequest_Invoke); ok {
+			return x.Invoke
+		}
+	}
+	return nil
+}
+
+func (x *EdgeRequest) GetReadFile() *ReadFileRequest {
+	if x != nil {
+		if x, ok := x.Body.(*EdgeRequest_ReadFile); ok {
+			return x.ReadFile
+		}
+	}
+	return nil
+}
+
+func (x *EdgeRequest) GetGetInfo() *GetInfoRequest {
+	if x != nil {
+		if x, ok := x.Body.(*EdgeRequest_GetInfo); ok {
+			return x.GetInfo
+		}
+	}
+	return nil
+}
+
+func (x *EdgeRequest) GetCancel() *EdgeCancel {
+	if x != nil {
+		if x, ok := x.Body.(*EdgeRequest_Cancel); ok {
+			return x.Cancel
+		}
+	}
+	return nil
+}
+
+type isEdgeRequest_Body interface {
+	isEdgeRequest_Body()
+}
+
+type EdgeRequest_Invoke struct {
+	Invoke *InvokeRequest `protobuf:"bytes,10,opt,name=invoke,proto3,oneof"`
+}
+
+type EdgeRequest_ReadFile struct {
+	ReadFile *ReadFileRequest `protobuf:"bytes,11,opt,name=read_file,json=readFile,proto3,oneof"`
+}
+
+type EdgeRequest_GetInfo struct {
+	GetInfo *GetInfoRequest `protobuf:"bytes,12,opt,name=get_info,json=getInfo,proto3,oneof"`
+}
+
+type EdgeRequest_Cancel struct {
+	Cancel *EdgeCancel `protobuf:"bytes,13,opt,name=cancel,proto3,oneof"`
+}
+
+func (*EdgeRequest_Invoke) isEdgeRequest_Body() {}
+
+func (*EdgeRequest_ReadFile) isEdgeRequest_Body() {}
+
+func (*EdgeRequest_GetInfo) isEdgeRequest_Body() {}
+
+func (*EdgeRequest_Cancel) isEdgeRequest_Body() {}
+
+// Device → Server: response envelope with correlation ID
+type EdgeResponse struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	// Types that are valid to be assigned to Body:
+	//
+	//	*EdgeResponse_InvokeChunk
+	//	*EdgeResponse_ReadChunk
+	//	*EdgeResponse_GetInfo
+	//	*EdgeResponse_Error
+	//	*EdgeResponse_Complete
+	Body          isEdgeResponse_Body `protobuf_oneof:"body"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EdgeResponse) Reset() {
+	*x = EdgeResponse{}
+	mi := &file_pinix_v1_pinix_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgeResponse) ProtoMessage() {}
+
+func (x *EdgeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pinix_v1_pinix_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgeResponse.ProtoReflect.Descriptor instead.
+func (*EdgeResponse) Descriptor() ([]byte, []int) {
+	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *EdgeResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *EdgeResponse) GetBody() isEdgeResponse_Body {
+	if x != nil {
+		return x.Body
+	}
+	return nil
+}
+
+func (x *EdgeResponse) GetInvokeChunk() *InvokeChunk {
+	if x != nil {
+		if x, ok := x.Body.(*EdgeResponse_InvokeChunk); ok {
+			return x.InvokeChunk
+		}
+	}
+	return nil
+}
+
+func (x *EdgeResponse) GetReadChunk() *ReadFileChunk {
+	if x != nil {
+		if x, ok := x.Body.(*EdgeResponse_ReadChunk); ok {
+			return x.ReadChunk
+		}
+	}
+	return nil
+}
+
+func (x *EdgeResponse) GetGetInfo() *GetInfoResponse {
+	if x != nil {
+		if x, ok := x.Body.(*EdgeResponse_GetInfo); ok {
+			return x.GetInfo
+		}
+	}
+	return nil
+}
+
+func (x *EdgeResponse) GetError() *EdgeError {
+	if x != nil {
+		if x, ok := x.Body.(*EdgeResponse_Error); ok {
+			return x.Error
+		}
+	}
+	return nil
+}
+
+func (x *EdgeResponse) GetComplete() *EdgeComplete {
+	if x != nil {
+		if x, ok := x.Body.(*EdgeResponse_Complete); ok {
+			return x.Complete
+		}
+	}
+	return nil
+}
+
+type isEdgeResponse_Body interface {
+	isEdgeResponse_Body()
+}
+
+type EdgeResponse_InvokeChunk struct {
+	InvokeChunk *InvokeChunk `protobuf:"bytes,10,opt,name=invoke_chunk,json=invokeChunk,proto3,oneof"` // may send multiple (streaming)
+}
+
+type EdgeResponse_ReadChunk struct {
+	ReadChunk *ReadFileChunk `protobuf:"bytes,11,opt,name=read_chunk,json=readChunk,proto3,oneof"` // may send multiple (streaming)
+}
+
+type EdgeResponse_GetInfo struct {
+	GetInfo *GetInfoResponse `protobuf:"bytes,12,opt,name=get_info,json=getInfo,proto3,oneof"`
+}
+
+type EdgeResponse_Error struct {
+	Error *EdgeError `protobuf:"bytes,13,opt,name=error,proto3,oneof"` // request-scoped error
+}
+
+type EdgeResponse_Complete struct {
+	Complete *EdgeComplete `protobuf:"bytes,14,opt,name=complete,proto3,oneof"` // explicit completion signal
+}
+
+func (*EdgeResponse_InvokeChunk) isEdgeResponse_Body() {}
+
+func (*EdgeResponse_ReadChunk) isEdgeResponse_Body() {}
+
+func (*EdgeResponse_GetInfo) isEdgeResponse_Body() {}
+
+func (*EdgeResponse_Error) isEdgeResponse_Body() {}
+
+func (*EdgeResponse_Complete) isEdgeResponse_Body() {}
+
+type EdgeCancel struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EdgeCancel) Reset() {
+	*x = EdgeCancel{}
+	mi := &file_pinix_v1_pinix_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgeCancel) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgeCancel) ProtoMessage() {}
+
+func (x *EdgeCancel) ProtoReflect() protoreflect.Message {
+	mi := &file_pinix_v1_pinix_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgeCancel.ProtoReflect.Descriptor instead.
+func (*EdgeCancel) Descriptor() ([]byte, []int) {
+	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{28}
+}
+
+type EdgeComplete struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EdgeComplete) Reset() {
+	*x = EdgeComplete{}
+	mi := &file_pinix_v1_pinix_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgeComplete) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgeComplete) ProtoMessage() {}
+
+func (x *EdgeComplete) ProtoReflect() protoreflect.Message {
+	mi := &file_pinix_v1_pinix_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgeComplete.ProtoReflect.Descriptor instead.
+func (*EdgeComplete) Descriptor() ([]byte, []int) {
+	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{29}
+}
+
+type EdgePing struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EdgePing) Reset() {
+	*x = EdgePing{}
+	mi := &file_pinix_v1_pinix_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgePing) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgePing) ProtoMessage() {}
+
+func (x *EdgePing) ProtoReflect() protoreflect.Message {
+	mi := &file_pinix_v1_pinix_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgePing.ProtoReflect.Descriptor instead.
+func (*EdgePing) Descriptor() ([]byte, []int) {
+	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{30}
+}
+
+type EdgePong struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EdgePong) Reset() {
+	*x = EdgePong{}
+	mi := &file_pinix_v1_pinix_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgePong) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgePong) ProtoMessage() {}
+
+func (x *EdgePong) ProtoReflect() protoreflect.Message {
+	mi := &file_pinix_v1_pinix_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgePong.ProtoReflect.Descriptor instead.
+func (*EdgePong) Descriptor() ([]byte, []int) {
+	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{31}
+}
+
+type EdgeError struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EdgeError) Reset() {
+	*x = EdgeError{}
+	mi := &file_pinix_v1_pinix_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgeError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgeError) ProtoMessage() {}
+
+func (x *EdgeError) ProtoReflect() protoreflect.Message {
+	mi := &file_pinix_v1_pinix_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgeError.ProtoReflect.Descriptor instead.
+func (*EdgeError) Descriptor() ([]byte, []int) {
+	return file_pinix_v1_pinix_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *EdgeError) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *EdgeError) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 var File_pinix_v1_pinix_proto protoreflect.FileDescriptor
 
 const file_pinix_v1_pinix_proto_rawDesc = "" +
@@ -1184,7 +2072,61 @@ const file_pinix_v1_pinix_proto_rawDesc = "" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x1a\n" +
 	"\bcommands\x18\x03 \x03(\tR\bcommands\x12\x17\n" +
 	"\ahas_web\x18\x04 \x01(\bR\x06hasWeb\x12\x18\n" +
-	"\aversion\x18\x06 \x01(\tR\aversion2\xcd\x03\n" +
+	"\aversion\x18\x06 \x01(\tR\aversion\"\xab\x01\n" +
+	"\fEdgeUpstream\x124\n" +
+	"\bmanifest\x18\x01 \x01(\v2\x16.pinix.v1.EdgeManifestH\x00R\bmanifest\x124\n" +
+	"\bresponse\x18\x02 \x01(\v2\x16.pinix.v1.EdgeResponseH\x00R\bresponse\x12(\n" +
+	"\x04ping\x18\x03 \x01(\v2\x12.pinix.v1.EdgePingH\x00R\x04pingB\x05\n" +
+	"\x03msg\"\xe0\x01\n" +
+	"\x0eEdgeDownstream\x124\n" +
+	"\baccepted\x18\x01 \x01(\v2\x16.pinix.v1.EdgeAcceptedH\x00R\baccepted\x121\n" +
+	"\arequest\x18\x02 \x01(\v2\x15.pinix.v1.EdgeRequestH\x00R\arequest\x12(\n" +
+	"\x04pong\x18\x03 \x01(\v2\x12.pinix.v1.EdgePongH\x00R\x04pong\x124\n" +
+	"\brejected\x18\x04 \x01(\v2\x16.pinix.v1.EdgeRejectedH\x00R\brejectedB\x05\n" +
+	"\x03msg\"\x93\x01\n" +
+	"\fEdgeManifest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x124\n" +
+	"\bcommands\x18\x03 \x03(\v2\x18.pinix.v1.EdgeCommandDefR\bcommands\x12\x17\n" +
+	"\ahas_web\x18\x04 \x01(\bR\x06hasWeb\"F\n" +
+	"\x0eEdgeCommandDef\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\"=\n" +
+	"\fEdgeAccepted\x12\x17\n" +
+	"\aclip_id\x18\x01 \x01(\tR\x06clipId\x12\x14\n" +
+	"\x05token\x18\x02 \x01(\tR\x05token\"&\n" +
+	"\fEdgeRejected\x12\x16\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\"\x88\x02\n" +
+	"\vEdgeRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x121\n" +
+	"\x06invoke\x18\n" +
+	" \x01(\v2\x17.pinix.v1.InvokeRequestH\x00R\x06invoke\x128\n" +
+	"\tread_file\x18\v \x01(\v2\x19.pinix.v1.ReadFileRequestH\x00R\breadFile\x125\n" +
+	"\bget_info\x18\f \x01(\v2\x18.pinix.v1.GetInfoRequestH\x00R\agetInfo\x12.\n" +
+	"\x06cancel\x18\r \x01(\v2\x14.pinix.v1.EdgeCancelH\x00R\x06cancelB\x06\n" +
+	"\x04body\"\xc6\x02\n" +
+	"\fEdgeResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12:\n" +
+	"\finvoke_chunk\x18\n" +
+	" \x01(\v2\x15.pinix.v1.InvokeChunkH\x00R\vinvokeChunk\x128\n" +
+	"\n" +
+	"read_chunk\x18\v \x01(\v2\x17.pinix.v1.ReadFileChunkH\x00R\treadChunk\x126\n" +
+	"\bget_info\x18\f \x01(\v2\x19.pinix.v1.GetInfoResponseH\x00R\agetInfo\x12+\n" +
+	"\x05error\x18\r \x01(\v2\x13.pinix.v1.EdgeErrorH\x00R\x05error\x124\n" +
+	"\bcomplete\x18\x0e \x01(\v2\x16.pinix.v1.EdgeCompleteH\x00R\bcompleteB\x06\n" +
+	"\x04body\"\f\n" +
+	"\n" +
+	"EdgeCancel\"\x0e\n" +
+	"\fEdgeComplete\"\n" +
+	"\n" +
+	"\bEdgePing\"\n" +
+	"\n" +
+	"\bEdgePong\"9\n" +
+	"\tEdgeError\x12\x12\n" +
+	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage2\xcd\x03\n" +
 	"\fAdminService\x12G\n" +
 	"\n" +
 	"CreateClip\x12\x1b.pinix.v1.CreateClipRequest\x1a\x1c.pinix.v1.CreateClipResponse\x12D\n" +
@@ -1198,7 +2140,9 @@ const file_pinix_v1_pinix_proto_rawDesc = "" +
 	"\vClipService\x12:\n" +
 	"\x06Invoke\x12\x17.pinix.v1.InvokeRequest\x1a\x15.pinix.v1.InvokeChunk0\x01\x12@\n" +
 	"\bReadFile\x12\x19.pinix.v1.ReadFileRequest\x1a\x17.pinix.v1.ReadFileChunk0\x01\x12>\n" +
-	"\aGetInfo\x12\x18.pinix.v1.GetInfoRequest\x1a\x19.pinix.v1.GetInfoResponseB1Z/github.com/epiral/pinix/gen/go/pinix/v1;pinixv1b\x06proto3"
+	"\aGetInfo\x12\x18.pinix.v1.GetInfoRequest\x1a\x19.pinix.v1.GetInfoResponse2N\n" +
+	"\vEdgeService\x12?\n" +
+	"\aConnect\x12\x16.pinix.v1.EdgeUpstream\x1a\x18.pinix.v1.EdgeDownstream(\x010\x01B1Z/github.com/epiral/pinix/gen/go/pinix/v1;pinixv1b\x06proto3"
 
 var (
 	file_pinix_v1_pinix_proto_rawDescOnce sync.Once
@@ -1212,7 +2156,7 @@ func file_pinix_v1_pinix_proto_rawDescGZIP() []byte {
 	return file_pinix_v1_pinix_proto_rawDescData
 }
 
-var file_pinix_v1_pinix_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_pinix_v1_pinix_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
 var file_pinix_v1_pinix_proto_goTypes = []any{
 	(*CreateClipRequest)(nil),     // 0: pinix.v1.CreateClipRequest
 	(*CreateClipResponse)(nil),    // 1: pinix.v1.CreateClipResponse
@@ -1234,33 +2178,65 @@ var file_pinix_v1_pinix_proto_goTypes = []any{
 	(*ReadFileChunk)(nil),         // 17: pinix.v1.ReadFileChunk
 	(*GetInfoRequest)(nil),        // 18: pinix.v1.GetInfoRequest
 	(*GetInfoResponse)(nil),       // 19: pinix.v1.GetInfoResponse
+	(*EdgeUpstream)(nil),          // 20: pinix.v1.EdgeUpstream
+	(*EdgeDownstream)(nil),        // 21: pinix.v1.EdgeDownstream
+	(*EdgeManifest)(nil),          // 22: pinix.v1.EdgeManifest
+	(*EdgeCommandDef)(nil),        // 23: pinix.v1.EdgeCommandDef
+	(*EdgeAccepted)(nil),          // 24: pinix.v1.EdgeAccepted
+	(*EdgeRejected)(nil),          // 25: pinix.v1.EdgeRejected
+	(*EdgeRequest)(nil),           // 26: pinix.v1.EdgeRequest
+	(*EdgeResponse)(nil),          // 27: pinix.v1.EdgeResponse
+	(*EdgeCancel)(nil),            // 28: pinix.v1.EdgeCancel
+	(*EdgeComplete)(nil),          // 29: pinix.v1.EdgeComplete
+	(*EdgePing)(nil),              // 30: pinix.v1.EdgePing
+	(*EdgePong)(nil),              // 31: pinix.v1.EdgePong
+	(*EdgeError)(nil),             // 32: pinix.v1.EdgeError
 }
 var file_pinix_v1_pinix_proto_depIdxs = []int32{
 	4,  // 0: pinix.v1.ListClipsResponse.clips:type_name -> pinix.v1.ClipInfo
 	11, // 1: pinix.v1.ListTokensResponse.tokens:type_name -> pinix.v1.TokenInfo
-	0,  // 2: pinix.v1.AdminService.CreateClip:input_type -> pinix.v1.CreateClipRequest
-	2,  // 3: pinix.v1.AdminService.ListClips:input_type -> pinix.v1.ListClipsRequest
-	5,  // 4: pinix.v1.AdminService.DeleteClip:input_type -> pinix.v1.DeleteClipRequest
-	7,  // 5: pinix.v1.AdminService.GenerateToken:input_type -> pinix.v1.GenerateTokenRequest
-	9,  // 6: pinix.v1.AdminService.ListTokens:input_type -> pinix.v1.ListTokensRequest
-	12, // 7: pinix.v1.AdminService.RevokeToken:input_type -> pinix.v1.RevokeTokenRequest
-	14, // 8: pinix.v1.ClipService.Invoke:input_type -> pinix.v1.InvokeRequest
-	16, // 9: pinix.v1.ClipService.ReadFile:input_type -> pinix.v1.ReadFileRequest
-	18, // 10: pinix.v1.ClipService.GetInfo:input_type -> pinix.v1.GetInfoRequest
-	1,  // 11: pinix.v1.AdminService.CreateClip:output_type -> pinix.v1.CreateClipResponse
-	3,  // 12: pinix.v1.AdminService.ListClips:output_type -> pinix.v1.ListClipsResponse
-	6,  // 13: pinix.v1.AdminService.DeleteClip:output_type -> pinix.v1.DeleteClipResponse
-	8,  // 14: pinix.v1.AdminService.GenerateToken:output_type -> pinix.v1.GenerateTokenResponse
-	10, // 15: pinix.v1.AdminService.ListTokens:output_type -> pinix.v1.ListTokensResponse
-	13, // 16: pinix.v1.AdminService.RevokeToken:output_type -> pinix.v1.RevokeTokenResponse
-	15, // 17: pinix.v1.ClipService.Invoke:output_type -> pinix.v1.InvokeChunk
-	17, // 18: pinix.v1.ClipService.ReadFile:output_type -> pinix.v1.ReadFileChunk
-	19, // 19: pinix.v1.ClipService.GetInfo:output_type -> pinix.v1.GetInfoResponse
-	11, // [11:20] is the sub-list for method output_type
-	2,  // [2:11] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	22, // 2: pinix.v1.EdgeUpstream.manifest:type_name -> pinix.v1.EdgeManifest
+	27, // 3: pinix.v1.EdgeUpstream.response:type_name -> pinix.v1.EdgeResponse
+	30, // 4: pinix.v1.EdgeUpstream.ping:type_name -> pinix.v1.EdgePing
+	24, // 5: pinix.v1.EdgeDownstream.accepted:type_name -> pinix.v1.EdgeAccepted
+	26, // 6: pinix.v1.EdgeDownstream.request:type_name -> pinix.v1.EdgeRequest
+	31, // 7: pinix.v1.EdgeDownstream.pong:type_name -> pinix.v1.EdgePong
+	25, // 8: pinix.v1.EdgeDownstream.rejected:type_name -> pinix.v1.EdgeRejected
+	23, // 9: pinix.v1.EdgeManifest.commands:type_name -> pinix.v1.EdgeCommandDef
+	14, // 10: pinix.v1.EdgeRequest.invoke:type_name -> pinix.v1.InvokeRequest
+	16, // 11: pinix.v1.EdgeRequest.read_file:type_name -> pinix.v1.ReadFileRequest
+	18, // 12: pinix.v1.EdgeRequest.get_info:type_name -> pinix.v1.GetInfoRequest
+	28, // 13: pinix.v1.EdgeRequest.cancel:type_name -> pinix.v1.EdgeCancel
+	15, // 14: pinix.v1.EdgeResponse.invoke_chunk:type_name -> pinix.v1.InvokeChunk
+	17, // 15: pinix.v1.EdgeResponse.read_chunk:type_name -> pinix.v1.ReadFileChunk
+	19, // 16: pinix.v1.EdgeResponse.get_info:type_name -> pinix.v1.GetInfoResponse
+	32, // 17: pinix.v1.EdgeResponse.error:type_name -> pinix.v1.EdgeError
+	29, // 18: pinix.v1.EdgeResponse.complete:type_name -> pinix.v1.EdgeComplete
+	0,  // 19: pinix.v1.AdminService.CreateClip:input_type -> pinix.v1.CreateClipRequest
+	2,  // 20: pinix.v1.AdminService.ListClips:input_type -> pinix.v1.ListClipsRequest
+	5,  // 21: pinix.v1.AdminService.DeleteClip:input_type -> pinix.v1.DeleteClipRequest
+	7,  // 22: pinix.v1.AdminService.GenerateToken:input_type -> pinix.v1.GenerateTokenRequest
+	9,  // 23: pinix.v1.AdminService.ListTokens:input_type -> pinix.v1.ListTokensRequest
+	12, // 24: pinix.v1.AdminService.RevokeToken:input_type -> pinix.v1.RevokeTokenRequest
+	14, // 25: pinix.v1.ClipService.Invoke:input_type -> pinix.v1.InvokeRequest
+	16, // 26: pinix.v1.ClipService.ReadFile:input_type -> pinix.v1.ReadFileRequest
+	18, // 27: pinix.v1.ClipService.GetInfo:input_type -> pinix.v1.GetInfoRequest
+	20, // 28: pinix.v1.EdgeService.Connect:input_type -> pinix.v1.EdgeUpstream
+	1,  // 29: pinix.v1.AdminService.CreateClip:output_type -> pinix.v1.CreateClipResponse
+	3,  // 30: pinix.v1.AdminService.ListClips:output_type -> pinix.v1.ListClipsResponse
+	6,  // 31: pinix.v1.AdminService.DeleteClip:output_type -> pinix.v1.DeleteClipResponse
+	8,  // 32: pinix.v1.AdminService.GenerateToken:output_type -> pinix.v1.GenerateTokenResponse
+	10, // 33: pinix.v1.AdminService.ListTokens:output_type -> pinix.v1.ListTokensResponse
+	13, // 34: pinix.v1.AdminService.RevokeToken:output_type -> pinix.v1.RevokeTokenResponse
+	15, // 35: pinix.v1.ClipService.Invoke:output_type -> pinix.v1.InvokeChunk
+	17, // 36: pinix.v1.ClipService.ReadFile:output_type -> pinix.v1.ReadFileChunk
+	19, // 37: pinix.v1.ClipService.GetInfo:output_type -> pinix.v1.GetInfoResponse
+	21, // 38: pinix.v1.EdgeService.Connect:output_type -> pinix.v1.EdgeDownstream
+	29, // [29:39] is the sub-list for method output_type
+	19, // [19:29] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_pinix_v1_pinix_proto_init() }
@@ -1273,15 +2249,39 @@ func file_pinix_v1_pinix_proto_init() {
 		(*InvokeChunk_Stderr)(nil),
 		(*InvokeChunk_ExitCode)(nil),
 	}
+	file_pinix_v1_pinix_proto_msgTypes[20].OneofWrappers = []any{
+		(*EdgeUpstream_Manifest)(nil),
+		(*EdgeUpstream_Response)(nil),
+		(*EdgeUpstream_Ping)(nil),
+	}
+	file_pinix_v1_pinix_proto_msgTypes[21].OneofWrappers = []any{
+		(*EdgeDownstream_Accepted)(nil),
+		(*EdgeDownstream_Request)(nil),
+		(*EdgeDownstream_Pong)(nil),
+		(*EdgeDownstream_Rejected)(nil),
+	}
+	file_pinix_v1_pinix_proto_msgTypes[26].OneofWrappers = []any{
+		(*EdgeRequest_Invoke)(nil),
+		(*EdgeRequest_ReadFile)(nil),
+		(*EdgeRequest_GetInfo)(nil),
+		(*EdgeRequest_Cancel)(nil),
+	}
+	file_pinix_v1_pinix_proto_msgTypes[27].OneofWrappers = []any{
+		(*EdgeResponse_InvokeChunk)(nil),
+		(*EdgeResponse_ReadChunk)(nil),
+		(*EdgeResponse_GetInfo)(nil),
+		(*EdgeResponse_Error)(nil),
+		(*EdgeResponse_Complete)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pinix_v1_pinix_proto_rawDesc), len(file_pinix_v1_pinix_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   20,
+			NumMessages:   33,
 			NumExtensions: 0,
-			NumServices:   2,
+			NumServices:   3,
 		},
 		GoTypes:           file_pinix_v1_pinix_proto_goTypes,
 		DependencyIndexes: file_pinix_v1_pinix_proto_depIdxs,

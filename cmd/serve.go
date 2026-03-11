@@ -1,5 +1,5 @@
 // Role:    `pinix serve` subcommand — starts the Pinix server
-// Depends: internal/config, internal/sandbox, internal/server, cobra
+// Depends: internal/config, internal/sandbox, internal/hub, cobra
 // Exports: (registered via init)
 
 package cmd
@@ -8,8 +8,8 @@ import (
 	"log"
 
 	"github.com/epiral/pinix/internal/config"
+	"github.com/epiral/pinix/internal/hub"
 	"github.com/epiral/pinix/internal/sandbox"
-	"github.com/epiral/pinix/internal/server"
 	"github.com/spf13/cobra"
 )
 
@@ -53,7 +53,7 @@ var serveCmd = &cobra.Command{
 		mgr := sandbox.NewManager(backend)
 		log.Printf("[sandbox] backend: %s", backend.Name())
 
-		return server.Run(serveAddr, store, mgr)
+		return hub.Run(serveAddr, store, mgr)
 	},
 }
 
