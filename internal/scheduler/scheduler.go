@@ -6,7 +6,7 @@ package scheduler
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -63,18 +63,18 @@ func (s *Scheduler) RegisterClip(clipEntry config.ClipEntry, schedules []Schedul
 		cmd := strings.TrimSpace(schedule.Command)
 		expr := strings.TrimSpace(schedule.Cron)
 		if cmd == "" || expr == "" {
-			log.Printf("[scheduler] skip invalid schedule clip=%s command=%q cron=%q", clipEntry.ID, schedule.Command, schedule.Cron)
+			slog.Warn("scheduler skip invalid schedule", "clip", clipEntry.ID, "command", schedule.Command, "cron", schedule.Cron)
 			continue
 		}
 		if strings.Contains(cmd, "/") || strings.Contains(cmd, "..") {
-			log.Printf("[scheduler] skip unsafe command clip=%s command=%q", clipEntry.ID, cmd)
+			slog.Warn("scheduler skip unsafe command", "clip", clipEntry.ID, "command", cmd)
 			continue
 		}
 
 		job := s.makeJob(clipEntry, cmd)
 		entryID, err := s.cron.AddFunc(expr, job)
 		if err != nil {
-			log.Printf("[scheduler] register failed clip=%s command=%s cron=%s err=%v", clipEntry.ID, cmd, expr, err)
+			slog.Error("scheduler register failed", "clip", clipEntry.ID, "command", cmd, "cron", expr, "error", err)
 			continue
 		}
 
@@ -82,7 +82,7 @@ func (s *Scheduler) RegisterClip(clipEntry config.ClipEntry, schedules []Schedul
 		s.clipEntryID[clipEntry.ID] = append(s.clipEntryID[clipEntry.ID], entryID)
 		s.mu.Unlock()
 
-		log.Printf("[scheduler] registered clip=%s command=%s cron=%s", clipEntry.ID, cmd, expr)
+		slog.Info("scheduler registered", "clip", clipEntry.ID, "command", cmd, "cron", expr)
 	}
 }
 
@@ -104,7 +104,7 @@ func (s *Scheduler) makeJob(clipEntry config.ClipEntry, command string) func() {
 		lockVal, _ := s.running.LoadOrStore(key, &atomic.Bool{})
 		running := lockVal.(*atomic.Bool)
 		if !running.CompareAndSwap(false, true) {
-			log.Printf("[scheduler] skip overlap clip=%s command=%s", clipEntry.ID, command)
+			slog.Warn("scheduler skip overlap", "clip", clipEntry.ID, "command", command)
 			return
 		}
 		defer running.Store(false)
@@ -133,10 +133,10 @@ func (s *Scheduler) makeJob(clipEntry config.ClipEntry, command string) func() {
 		exitCode := 0
 		for chunk := range out {
 			if len(chunk.Stdout) > 0 {
-				log.Printf("[scheduler] stdout clip=%s command=%s: %s", clipEntry.ID, command, strings.TrimSpace(string(chunk.Stdout)))
+				slog.Debug("scheduler stdout", "clip", clipEntry.ID, "command", command, "output", strings.TrimSpace(string(chunk.Stdout)))
 			}
 			if len(chunk.Stderr) > 0 {
-				log.Printf("[scheduler] stderr clip=%s command=%s: %s", clipEntry.ID, command, strings.TrimSpace(string(chunk.Stderr)))
+				slog.Debug("scheduler stderr", "clip", clipEntry.ID, "command", command, "output", strings.TrimSpace(string(chunk.Stderr)))
 			}
 			if chunk.ExitCode != nil {
 				exitCode = *chunk.ExitCode
@@ -144,9 +144,9 @@ func (s *Scheduler) makeJob(clipEntry config.ClipEntry, command string) func() {
 		}
 
 		if err := <-errCh; err != nil {
-			log.Printf("[scheduler] exec error clip=%s command=%s err=%v", clipEntry.ID, command, err)
+			slog.Error("scheduler exec error", "clip", clipEntry.ID, "command", command, "error", err)
 			return
 		}
-		log.Printf("[scheduler] done clip=%s command=%s exit_code=%d", clipEntry.ID, command, exitCode)
+		slog.Info("scheduler done", "clip", clipEntry.ID, "command", command, "exit_code", exitCode)
 	}
 }

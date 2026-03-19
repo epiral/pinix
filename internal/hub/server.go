@@ -7,7 +7,7 @@ package hub
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -31,7 +31,7 @@ import (
 func Run(addr string, store *config.Store, mgr *sandbox.Manager) error {
 	defer func() {
 		if err := mgr.Close(context.Background()); err != nil {
-			log.Printf("[sandbox] close error: %v", err)
+			slog.Error("sandbox close failed", "error", err)
 		}
 	}()
 
@@ -61,7 +61,7 @@ func Run(addr string, store *config.Store, mgr *sandbox.Manager) error {
 	httpServer := &http.Server{Addr: addr, Handler: h2c.NewHandler(mux, &http2.Server{}), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second}
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("pinix listening on %s", addr)
+		slog.Info("pinix listening", "addr", addr)
 		errCh <- httpServer.ListenAndServe()
 	}()
 

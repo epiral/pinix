@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 
 	connect "connectrpc.com/connect"
 	v1 "github.com/epiral/pinix/gen/go/pinix/v1"
@@ -57,15 +57,15 @@ func (s *Service) Connect(ctx context.Context, stream *connect.BidiStream[v1.Edg
 	if existing, found := s.registry.Resolve(clipID); found {
 		if ec, ok := existing.(*EdgeClip); ok {
 			ec.SetSession(session, manifest)
-			log.Printf("[edge] reconnected: name=%s clip_id=%s", manifest.GetName(), clipID)
+			slog.Info("edge reconnected", "name", manifest.GetName(), "clip_id", clipID)
 		}
 	} else {
 		ec := NewEdgeClip(clipID, token, manifest, session)
 		s.registry.Register(ec)
 		if isNew {
-			log.Printf("[edge] new device: name=%s clip_id=%s", manifest.GetName(), clipID)
+			slog.Info("edge new device", "name", manifest.GetName(), "clip_id", clipID)
 		} else {
-			log.Printf("[edge] restored: name=%s clip_id=%s", manifest.GetName(), clipID)
+			slog.Info("edge restored", "name", manifest.GetName(), "clip_id", clipID)
 		}
 	}
 
@@ -82,7 +82,7 @@ func (s *Service) Connect(ctx context.Context, stream *connect.BidiStream[v1.Edg
 			}
 		}
 		session.Close()
-		log.Printf("[edge] offline: name=%s clip_id=%s", manifest.GetName(), clipID)
+		slog.Info("edge offline", "name", manifest.GetName(), "clip_id", clipID)
 	}()
 
 	for {
@@ -120,7 +120,7 @@ func (s *Service) findOrCreateEdgeClip(name string) (string, string, bool) {
 		// Clip exists but no token — generate one
 		tokenEntry, err := s.store.AddToken(existing.ID, "edge:"+name)
 		if err != nil {
-			log.Printf("[edge] failed to generate token for existing clip %s: %v", existing.ID, err)
+			slog.Error("edge failed to generate token", "clip_id", existing.ID, "error", err)
 		} else {
 			return existing.ID, tokenEntry.Token, false
 		}
@@ -129,12 +129,12 @@ func (s *Service) findOrCreateEdgeClip(name string) (string, string, bool) {
 	// Create new edge clip
 	entry, err := s.store.AddClip(name, "")
 	if err != nil {
-		log.Printf("[edge] failed to create clip: %v", err)
+		slog.Error("edge failed to create clip", "error", err)
 		return "", "", true
 	}
 	tokenEntry, err := s.store.AddToken(entry.ID, "edge:"+name)
 	if err != nil {
-		log.Printf("[edge] failed to generate token: %v", err)
+		slog.Error("edge failed to generate token", "error", err)
 		return entry.ID, "", true
 	}
 	return entry.ID, tokenEntry.Token, true
@@ -157,6 +157,6 @@ func RegisterOfflinePlaceholders(store *config.Store, registry *clipiface.Regist
 		}
 		ec := NewOfflinePlaceholder(entry.ID, token, entry.Name)
 		registry.Register(ec)
-		log.Printf("[edge] offline placeholder: name=%s clip_id=%s", entry.Name, entry.ID)
+		slog.Info("edge offline placeholder", "name", entry.Name, "clip_id", entry.ID)
 	}
 }

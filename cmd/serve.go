@@ -6,9 +6,11 @@ package cmd
 
 import (
 	"log"
+	"log/slog"
 
 	"github.com/epiral/pinix/internal/config"
 	"github.com/epiral/pinix/internal/hub"
+	"github.com/epiral/pinix/internal/logging"
 	"github.com/epiral/pinix/internal/sandbox"
 	"github.com/spf13/cobra"
 )
@@ -23,6 +25,8 @@ var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Start the Pinix server",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		logging.Init(logging.DefaultLogDir())
+
 		cfgPath, err := config.DefaultPath()
 		if err != nil {
 			log.Fatal(err)
@@ -35,23 +39,21 @@ var serveCmd = &cobra.Command{
 
 		var backend sandbox.Backend
 		if boxliteREST != "" {
-			// REST backend — connects to a running boxlite serve
 			b := sandbox.NewRestBackend(boxliteREST)
 			if err := b.Healthy(cmd.Context()); err != nil {
-				log.Fatalf("[sandbox] boxlite REST server unreachable at %s: %v", boxliteREST, err)
+				log.Fatalf("boxlite REST server unreachable at %s: %v", boxliteREST, err)
 			}
 			backend = b
 		} else {
-			// CLI backend — forks boxlite exec (legacy, has lock contention issues)
 			b, err := sandbox.NewBoxLiteBackend(boxliteBin)
 			if err != nil {
-				log.Fatalf("[sandbox] boxlite backend unavailable: %v", err)
+				log.Fatalf("boxlite backend unavailable: %v", err)
 			}
 			backend = b
 		}
 
 		mgr := sandbox.NewManager(backend)
-		log.Printf("[sandbox] backend: %s", backend.Name())
+		slog.Info("sandbox ready", "backend", backend.Name())
 
 		return hub.Run(serveAddr, store, mgr)
 	},
