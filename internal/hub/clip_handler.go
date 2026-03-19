@@ -8,7 +8,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
+	"time"
 
 	connect "connectrpc.com/connect"
 	v1 "github.com/epiral/pinix/gen/go/pinix/v1"
@@ -49,6 +51,11 @@ func (h *ClipHandler) Invoke(ctx context.Context, req *connect.Request[v1.Invoke
 	if err != nil {
 		return err
 	}
+
+	clipID, _ := auth.ClipIDFromContext(ctx)
+	started := time.Now()
+	slog.Info("invoke start", "clip", clipID, "cmd", name, "args", req.Msg.GetArgs())
+
 	var stdin io.Reader
 	if req.Msg.GetStdin() != "" {
 		stdin = strings.NewReader(req.Msg.GetStdin())
@@ -59,6 +66,9 @@ func (h *ClipHandler) Invoke(ctx context.Context, req *connect.Request[v1.Invoke
 		defer close(out)
 		errCh <- resolved.Invoke(ctx, name, req.Msg.GetArgs(), stdin, out)
 	}()
+
+	var exitCode int32
+	var stderrTail []byte
 	for event := range out {
 		if len(event.Stdout) > 0 {
 			if err := stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_Stdout{Stdout: event.Stdout}}); err != nil {
@@ -66,16 +76,32 @@ func (h *ClipHandler) Invoke(ctx context.Context, req *connect.Request[v1.Invoke
 			}
 		}
 		if len(event.Stderr) > 0 {
+			stderrTail = event.Stderr
 			if err := stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_Stderr{Stderr: event.Stderr}}); err != nil {
 				return err
 			}
 		}
 		if event.ExitCode != nil {
-			if err := stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_ExitCode{ExitCode: int32(*event.ExitCode)}}); err != nil {
+			exitCode = int32(*event.ExitCode)
+			if err := stream.Send(&v1.InvokeChunk{Payload: &v1.InvokeChunk_ExitCode{ExitCode: exitCode}}); err != nil {
 				return err
 			}
 		}
 	}
+
+	duration := time.Since(started)
+	logAttrs := []any{"clip", clipID, "cmd", name, "exit_code", exitCode, "duration_ms", duration.Milliseconds()}
+	if exitCode != 0 {
+		// Keep last 4KB of stderr for error context
+		if len(stderrTail) > 4096 {
+			stderrTail = stderrTail[len(stderrTail)-4096:]
+		}
+		logAttrs = append(logAttrs, "stderr", string(stderrTail))
+		slog.Error("invoke failed", logAttrs...)
+	} else {
+		slog.Info("invoke done", logAttrs...)
+	}
+
 	return <-errCh
 }
 
