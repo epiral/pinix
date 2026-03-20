@@ -102,13 +102,13 @@ async function loadManifest(name, options = {}) {
   renderDetail();
 }
 
-async function invokeCommand(command) {
+async function invokeCommand(commandName) {
   const clip = getSelectedClip();
   if (!clip) {
     return;
   }
 
-  const inputText = getCommandInput(clip.name, command).trim() || "{}";
+  const inputText = getCommandInput(clip.name, commandName).trim();
   let input;
 
   try {
@@ -117,7 +117,7 @@ async function invokeCommand(command) {
     state.lastResult = {
       ok: false,
       clip: clip.name,
-      command,
+      command: commandName,
       meta: "Invalid JSON input",
       payload: { error: String(error.message || error) },
     };
@@ -125,7 +125,7 @@ async function invokeCommand(command) {
     return;
   }
 
-  state.runningCommand = command;
+  state.runningCommand = commandName;
   renderDetail();
 
   try {
@@ -134,7 +134,7 @@ async function invokeCommand(command) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         clip: clip.name,
-        command,
+        command: commandName,
         input,
       }),
     });
@@ -142,7 +142,7 @@ async function invokeCommand(command) {
     state.lastResult = {
       ok: true,
       clip: clip.name,
-      command,
+      command: commandName,
       meta: "Invocation succeeded",
       payload,
     };
@@ -150,7 +150,7 @@ async function invokeCommand(command) {
     state.lastResult = {
       ok: false,
       clip: clip.name,
-      command,
+      command: commandName,
       meta: String(error.message || error),
       payload: { error: String(error.message || error) },
     };
@@ -301,54 +301,58 @@ function renderDetail(isLoading = false) {
     </div>
   `;
 
-  for (const command of commands) {
-    const toggle = document.querySelector(`[data-command-toggle="${cssEscape(command)}"]`);
+  for (const commandObj of commands) {
+    const commandName = typeof commandObj === 'string' ? commandObj : commandObj.name;
+
+    const toggle = document.querySelector(`[data-command-toggle="${cssEscape(commandName)}"]`);
     if (toggle) {
       toggle.addEventListener("click", () => {
-        state.expandedCommand = state.expandedCommand === command ? null : command;
+        state.expandedCommand = state.expandedCommand === commandName ? null : commandName;
         renderDetail();
       });
     }
 
-    const input = document.querySelector(`[data-command-input="${cssEscape(command)}"]`);
-    if (input) {
-      input.addEventListener("input", (event) => {
-        setCommandInput(clip.name, command, event.target.value);
-      });
-    }
-
-    const runButton = document.querySelector(`[data-command-run="${cssEscape(command)}"]`);
+    const runButton = document.querySelector(`[data-command-run="${cssEscape(commandName)}"]`);
     if (runButton) {
       runButton.addEventListener("click", () => {
-        void invokeCommand(command);
+        void invokeCommand(commandName);
       });
     }
   }
 }
 
-function renderCommandCard(clip, command) {
-  const expanded = state.expandedCommand === command;
-  const inputValue = getCommandInput(clip.name, command);
-  const running = state.runningCommand === command;
+function renderCommandCard(clip, commandObj) {
+  const commandName = typeof commandObj === 'string' ? commandObj : commandObj.name;
+  const expanded = state.expandedCommand === commandName;
+  const running = state.runningCommand === commandName;
+
+  let inputValue = getCommandInput(clip.name, commandName);
+  if (!inputValue || inputValue === "{}") {
+    const exampleArgs = commandObj.args_example || {};
+    inputValue = JSON.stringify(exampleArgs, null, 2);
+    setCommandInput(clip.name, commandName, inputValue); // Set the default example
+  }
+
 
   return `
     <article class="command-card${expanded ? " expanded" : ""}">
-      <button type="button" class="command-toggle" data-command-toggle="${escapeHTML(command)}">
-        <span class="command-name">${escapeHTML(command)}</span>
+      <button type="button" class="command-toggle" data-command-toggle="${escapeHTML(commandName)}">
+        <span class="command-name">${escapeHTML(commandName)}</span>
         <span class="command-arrow">${expanded ? "Hide" : "Open"}</span>
       </button>
       ${expanded ? `
         <div class="command-body">
-          <label class="command-label" for="command-input-${escapeHTML(command)}">Input JSON</label>
+          <label class="command-label" for="command-input-${escapeHTML(commandName)}">Input JSON</label>
           <textarea
-            id="command-input-${escapeHTML(command)}"
+            id="command-input-${escapeHTML(commandName)}"
             class="command-input"
-            data-command-input="${escapeHTML(command)}"
+            data-command-input="${escapeHTML(commandName)}"
             spellcheck="false"
+            oninput="setCommandInput('${escapeHTML(clip.name)}', '${escapeHTML(commandName)}', this.value)"
           >${escapeHTML(inputValue)}</textarea>
           <div class="command-footer">
             <p class="status-note">Requests are sent to <code>/api/invoke</code>.</p>
-            <button type="button" class="run-button" data-command-run="${escapeHTML(command)}" ${running ? "disabled" : ""}>
+            <button type="button" class="run-button" data-command-run="${escapeHTML(commandName)}" ${running ? "disabled" : ""}>
               ${running ? "Running..." : "Run command"}
             </button>
           </div>
@@ -389,16 +393,16 @@ function getSelectedClip() {
   return state.clips.find((clip) => clip.name === state.selectedClipName) || null;
 }
 
-function getCommandInput(clipName, command) {
-  const key = `${clipName}:${command}`;
+function getCommandInput(clipName, commandName) {
+  const key = `${clipName}:${commandName}`;
   if (!(key in state.inputs)) {
     state.inputs[key] = "{}";
   }
   return state.inputs[key];
 }
 
-function setCommandInput(clipName, command, value) {
-  state.inputs[`${clipName}:${command}`] = value;
+function setCommandInput(clipName, commandName, value) {
+  state.inputs[`${clipName}:${commandName}`] = value;
 }
 
 async function apiJSON(url, options = {}) {
@@ -444,5 +448,5 @@ function cssEscape(value) {
   if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
     return CSS.escape(value);
   }
-  return String(value).replaceAll('"', '\\"');
+  return String(value).replaceAll('"', '"');
 }
