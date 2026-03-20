@@ -79,6 +79,7 @@ type ClipStatus struct {
 	Source         string         `json:"source"`
 	Path           string         `json:"path"`
 	Running        bool           `json:"running"`
+	HasWeb         bool           `json:"has_web"`
 	TokenProtected bool           `json:"token_protected"`
 	Manifest       *ManifestCache `json:"manifest,omitempty"`
 }
