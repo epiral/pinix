@@ -87,6 +87,12 @@ textarea {
   gap: 20px;
 }
 
+.sidebar-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
 .panel {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-lg);
@@ -95,7 +101,8 @@ textarea {
   backdrop-filter: blur(20px);
 }
 
-.sidebar {
+.sidebar,
+.sidebar-panel {
   overflow: hidden;
 }
 
@@ -132,6 +139,13 @@ textarea {
   gap: 10px;
 }
 
+.capability-list {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  gap: 10px;
+}
+
 .clip-item {
   width: 100%;
   padding: 16px;
@@ -142,6 +156,21 @@ textarea {
   text-align: left;
   cursor: pointer;
   transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+.capability-item {
+  padding: 16px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.capability-item-head {
+  margin-bottom: 10px;
+}
+
+.capability-commands {
+  line-height: 1.6;
 }
 
 .clip-item:hover,
@@ -426,6 +455,10 @@ textarea {
 
   .layout {
     grid-template-columns: 1fr;
+  }
+
+  .sidebar-stack {
+    gap: 16px;
   }
 
   .detail {

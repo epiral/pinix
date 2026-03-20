@@ -16,12 +16,13 @@ import (
 )
 
 type Handler struct {
-	registry *Registry
-	process  *ProcessManager
+	registry     *Registry
+	process      *ProcessManager
+	capabilities *CapabilityManager
 }
 
-func NewHandler(registry *Registry, process *ProcessManager) *Handler {
-	return &Handler{registry: registry, process: process}
+func NewHandler(registry *Registry, process *ProcessManager, capabilities *CapabilityManager) *Handler {
+	return &Handler{registry: registry, process: process, capabilities: capabilities}
 }
 
 func (h *Handler) Handle(ctx context.Context, req *Request) SocketResponse {
@@ -53,6 +54,13 @@ func (h *Handler) Handle(ctx context.Context, req *Request) SocketResponse {
 			return errorResponse("invalid_argument", err.Error())
 		}
 		result, err := h.handleInvoke(ctx, req.Token, params)
+		return marshalResponse(result, err)
+	case "capability.invoke":
+		var params CapabilityInvokeRequest
+		if err := decodeParams(req.Params, &params); err != nil {
+			return errorResponse("invalid_argument", err.Error())
+		}
+		result, err := h.handleCapabilityInvoke(ctx, params)
 		return marshalResponse(result, err)
 	default:
 		return errorResponse("method_not_found", fmt.Sprintf("unknown method %q", req.Method))
@@ -239,6 +247,17 @@ func (h *Handler) handleList() (*ListResult, error) {
 			Manifest:       clip.Manifest,
 		})
 	}
+	if h.capabilities != nil {
+		result.Capabilities = h.capabilities.List()
+	}
+	return result, nil
+}
+
+func (h *Handler) handleCapabilityList() (*CapabilityListResult, error) {
+	result := &CapabilityListResult{Capabilities: make([]CapabilityStatus, 0)}
+	if h.capabilities != nil {
+		result.Capabilities = h.capabilities.List()
+	}
 	return result, nil
 }
 
@@ -269,6 +288,19 @@ func (h *Handler) handleInvoke(ctx context.Context, authToken string, params Inv
 		output = json.RawMessage(`{}`)
 	}
 	return output, nil
+}
+
+func (h *Handler) handleCapabilityInvoke(ctx context.Context, params CapabilityInvokeRequest) (json.RawMessage, error) {
+	if strings.TrimSpace(params.Capability) == "" {
+		return nil, daemonError{Code: "invalid_argument", Message: "capability is required"}
+	}
+	if strings.TrimSpace(params.Command) == "" {
+		return nil, daemonError{Code: "invalid_argument", Message: "command is required"}
+	}
+	if h.capabilities == nil {
+		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("capability %q not found", params.Capability)}
+	}
+	return h.capabilities.Invoke(ctx, params.Capability, params.Command, params.Input)
 }
 
 func (h *Handler) inspectClip(ctx context.Context, clip ClipConfig) (*ManifestCache, error) {
