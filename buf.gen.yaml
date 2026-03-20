@@ -1,7 +1,9 @@
 version: v2
+clean: true
 inputs:
   - directory: proto
 plugins:
+  # Generate all public v1 and internal v2 APIs from proto/.
   # Go + Connect-RPC（Pinix server 用）
   - remote: buf.build/connectrpc/go:v1.19.1
     out: gen/go

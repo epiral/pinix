@@ -1,5 +1,6 @@
 version: v2
 modules:
+  # Public v1 and internal v2 APIs live under proto/.
   - path: proto
 lint:
   use:

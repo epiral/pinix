@@ -1,0 +1,246 @@
+syntax = "proto3";
+
+package pinix.v2;
+
+option go_package = "github.com/epiral/pinix/gen/go/pinix/v2;pinixv2";
+
+// PinixService is the internal Connect-RPC surface for CLI clients,
+// Portal gateways, and capability providers.
+service PinixService {
+  // Capability providers establish a long-lived bidirectional stream.
+  // The first client message must be CapabilityRegister.
+  rpc CapabilityStream(stream CapabilityStreamRequest) returns (stream CapabilityStreamResponse);
+
+  // Client / Portal unary APIs.
+  rpc ListClips(ListClipsRequest) returns (ListClipsResponse);
+  rpc ListCapabilities(ListCapabilitiesRequest) returns (ListCapabilitiesResponse);
+  rpc InvokeClip(InvokeClipRequest) returns (InvokeClipResponse);
+  rpc InvokeCapability(InvokeCapabilityRequest) returns (InvokeCapabilityResponse);
+  rpc GetManifest(GetManifestRequest) returns (GetManifestResponse);
+  rpc GetClipWeb(GetClipWebRequest) returns (GetClipWebResponse);
+  rpc AddClip(AddClipRequest) returns (AddClipResponse);
+  rpc RemoveClip(RemoveClipRequest) returns (RemoveClipResponse);
+}
+
+enum ClipState {
+  CLIP_STATE_UNSPECIFIED = 0;
+  CLIP_STATE_RUNNING = 1;
+  CLIP_STATE_STOPPED = 2;
+  CLIP_STATE_OFFLINE = 3;
+  CLIP_STATE_ERROR = 4;
+}
+
+// PinixError is returned inside invoke responses for command-level failures.
+// Transport/auth/validation failures should still use Connect error codes.
+message PinixError {
+  string code = 1;
+  string message = 2;
+}
+
+message CommandInfo {
+  string name = 1;
+  string description = 2;
+  string input = 3;
+  string output = 4;
+}
+
+message DependencyStatus {
+  string capability_name = 1;
+  bool online = 2;
+  string provider_name = 3;
+  string message = 4;
+}
+
+message ClipInfo {
+  string name = 1;
+  string provider_name = 2;
+  string source = 3;
+  string installed_path = 4;
+  ClipState state = 5;
+  bool token_protected = 6;
+  string domain = 7;
+  repeated string commands = 8;
+  bool has_web = 9;
+  repeated DependencyStatus dependencies = 10;
+}
+
+message ClipManifest {
+  string name = 1;
+  string domain = 2;
+  string version = 3;
+  string description = 4;
+  repeated CommandInfo commands = 5;
+  repeated string dependencies = 6;
+  bool has_web = 7;
+  repeated string patterns = 8;
+}
+
+message CapabilityDefinition {
+  string name = 1;
+  string description = 2;
+  repeated CommandInfo commands = 3;
+}
+
+message CapabilityInfo {
+  CapabilityDefinition capability = 1;
+  string provider_name = 2;
+  bool online = 3;
+  string status_message = 4;
+}
+
+message CapabilityHeartbeat {
+  int64 sent_at_unix_ms = 1;
+}
+
+message CapabilityRegister {
+  string provider_name = 1;
+  string token = 2;
+  repeated CapabilityDefinition capabilities = 3;
+}
+
+message CapabilityRegistered {
+  string provider_id = 1;
+  string message = 2;
+}
+
+message CapabilityRejected {
+  string code = 1;
+  string message = 2;
+}
+
+message CapabilityAdded {
+  CapabilityDefinition capability = 1;
+}
+
+message CapabilityRemoved {
+  string capability_name = 1;
+}
+
+message CapabilityStatus {
+  string capability_name = 1;
+  bool online = 2;
+  string message = 3;
+}
+
+message CapabilityUpdate {
+  oneof payload {
+    CapabilityAdded added = 1;
+    CapabilityRemoved removed = 2;
+    CapabilityStatus status = 3;
+  }
+}
+
+message CapabilityInvokeRequest {
+  string request_id = 1;
+  string capability = 2;
+  string command = 3;
+  bytes input = 4;
+}
+
+message CapabilityInvokeResponse {
+  string request_id = 1;
+  bytes output = 2;
+  PinixError error = 3;
+}
+
+message CapabilityStreamRequest {
+  oneof payload {
+    CapabilityRegister register = 1;
+    CapabilityUpdate update = 2;
+    CapabilityInvokeResponse invoke_response = 3;
+    CapabilityHeartbeat ping = 4;
+  }
+}
+
+message CapabilityStreamResponse {
+  oneof payload {
+    CapabilityRegistered registered = 1;
+    CapabilityRejected rejected = 2;
+    CapabilityInvokeRequest invoke_request = 3;
+    CapabilityHeartbeat pong = 4;
+  }
+}
+
+message ListClipsRequest {
+  string token = 1;
+}
+
+message ListClipsResponse {
+  repeated ClipInfo clips = 1;
+}
+
+message ListCapabilitiesRequest {
+  string token = 1;
+}
+
+message ListCapabilitiesResponse {
+  repeated CapabilityInfo capabilities = 1;
+}
+
+message InvokeClipRequest {
+  string token = 1;
+  string clip_name = 2;
+  string command = 3;
+  bytes input = 4;
+}
+
+message InvokeClipResponse {
+  bytes output = 1;
+  PinixError error = 2;
+}
+
+message InvokeCapabilityRequest {
+  string token = 1;
+  string capability = 2;
+  string command = 3;
+  bytes input = 4;
+}
+
+message InvokeCapabilityResponse {
+  bytes output = 1;
+  PinixError error = 2;
+}
+
+message GetManifestRequest {
+  string token = 1;
+  string clip_name = 2;
+}
+
+message GetManifestResponse {
+  ClipInfo clip = 1;
+  ClipManifest manifest = 2;
+}
+
+message GetClipWebRequest {
+  string token = 1;
+  string clip_name = 2;
+  string path = 3;
+  string if_none_match = 4;
+}
+
+message GetClipWebResponse {
+  bytes content = 1;
+  string content_type = 2;
+  string etag = 3;
+  bool not_modified = 4;
+}
+
+message AddClipRequest {
+  string token = 1;
+  string source = 2;
+  string clip_token = 3;
+}
+
+message AddClipResponse {
+  ClipInfo clip = 1;
+}
+
+message RemoveClipRequest {
+  string token = 1;
+  string clip_name = 2;
+}
+
+message RemoveClipResponse {
+  string clip_name = 1;
+  string installed_path = 2;
+}
