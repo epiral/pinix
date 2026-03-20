@@ -1,5 +1,0 @@
-./daemon.go
-./handler.go
-./process.go
-./protocol.go
-./registry.go

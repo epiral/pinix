@@ -8,3 +8,6 @@ gen/
 
 # macOS
 .DS_Store
+.gomodcache*
+.gocache*
+.cache*

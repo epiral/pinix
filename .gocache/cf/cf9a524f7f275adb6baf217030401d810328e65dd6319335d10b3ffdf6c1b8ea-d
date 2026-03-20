@@ -1,9 +1,0 @@
-./client.go
-./clip.go
-./clip_lifecycle.go
-./info.go
-./invoke.go
-./read.go
-./root.go
-./serve.go
-./token.go
