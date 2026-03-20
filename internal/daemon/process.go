@@ -28,6 +28,7 @@ const clipStopTimeout = 5 * time.Second
 type ProcessManager struct {
 	registry *Registry
 	bunPath  string
+	httpPort int
 
 	mu        sync.Mutex
 	processes map[string]*clipProcess
@@ -44,7 +45,7 @@ type clipProcess struct {
 	err      error
 }
 
-func NewProcessManager(registry *Registry, bunPath string) (*ProcessManager, error) {
+func NewProcessManager(registry *Registry, bunPath string, httpPort ...int) (*ProcessManager, error) {
 	if registry == nil {
 		return nil, fmt.Errorf("registry is required")
 	}
@@ -56,9 +57,15 @@ func NewProcessManager(registry *Registry, bunPath string) (*ProcessManager, err
 		}
 	}
 
+	port := 9000
+	if len(httpPort) > 0 && httpPort[0] > 0 {
+		port = httpPort[0]
+	}
+
 	return &ProcessManager{
 		registry:  registry,
 		bunPath:   bunPath,
+		httpPort:  port,
 		processes: make(map[string]*clipProcess),
 	}, nil
 }
@@ -200,6 +207,7 @@ func (m *ProcessManager) startLocked(clip ClipConfig) (*clipProcess, error) {
 
 	cmd := exec.Command(m.bunPath, "run", entrypoint, "--ipc")
 	cmd.Dir = clip.Path
+	cmd.Env = append(os.Environ(), fmt.Sprintf("PINIX_URL=http://127.0.0.1:%d", m.httpPort))
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
