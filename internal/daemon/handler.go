@@ -238,11 +238,18 @@ func (h *Handler) handleList() (*ListResult, error) {
 
 	result := &ListResult{Clips: make([]ClipStatus, 0, len(clips))}
 	for _, clip := range clips {
+		hasWeb := false
+		webDir := filepath.Join(clip.Path, "web")
+		if info, err := os.Stat(webDir); err == nil && info.IsDir() {
+			hasWeb = true
+		}
+
 		result.Clips = append(result.Clips, ClipStatus{
 			Name:           clip.Name,
 			Source:         clip.Source,
 			Path:           clip.Path,
 			Running:        h.process.IsRunning(clip.Name),
+			HasWeb:         hasWeb,
 			TokenProtected: clip.Token != "",
 			Manifest:       clip.Manifest,
 		})

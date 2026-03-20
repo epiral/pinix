@@ -1,5 +1,5 @@
-// Role:    Embedded HTTP server for Pinix portal APIs, capability WebSockets, and static assets
-// Depends: context, encoding/json, errors, fmt, net, net/http, strings, github.com/epiral/pinix/web, golang.org/x/net/websocket
+// Role:    Embedded HTTP server for Pinix portal APIs, capability WebSockets, clip web files, and static assets
+// Depends: context, encoding/json, errors, fmt, mime, net, net/http, os, path/filepath, strings, github.com/epiral/pinix/web, golang.org/x/net/websocket
 // Exports: Daemon.ServeHTTP
 
 package daemon
@@ -9,8 +9,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	portalweb "github.com/epiral/pinix/web"
@@ -76,6 +79,7 @@ func (d *Daemon) httpMux() http.Handler {
 	mux.HandleFunc("/", d.handleIndex)
 	mux.HandleFunc("/style.css", d.handleStyle)
 	mux.HandleFunc("/app.js", d.handleApp)
+	mux.HandleFunc("/clips/", d.handleClipWeb)
 	mux.HandleFunc("/api/list", d.handleAPIList)
 	mux.HandleFunc("/api/capabilities", d.handleAPICapabilities)
 	mux.HandleFunc("/api/invoke", d.handleAPIInvoke)
@@ -127,6 +131,73 @@ func (d *Daemon) handleApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.serveAsset(w, "app.js", "application/javascript; charset=utf-8")
+}
+
+func (d *Daemon) handleClipWeb(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	clipName, filePath, ok := parseClipWebPath(r.URL.Path)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	clip, found, err := d.registry.GetClip(clipName)
+	if err != nil {
+		writeJSONError(w, daemonError{Code: "internal", Message: fmt.Sprintf("load clip %q: %v", clipName, err)})
+		return
+	}
+	if !found {
+		http.NotFound(w, r)
+		return
+	}
+
+	webRoot := filepath.Clean(filepath.Join(clip.Path, "web"))
+	requestedPath := filepath.Clean(strings.TrimPrefix(filePath, "/"))
+	if requestedPath == "." {
+		requestedPath = ""
+	}
+
+	targetPath := filepath.Clean(filepath.Join(webRoot, requestedPath))
+	if !isWithinDir(targetPath, webRoot) {
+		http.NotFound(w, r)
+		return
+	}
+
+	if requestedPath == "" {
+		targetPath = filepath.Join(webRoot, "index.html")
+	} else {
+		info, err := os.Stat(targetPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				http.NotFound(w, r)
+				return
+			}
+			writeJSONError(w, daemonError{Code: "internal", Message: fmt.Sprintf("stat clip web file %q: %v", targetPath, err)})
+			return
+		}
+		if info.IsDir() {
+			targetPath = filepath.Join(targetPath, "index.html")
+		}
+	}
+
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSONError(w, daemonError{Code: "internal", Message: fmt.Sprintf("read clip web file %q: %v", targetPath, err)})
+		return
+	}
+
+	if contentType := mime.TypeByExtension(filepath.Ext(targetPath)); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	_, _ = w.Write(data)
 }
 
 func (d *Daemon) handleAPIList(w http.ResponseWriter, r *http.Request) {
@@ -227,6 +298,32 @@ func (d *Daemon) serveAsset(w http.ResponseWriter, name, contentType string) {
 	}
 	w.Header().Set("Content-Type", contentType)
 	_, _ = w.Write(data)
+}
+
+func parseClipWebPath(requestPath string) (clipName, filePath string, ok bool) {
+	trimmed := strings.TrimPrefix(requestPath, "/clips/")
+	if trimmed == requestPath {
+		return "", "", false
+	}
+
+	parts := strings.SplitN(trimmed, "/", 2)
+	clipName = strings.TrimSpace(parts[0])
+	if clipName == "" {
+		return "", "", false
+	}
+	if len(parts) == 2 {
+		filePath = parts[1]
+	}
+	return clipName, filePath, true
+}
+
+func isWithinDir(path, base string) bool {
+	path = filepath.Clean(path)
+	base = filepath.Clean(base)
+	if path == base {
+		return true
+	}
+	return strings.HasPrefix(path, base+string(filepath.Separator))
 }
 
 func (d *Daemon) capabilityWebSocketHandler() http.Handler {

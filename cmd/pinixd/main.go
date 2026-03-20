@@ -43,7 +43,7 @@ func main() {
 		}
 	}
 
-	processManager, err := daemon.NewProcessManager(registry, bunPath)
+	processManager, err := daemon.NewProcessManager(registry, bunPath, port)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
