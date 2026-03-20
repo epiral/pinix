@@ -1,5 +1,5 @@
 // Role:    Unix socket server and lifecycle for Pinix daemon
-// Depends: context, encoding/json, errors, fmt, net, os, path/filepath, sync
+// Depends: context, encoding/json, errors, fmt, net, net/http, os, path/filepath, strings, sync
 // Exports: Daemon, NewDaemon
 
 package daemon
@@ -10,8 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -21,9 +23,10 @@ type Daemon struct {
 	process    *ProcessManager
 	handler    *Handler
 
-	mu       sync.Mutex
-	listener net.Listener
-	closed   bool
+	mu         sync.Mutex
+	listener   net.Listener
+	httpServer *http.Server
+	closed     bool
 }
 
 func NewDaemon(socketPath string, registry *Registry, process *ProcessManager) (*Daemon, error) {
@@ -50,6 +53,50 @@ func NewDaemon(socketPath string, registry *Registry, process *ProcessManager) (
 
 func (d *Daemon) SocketPath() string {
 	return d.socketPath
+}
+
+func (d *Daemon) List() (*ListResult, error) {
+	return d.handler.handleList()
+}
+
+func (d *Daemon) Invoke(ctx context.Context, authToken, clip, command string, input json.RawMessage) (json.RawMessage, error) {
+	return d.handler.handleInvoke(ctx, authToken, InvokeParams{
+		Clip:    clip,
+		Command: command,
+		Input:   input,
+	})
+}
+
+func (d *Daemon) GetManifest(ctx context.Context, name string) (*ManifestCache, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, daemonError{Code: "invalid_argument", Message: "clip is required"}
+	}
+
+	clip, ok, err := d.registry.GetClip(name)
+	if err != nil {
+		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)}
+	}
+	if !ok {
+		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", name)}
+	}
+	if clip.Manifest != nil {
+		return clip.Manifest, nil
+	}
+
+	manifest, err := d.process.LoadManifest(ctx, clip.Name)
+	if err != nil {
+		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip manifest: %v", err)}
+	}
+	if manifest == nil {
+		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q manifest unavailable", name)}
+	}
+
+	clip.Manifest = manifest
+	if err := d.registry.PutClip(clip); err != nil {
+		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("save clip manifest: %v", err)}
+	}
+	return manifest, nil
 }
 
 func (d *Daemon) Serve(ctx context.Context) error {
@@ -104,11 +151,18 @@ func (d *Daemon) Close() error {
 	d.closed = true
 	listener := d.listener
 	d.listener = nil
+	httpServer := d.httpServer
+	d.httpServer = nil
 	d.mu.Unlock()
 
 	var errs []error
 	if listener != nil {
 		if err := listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			errs = append(errs, err)
+		}
+	}
+	if httpServer != nil {
+		if err := httpServer.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errs = append(errs, err)
 		}
 	}

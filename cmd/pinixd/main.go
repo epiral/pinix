@@ -21,12 +21,14 @@ func main() {
 		socketPath string
 		configPath string
 		bunPath    string
+		port       int
 	)
 
 	flag.StringVar(&superToken, "super-token", "", "super token required for add/remove operations")
 	flag.StringVar(&socketPath, "socket", "", "unix socket path (default: ~/.pinix/pinix.sock)")
 	flag.StringVar(&configPath, "config", "", "config path (default: ~/.pinix/config.json)")
 	flag.StringVar(&bunPath, "bun", "", "path to bun binary (default: auto-detect)")
+	flag.IntVar(&port, "port", 9000, "http port for the embedded portal UI")
 	flag.Parse()
 
 	registry, err := daemon.NewRegistry(configPath)
@@ -56,8 +58,25 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if err := d.Serve(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	errCh := make(chan error, 2)
+	go func() {
+		errCh <- d.Serve(ctx)
+	}()
+	go func() {
+		errCh <- d.ServeHTTP(ctx, fmt.Sprintf(":%d", port))
+	}()
+
+	var serveErr error
+	for i := 0; i < 2; i++ {
+		err := <-errCh
+		if err != nil && serveErr == nil {
+			serveErr = err
+			stop()
+		}
+	}
+
+	if serveErr != nil {
+		fmt.Fprintln(os.Stderr, serveErr)
 		os.Exit(1)
 	}
 }
