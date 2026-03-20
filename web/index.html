@@ -1,20 +1,39 @@
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><title>Pinix Clip</title></head>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinix Portal</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
 <body>
-<h1>Hello from Pinix 🎉</h1>
-<p>This page is served via <code>pinix-web://</code> scheme → ReadFile streaming RPC</p>
-<button onclick="testInvoke()">Test Bridge.invoke</button>
-<pre id="output"></pre>
-<script>
-async function testInvoke() {
-  try {
-    const res = await Bridge.invoke('ls', ['.'])
-    document.getElementById('output').textContent = JSON.stringify(res, null, 2)
-  } catch(e) {
-    document.getElementById('output').textContent = 'Error: ' + e.message
-  }
-}
-</script>
+  <div class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Pinix</p>
+        <h1>Pinix Portal</h1>
+      </div>
+      <button id="refreshButton" class="primary" type="button">Refresh</button>
+    </header>
+
+    <main class="layout">
+      <aside class="panel sidebar">
+        <div class="panel-header">
+          <h2>Clips</h2>
+          <p id="clipCount" class="panel-meta">0 clips</p>
+        </div>
+        <div id="clipList" class="clip-list"></div>
+      </aside>
+
+      <section class="panel detail">
+        <div id="detailView" class="empty-state">
+          <h2>Select a clip</h2>
+          <p>Choose a clip from the list to inspect its manifest and run commands.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app.js" defer></script>
 </body>
 </html>
