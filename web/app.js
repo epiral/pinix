@@ -1,5 +1,6 @@
 const state = {
   clips: [],
+  capabilities: [],
   selectedClipName: null,
   selectedManifest: null,
   detailError: null,
@@ -12,6 +13,8 @@ const state = {
 const refreshButton = document.getElementById("refreshButton");
 const clipCount = document.getElementById("clipCount");
 const clipList = document.getElementById("clipList");
+const capabilityCount = document.getElementById("capabilityCount");
+const capabilityList = document.getElementById("capabilityList");
 const detailView = document.getElementById("detailView");
 
 refreshButton.addEventListener("click", () => {
@@ -23,10 +26,12 @@ void refreshClips();
 async function refreshClips() {
   refreshButton.disabled = true;
   clipList.innerHTML = '<div class="loading">Loading clips...</div>';
+  capabilityList.innerHTML = '<div class="loading">Loading capabilities...</div>';
 
   try {
     const payload = await apiJSON("/api/list");
     state.clips = Array.isArray(payload.clips) ? payload.clips : [];
+    state.capabilities = Array.isArray(payload.capabilities) ? payload.capabilities : [];
 
     if (state.selectedClipName) {
       const current = getSelectedClip();
@@ -39,6 +44,7 @@ async function refreshClips() {
     }
 
     renderClipList();
+    renderCapabilityList();
 
     if (state.selectedClipName) {
       await loadManifest(state.selectedClipName, { preserveResult: true });
@@ -47,6 +53,7 @@ async function refreshClips() {
     }
   } catch (error) {
     renderClipList(String(error.message || error));
+    renderCapabilityList(String(error.message || error));
     detailView.innerHTML = renderNotice(
       "Unable to load clips",
       String(error.message || error),
@@ -193,6 +200,40 @@ function renderClipList(errorMessage = "") {
 
     clipList.appendChild(button);
   }
+}
+
+function renderCapabilityList(errorMessage = "") {
+  const onlineCount = state.capabilities.filter((capability) => capability.online).length;
+  capabilityCount.textContent = `${onlineCount} online`;
+
+  if (errorMessage) {
+    capabilityList.innerHTML = `<div class="notice">${escapeHTML(errorMessage)}</div>`;
+    return;
+  }
+
+  if (state.capabilities.length === 0) {
+    capabilityList.innerHTML = '<div class="empty-list">No capabilities connected.</div>';
+    return;
+  }
+
+  capabilityList.innerHTML = state.capabilities.map((capability) => {
+    const commands = Array.isArray(capability.commands) ? capability.commands : [];
+    const stateClass = capability.online ? "running" : "stopped";
+    const stateLabel = capability.online ? "online" : "offline";
+
+    return `
+      <article class="capability-item">
+        <div class="clip-item-head capability-item-head">
+          <span class="clip-name">${escapeHTML(capability.name)}</span>
+          <span class="status-pill ${stateClass}">${stateLabel}</span>
+        </div>
+        <p class="clip-source capability-commands">${escapeHTML(commands.join(", ") || "No commands registered")}</p>
+        <div class="clip-stats">
+          <span class="badge">${commands.length} command${commands.length === 1 ? "" : "s"}</span>
+        </div>
+      </article>
+    `;
+  }).join("");
 }
 
 function renderDetail(isLoading = false) {

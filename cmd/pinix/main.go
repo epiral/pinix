@@ -121,20 +121,31 @@ func newListCommand(socketPath *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if len(result.Clips) == 0 {
+			if len(result.Clips) == 0 && len(result.Capabilities) == 0 {
 				fmt.Println("(no clips)")
 				return nil
 			}
-			for _, clip := range result.Clips {
-				commands := ""
-				if clip.Manifest != nil && len(clip.Manifest.Commands) > 0 {
-					commands = strings.Join(clip.Manifest.Commands, ",")
+
+			if len(result.Clips) > 0 {
+				for _, clip := range result.Clips {
+					commands := ""
+					if clip.Manifest != nil && len(clip.Manifest.Commands) > 0 {
+						commands = strings.Join(clip.Manifest.Commands, ",")
+					}
+					status := "stopped"
+					if clip.Running {
+						status = "running"
+					}
+					fmt.Printf("%s\t%s\t%s\t%s\n", clip.Name, status, clip.Source, commands)
 				}
-				status := "stopped"
-				if clip.Running {
-					status = "running"
+			}
+
+			for _, capability := range result.Capabilities {
+				status := "offline"
+				if capability.Online {
+					status = "online"
 				}
-				fmt.Printf("%s\t%s\t%s\t%s\n", clip.Name, status, clip.Source, commands)
+				fmt.Printf("capability:%s\t%s\t%s\n", capability.Name, status, strings.Join(capability.Commands, ","))
 			}
 			return nil
 		},

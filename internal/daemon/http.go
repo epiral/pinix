@@ -1,5 +1,5 @@
-// Role:    Embedded HTTP server for Pinix portal APIs and static assets
-// Depends: context, encoding/json, errors, fmt, net, net/http, strings, github.com/epiral/pinix/web
+// Role:    Embedded HTTP server for Pinix portal APIs, capability WebSockets, and static assets
+// Depends: context, encoding/json, errors, fmt, net, net/http, strings, github.com/epiral/pinix/web, golang.org/x/net/websocket
 // Exports: Daemon.ServeHTTP
 
 package daemon
@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	portalweb "github.com/epiral/pinix/web"
+	"golang.org/x/net/websocket"
 )
 
 type invokeHTTPRequest struct {
@@ -21,6 +22,12 @@ type invokeHTTPRequest struct {
 	Command string          `json:"command"`
 	Input   json.RawMessage `json:"input,omitempty"`
 	Token   string          `json:"token,omitempty"`
+}
+
+type capabilityInvokeHTTPRequest struct {
+	Capability string          `json:"capability"`
+	Command    string          `json:"command"`
+	Input      json.RawMessage `json:"input,omitempty"`
 }
 
 func (d *Daemon) ServeHTTP(ctx context.Context, addr string) error {
@@ -70,8 +77,11 @@ func (d *Daemon) httpMux() http.Handler {
 	mux.HandleFunc("/style.css", d.handleStyle)
 	mux.HandleFunc("/app.js", d.handleApp)
 	mux.HandleFunc("/api/list", d.handleAPIList)
+	mux.HandleFunc("/api/capabilities", d.handleAPICapabilities)
 	mux.HandleFunc("/api/invoke", d.handleAPIInvoke)
+	mux.HandleFunc("/api/capability/invoke", d.handleAPICapabilityInvoke)
 	mux.HandleFunc("/api/manifest", d.handleAPIManifest)
+	mux.Handle("/ws/capability", d.capabilityWebSocketHandler())
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
@@ -133,6 +143,20 @@ func (d *Daemon) handleAPIList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (d *Daemon) handleAPICapabilities(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	result, err := d.ListCapabilities()
+	if err != nil {
+		writeJSONError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (d *Daemon) handleAPIInvoke(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeMethodNotAllowed(w, http.MethodPost)
@@ -150,6 +174,30 @@ func (d *Daemon) handleAPIInvoke(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := d.Invoke(r.Context(), requestToken(r, req.Token), req.Clip, req.Command, req.Input)
+	if err != nil {
+		writeJSONError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (d *Daemon) handleAPICapabilityInvoke(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	defer r.Body.Close()
+
+	var req capabilityInvokeHTTPRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		writeJSONError(w, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("decode request: %v", err)})
+		return
+	}
+
+	result, err := d.InvokeCapability(r.Context(), req.Capability, req.Command, req.Input)
 	if err != nil {
 		writeJSONError(w, err)
 		return
@@ -179,6 +227,33 @@ func (d *Daemon) serveAsset(w http.ResponseWriter, name, contentType string) {
 	}
 	w.Header().Set("Content-Type", contentType)
 	_, _ = w.Write(data)
+}
+
+func (d *Daemon) capabilityWebSocketHandler() http.Handler {
+	server := websocket.Server{
+		Handshake: func(*websocket.Config, *http.Request) error {
+			return nil
+		},
+		Handler: websocket.Handler(func(conn *websocket.Conn) {
+			if d.capability == nil {
+				_ = conn.Close()
+				return
+			}
+			_ = d.capability.HandleConnection(conn)
+		}),
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ws/capability" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowed(w, http.MethodGet)
+			return
+		}
+		server.ServeHTTP(w, r)
+	})
 }
 
 func setCORSHeaders(w http.ResponseWriter) {
@@ -215,7 +290,7 @@ func httpStatusCode(fallback int, respErr *ResponseError) int {
 	if respErr == nil {
 		return fallback
 	}
-	switch respErr.Code {
+	switch strings.ToLower(respErr.Code) {
 	case "invalid_argument":
 		return http.StatusBadRequest
 	case "permission_denied":
@@ -226,6 +301,10 @@ func httpStatusCode(fallback int, respErr *ResponseError) int {
 		return http.StatusConflict
 	case "method_not_allowed":
 		return http.StatusMethodNotAllowed
+	case "timeout":
+		return http.StatusGatewayTimeout
+	case "canceled", "cancelled":
+		return http.StatusRequestTimeout
 	default:
 		return fallback
 	}

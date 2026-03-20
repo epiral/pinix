@@ -21,6 +21,7 @@ type Daemon struct {
 	socketPath string
 	registry   *Registry
 	process    *ProcessManager
+	capability *CapabilityManager
 	handler    *Handler
 
 	mu         sync.Mutex
@@ -43,12 +44,14 @@ func NewDaemon(socketPath string, registry *Registry, process *ProcessManager) (
 			return nil, err
 		}
 	}
-	return &Daemon{
+	d := &Daemon{
 		socketPath: socketPath,
 		registry:   registry,
 		process:    process,
-		handler:    NewHandler(registry, process),
-	}, nil
+		capability: NewCapabilityManager(),
+	}
+	d.handler = NewHandler(registry, process, d.capability)
+	return d, nil
 }
 
 func (d *Daemon) SocketPath() string {
@@ -59,11 +62,23 @@ func (d *Daemon) List() (*ListResult, error) {
 	return d.handler.handleList()
 }
 
+func (d *Daemon) ListCapabilities() (*CapabilityListResult, error) {
+	return d.handler.handleCapabilityList()
+}
+
 func (d *Daemon) Invoke(ctx context.Context, authToken, clip, command string, input json.RawMessage) (json.RawMessage, error) {
 	return d.handler.handleInvoke(ctx, authToken, InvokeParams{
 		Clip:    clip,
 		Command: command,
 		Input:   input,
+	})
+}
+
+func (d *Daemon) InvokeCapability(ctx context.Context, capability, command string, input json.RawMessage) (json.RawMessage, error) {
+	return d.handler.handleCapabilityInvoke(ctx, CapabilityInvokeRequest{
+		Capability: capability,
+		Command:    command,
+		Input:      input,
 	})
 }
 
@@ -163,6 +178,11 @@ func (d *Daemon) Close() error {
 	}
 	if httpServer != nil {
 		if err := httpServer.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errs = append(errs, err)
+		}
+	}
+	if d.capability != nil {
+		if err := d.capability.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}

@@ -17,12 +17,22 @@
     </header>
 
     <main class="layout">
-      <aside class="panel sidebar">
-        <div class="panel-header">
-          <h2>Clips</h2>
-          <p id="clipCount" class="panel-meta">0 clips</p>
-        </div>
-        <div id="clipList" class="clip-list"></div>
+      <aside class="sidebar-stack">
+        <section class="panel sidebar-panel">
+          <div class="panel-header">
+            <h2>Clips</h2>
+            <p id="clipCount" class="panel-meta">0 clips</p>
+          </div>
+          <div id="clipList" class="clip-list"></div>
+        </section>
+
+        <section class="panel sidebar-panel capability-panel">
+          <div class="panel-header">
+            <h2>Capabilities</h2>
+            <p id="capabilityCount" class="panel-meta">0 online</p>
+          </div>
+          <div id="capabilityList" class="capability-list"></div>
+        </section>
       </aside>
 
       <section class="panel detail">
