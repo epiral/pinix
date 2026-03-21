@@ -1,4 +1,4 @@
-// Role:    Embedded HTTP server for Pinix portal APIs, capability WebSockets, clip web files, and static assets
+// Role:    Embedded HTTP server for Pinix portal APIs, provider WebSockets, clip web files, and static assets
 // Depends: context, encoding/json, errors, fmt, mime, net, net/http, os, path/filepath, strings, github.com/epiral/pinix/web, golang.org/x/net/websocket
 // Exports: Daemon.ServeHTTP
 
@@ -25,12 +25,6 @@ type invokeHTTPRequest struct {
 	Command string          `json:"command"`
 	Input   json.RawMessage `json:"input,omitempty"`
 	Token   string          `json:"token,omitempty"`
-}
-
-type capabilityInvokeHTTPRequest struct {
-	Capability string          `json:"capability"`
-	Command    string          `json:"command"`
-	Input      json.RawMessage `json:"input,omitempty"`
 }
 
 func (d *Daemon) ServeHTTP(ctx context.Context, addr string) error {
@@ -81,11 +75,9 @@ func (d *Daemon) httpMux() http.Handler {
 	mux.HandleFunc("/app.js", d.handleApp)
 	mux.HandleFunc("/clips/", d.handleClipWeb)
 	mux.HandleFunc("/api/list", d.handleAPIList)
-	mux.HandleFunc("/api/capabilities", d.handleAPICapabilities)
 	mux.HandleFunc("/api/invoke", d.handleAPIInvoke)
-	mux.HandleFunc("/api/capability/invoke", d.handleAPICapabilityInvoke)
 	mux.HandleFunc("/api/manifest", d.handleAPIManifest)
-	mux.Handle("/ws/capability", d.capabilityWebSocketHandler())
+	mux.Handle("/ws/provider", d.providerWebSocketHandler())
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
@@ -214,20 +206,6 @@ func (d *Daemon) handleAPIList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-func (d *Daemon) handleAPICapabilities(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeMethodNotAllowed(w, http.MethodGet)
-		return
-	}
-
-	result, err := d.ListCapabilities()
-	if err != nil {
-		writeJSONError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
-}
-
 func (d *Daemon) handleAPIInvoke(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeMethodNotAllowed(w, http.MethodPost)
@@ -245,30 +223,6 @@ func (d *Daemon) handleAPIInvoke(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := d.Invoke(r.Context(), requestToken(r, req.Token), req.Clip, req.Command, req.Input)
-	if err != nil {
-		writeJSONError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
-}
-
-func (d *Daemon) handleAPICapabilityInvoke(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeMethodNotAllowed(w, http.MethodPost)
-		return
-	}
-
-	defer r.Body.Close()
-
-	var req capabilityInvokeHTTPRequest
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&req); err != nil {
-		writeJSONError(w, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("decode request: %v", err)})
-		return
-	}
-
-	result, err := d.InvokeCapability(r.Context(), req.Capability, req.Command, req.Input)
 	if err != nil {
 		writeJSONError(w, err)
 		return
@@ -326,22 +280,22 @@ func isWithinDir(path, base string) bool {
 	return strings.HasPrefix(path, base+string(filepath.Separator))
 }
 
-func (d *Daemon) capabilityWebSocketHandler() http.Handler {
+func (d *Daemon) providerWebSocketHandler() http.Handler {
 	server := websocket.Server{
 		Handshake: func(*websocket.Config, *http.Request) error {
 			return nil
 		},
 		Handler: websocket.Handler(func(conn *websocket.Conn) {
-			if d.capability == nil {
+			if d.provider == nil {
 				_ = conn.Close()
 				return
 			}
-			_ = d.capability.HandleConnection(conn)
+			_ = d.provider.HandleConnection(conn)
 		}),
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/ws/capability" {
+		if r.URL.Path != "/ws/provider" {
 			http.NotFound(w, r)
 			return
 		}

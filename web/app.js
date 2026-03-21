@@ -1,6 +1,5 @@
 const state = {
   clips: [],
-  capabilities: [],
   selectedClipName: null,
   selectedManifest: null,
   detailError: null,
@@ -13,8 +12,6 @@ const state = {
 const refreshButton = document.getElementById("refreshButton");
 const clipCount = document.getElementById("clipCount");
 const clipList = document.getElementById("clipList");
-const capabilityCount = document.getElementById("capabilityCount");
-const capabilityList = document.getElementById("capabilityList");
 const detailView = document.getElementById("detailView");
 
 refreshButton.addEventListener("click", () => {
@@ -26,12 +23,10 @@ void refreshClips();
 async function refreshClips() {
   refreshButton.disabled = true;
   clipList.innerHTML = '<div class="loading">Loading clips...</div>';
-  capabilityList.innerHTML = '<div class="loading">Loading capabilities...</div>';
 
   try {
     const payload = await apiJSON("/api/list");
     state.clips = Array.isArray(payload.clips) ? payload.clips : [];
-    state.capabilities = Array.isArray(payload.capabilities) ? payload.capabilities : [];
 
     if (state.selectedClipName) {
       const current = getSelectedClip();
@@ -44,7 +39,6 @@ async function refreshClips() {
     }
 
     renderClipList();
-    renderCapabilityList();
 
     if (state.selectedClipName) {
       await loadManifest(state.selectedClipName, { preserveResult: true });
@@ -53,7 +47,6 @@ async function refreshClips() {
     }
   } catch (error) {
     renderClipList(String(error.message || error));
-    renderCapabilityList(String(error.message || error));
     detailView.innerHTML = renderNotice(
       "Unable to load clips",
       String(error.message || error),
@@ -183,16 +176,14 @@ function renderClipList(errorMessage = "") {
       void selectClip(clip.name);
     });
 
-    const commandCount = Array.isArray(clip.manifest?.commands) ? clip.manifest.commands.length : 0;
-    const stateClass = clip.running ? "running" : "stopped";
-    const stateLabel = clip.running ? "running" : "stopped";
+    const commandCount = getClipCommands(clip).length;
 
     button.innerHTML = `
       <div class="clip-item-head">
         <span class="clip-name">${escapeHTML(clip.name)}</span>
-        <span class="status-pill ${stateClass}">${stateLabel}</span>
+        <span class="status-pill ${clipStateClass(clip)}">${clipStateLabel(clip)}</span>
       </div>
-      <p class="clip-source">${escapeHTML(clip.source || "No source")}</p>
+      <p class="clip-source">${escapeHTML(displayClipSource(clip))}</p>
       <div class="clip-stats">
         <span class="badge">${commandCount} command${commandCount === 1 ? "" : "s"}</span>
       </div>
@@ -200,40 +191,6 @@ function renderClipList(errorMessage = "") {
 
     clipList.appendChild(button);
   }
-}
-
-function renderCapabilityList(errorMessage = "") {
-  const onlineCount = state.capabilities.filter((capability) => capability.online).length;
-  capabilityCount.textContent = `${onlineCount} online`;
-
-  if (errorMessage) {
-    capabilityList.innerHTML = `<div class="notice">${escapeHTML(errorMessage)}</div>`;
-    return;
-  }
-
-  if (state.capabilities.length === 0) {
-    capabilityList.innerHTML = '<div class="empty-list">No capabilities connected.</div>';
-    return;
-  }
-
-  capabilityList.innerHTML = state.capabilities.map((capability) => {
-    const commands = Array.isArray(capability.commands) ? capability.commands : [];
-    const stateClass = capability.online ? "running" : "stopped";
-    const stateLabel = capability.online ? "online" : "offline";
-
-    return `
-      <article class="capability-item">
-        <div class="clip-item-head capability-item-head">
-          <span class="clip-name">${escapeHTML(capability.name)}</span>
-          <span class="status-pill ${stateClass}">${stateLabel}</span>
-        </div>
-        <p class="clip-source capability-commands">${escapeHTML(commands.join(", ") || "No commands registered")}</p>
-        <div class="clip-stats">
-          <span class="badge">${commands.length} command${commands.length === 1 ? "" : "s"}</span>
-        </div>
-      </article>
-    `;
-  }).join("");
 }
 
 function renderDetail(isLoading = false) {
@@ -258,7 +215,7 @@ function renderDetail(isLoading = false) {
           <h2>${escapeHTML(clip.name)}</h2>
           <p class="detail-meta">Inspect manifest metadata and invoke clip commands from the local portal.</p>
         </div>
-        <span class="status-pill ${clip.running ? "running" : "stopped"}">${clip.running ? "running" : "stopped"}</span>
+        <span class="status-pill ${clipStateClass(clip)}">${clipStateLabel(clip)}</span>
       </div>
 
       <div class="detail-grid">
@@ -268,7 +225,7 @@ function renderDetail(isLoading = false) {
         </div>
         <div class="meta-card">
           <span class="meta-label">Source</span>
-          <div class="meta-value">${escapeHTML(clip.source || "-")}</div>
+          <div class="meta-value">${escapeHTML(displayClipSource(clip))}</div>
         </div>
         <div class="meta-card">
           <span class="meta-label">Commands</span>
@@ -391,6 +348,38 @@ function renderNotice(title, message) {
 
 function getSelectedClip() {
   return state.clips.find((clip) => clip.name === state.selectedClipName) || null;
+}
+
+function getClipCommands(clip) {
+  if (Array.isArray(clip?.manifest?.commands)) {
+    return clip.manifest.commands;
+  }
+  if (Array.isArray(clip?.commands)) {
+    return clip.commands;
+  }
+  return [];
+}
+
+function isProviderClip(clip) {
+  return String(clip?.source || "").toLowerCase() === "provider";
+}
+
+function clipStateClass(clip) {
+  return clipStateLabel(clip) === "online" || clipStateLabel(clip) === "running" ? "running" : "stopped";
+}
+
+function clipStateLabel(clip) {
+  if (isProviderClip(clip)) {
+    return clip.online ? "online" : "offline";
+  }
+  return clip.running ? "running" : "stopped";
+}
+
+function displayClipSource(clip) {
+  if (isProviderClip(clip)) {
+    return "provider";
+  }
+  return clip.source || "-";
 }
 
 function getCommandInput(clipName, commandName) {

@@ -1,4 +1,4 @@
-// Role:    Mock WebSocket capability daemon for pinixd integration testing
+// Role:    Mock WebSocket provider daemon for pinixd integration testing
 // Depends: context, encoding/json, flag, fmt, log, os/signal, syscall, golang.org/x/net/websocket
 // Exports: main
 
@@ -17,9 +17,9 @@ import (
 )
 
 type registerMessage struct {
-	Type         string   `json:"type"`
-	Name         string   `json:"name"`
-	Capabilities []string `json:"capabilities"`
+	Type     string   `json:"type"`
+	Name     string   `json:"name"`
+	Commands []string `json:"capabilities"`
 }
 
 type invokeMessage struct {
@@ -45,8 +45,8 @@ func main() {
 		name      string
 	)
 
-	flag.StringVar(&serverURL, "server", "ws://127.0.0.1:9000/ws/capability", "pinixd capability WebSocket URL")
-	flag.StringVar(&name, "name", "test-cap", "capability name to register")
+	flag.StringVar(&serverURL, "server", "ws://127.0.0.1:9000/ws/provider", "pinixd provider WebSocket URL")
+	flag.StringVar(&name, "name", "test-clip", "clip name to register")
 	flag.Parse()
 
 	origin := "http://127.0.0.1/"
@@ -57,14 +57,14 @@ func main() {
 	defer ws.Close()
 
 	register := registerMessage{
-		Type:         "register",
-		Name:         name,
-		Capabilities: []string{"hello", "echo"},
+		Type:     "register",
+		Name:     name,
+		Commands: []string{"hello", "echo"},
 	}
 	if err := websocket.JSON.Send(ws, register); err != nil {
 		log.Fatalf("send register: %v", err)
 	}
-	log.Printf("registered capability %s at %s", name, serverURL)
+	log.Printf("registered clip %s at %s", name, serverURL)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -76,10 +76,10 @@ func main() {
 
 	select {
 	case <-ctx.Done():
-		log.Printf("shutting down mock capability")
+		log.Printf("shutting down mock provider")
 	case err := <-errCh:
 		if err != nil {
-			log.Fatalf("serve capability: %v", err)
+			log.Fatalf("serve provider: %v", err)
 		}
 	}
 }
@@ -95,10 +95,10 @@ func serve(ws *websocket.Conn, name string) error {
 		switch req.Command {
 		case "hello":
 			resp.Output = mustMarshal(map[string]any{
-				"capability": name,
-				"command":    req.Command,
-				"input":      decodeInput(req.Input),
-				"message":    fmt.Sprintf("hello from %s", name),
+				"clip":    name,
+				"command": req.Command,
+				"input":   decodeInput(req.Input),
+				"message": fmt.Sprintf("hello from %s", name),
 			})
 		case "echo":
 			resp.Output = cloneRaw(req.Input)

@@ -1,6 +1,6 @@
-// Role:    Shared daemon request/response protocol types for clips and capabilities
+// Role:    Shared daemon request/response protocol types for clips and provider-backed clips
 // Depends: encoding/json, fmt
-// Exports: Request, SocketResponse, ResponseError, AddParams, RemoveParams, InvokeParams, CapabilityInvokeRequest, AddResult, RemoveResult, ListResult, CapabilityListResult, ClipStatus, CapabilityStatus
+// Exports: Request, SocketResponse, ResponseError, AddParams, RemoveParams, InvokeParams, AddResult, RemoveResult, ListResult, ClipStatus
 
 package daemon
 
@@ -50,12 +50,6 @@ type InvokeParams struct {
 	Input   json.RawMessage `json:"input,omitempty"`
 }
 
-type CapabilityInvokeRequest struct {
-	Capability string          `json:"capability"`
-	Command    string          `json:"command"`
-	Input      json.RawMessage `json:"input,omitempty"`
-}
-
 type AddResult struct {
 	Clip ClipConfig `json:"clip"`
 }
@@ -66,12 +60,7 @@ type RemoveResult struct {
 }
 
 type ListResult struct {
-	Clips        []ClipStatus       `json:"clips"`
-	Capabilities []CapabilityStatus `json:"capabilities,omitempty"`
-}
-
-type CapabilityListResult struct {
-	Capabilities []CapabilityStatus `json:"capabilities"`
+	Clips []ClipStatus `json:"clips"`
 }
 
 type ClipStatus struct {
@@ -79,13 +68,9 @@ type ClipStatus struct {
 	Source         string         `json:"source"`
 	Path           string         `json:"path"`
 	Running        bool           `json:"running"`
+	Online         bool           `json:"online,omitempty"`
 	HasWeb         bool           `json:"has_web"`
 	TokenProtected bool           `json:"token_protected"`
+	Commands       []string       `json:"commands,omitempty"`
 	Manifest       *ManifestCache `json:"manifest,omitempty"`
-}
-
-type CapabilityStatus struct {
-	Name     string   `json:"name"`
-	Commands []string `json:"commands"`
-	Online   bool     `json:"online"`
 }

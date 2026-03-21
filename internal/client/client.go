@@ -1,6 +1,6 @@
 // Role:    Unix socket JSON client used by pinix CLI
 // Depends: context, encoding/json, fmt, net, internal/daemon
-// Exports: Client, New, Call, Add, Remove, List, Invoke, InvokeCapability
+// Exports: Client, New, Call, Add, Remove, List, Invoke
 
 package client
 
@@ -97,15 +97,6 @@ func (c *Client) List(ctx context.Context) (*daemon.ListResult, error) {
 func (c *Client) Invoke(ctx context.Context, clip, command string, input json.RawMessage, authToken string) (json.RawMessage, error) {
 	var result json.RawMessage
 	err := c.Call(ctx, "invoke", daemon.InvokeParams{Clip: clip, Command: command, Input: input}, authToken, &result)
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-func (c *Client) InvokeCapability(ctx context.Context, capability, command string, input json.RawMessage) (json.RawMessage, error) {
-	var result json.RawMessage
-	err := c.Call(ctx, "capability.invoke", daemon.CapabilityInvokeRequest{Capability: capability, Command: command, Input: input}, "", &result)
 	if err != nil {
 		return nil, err
 	}
