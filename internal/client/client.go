@@ -1,104 +1,224 @@
-// Role:    Unix socket JSON client used by pinix CLI
-// Depends: context, encoding/json, fmt, net, internal/daemon
-// Exports: Client, New, Call, Add, Remove, List, Invoke
+// Role:    Connect-RPC HubService client used by pinix CLI and mock providers
+// Depends: context, crypto/tls, encoding/json, errors, fmt, io, net, net/http, strings, connectrpc, pinix v2, pinixv2connect, http2
+// Exports: Client, HubError, DefaultServerURL, New
 
 package client
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"strings"
 
-	"github.com/epiral/pinix/internal/daemon"
+	connect "connectrpc.com/connect"
+	pinixv2 "github.com/epiral/pinix/gen/go/pinix/v2"
+	"github.com/epiral/pinix/gen/go/pinix/v2/pinixv2connect"
+	"golang.org/x/net/http2"
 )
 
+const DefaultServerURL = "http://127.0.0.1:9000"
+
 type Client struct {
-	socketPath string
+	baseURL string
+	hub     pinixv2connect.HubServiceClient
 }
 
-func New(socketPath string) (*Client, error) {
-	if socketPath == "" {
-		var err error
-		socketPath, err = daemon.DefaultSocketPath()
-		if err != nil {
-			return nil, err
-		}
+type HubError struct {
+	Code    string
+	Message string
+}
+
+func (e *HubError) Error() string {
+	if e == nil {
+		return ""
 	}
-	return &Client{socketPath: socketPath}, nil
+	if strings.TrimSpace(e.Code) == "" {
+		return e.Message
+	}
+	return fmt.Sprintf("%s (%s)", e.Message, e.Code)
 }
 
-func (c *Client) Call(ctx context.Context, method string, params any, token string, out any) error {
-	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", c.socketPath)
+func New(serverURL string) (*Client, error) {
+	serverURL = strings.TrimSpace(serverURL)
+	if serverURL == "" {
+		serverURL = DefaultServerURL
+	}
+
+	transport := &http2.Transport{
+		AllowHTTP: true,
+		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+			var dialer net.Dialer
+			return dialer.DialContext(ctx, network, addr)
+		},
+	}
+	httpClient := &http.Client{Transport: transport}
+
+	return &Client{
+		baseURL: strings.TrimRight(serverURL, "/"),
+		hub:     pinixv2connect.NewHubServiceClient(httpClient, serverURL, connect.WithGRPC()),
+	}, nil
+}
+
+func (c *Client) BaseURL() string {
+	if c == nil {
+		return ""
+	}
+	return c.baseURL
+}
+
+func (c *Client) ProviderStream(ctx context.Context, hubToken string) *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage] {
+	stream := c.hub.ProviderStream(ctx)
+	setAuthHeader(stream.RequestHeader(), hubToken)
+	return stream
+}
+
+func (c *Client) ListClips(ctx context.Context, hubToken string) ([]*pinixv2.ClipInfo, error) {
+	req := connect.NewRequest(&pinixv2.ListClipsRequest{})
+	setAuthHeader(req.Header(), hubToken)
+	resp, err := c.hub.ListClips(ctx, req)
 	if err != nil {
-		return fmt.Errorf("dial pinixd: %w", err)
+		return nil, err
 	}
-	defer conn.Close()
+	return resp.Msg.GetClips(), nil
+}
 
-	request := daemon.Request{Method: method, Token: token}
-	if params != nil {
-		data, err := json.Marshal(params)
-		if err != nil {
-			return fmt.Errorf("marshal request params: %w", err)
+func (c *Client) ListProviders(ctx context.Context, hubToken string) ([]*pinixv2.ProviderInfo, error) {
+	req := connect.NewRequest(&pinixv2.ListProvidersRequest{})
+	setAuthHeader(req.Header(), hubToken)
+	resp, err := c.hub.ListProviders(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg.GetProviders(), nil
+}
+
+func (c *Client) GetManifest(ctx context.Context, clipName, hubToken string) (*pinixv2.ClipManifest, error) {
+	req := connect.NewRequest(&pinixv2.GetManifestRequest{ClipName: strings.TrimSpace(clipName)})
+	setAuthHeader(req.Header(), hubToken)
+	resp, err := c.hub.GetManifest(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg.GetManifest(), nil
+}
+
+func (c *Client) Add(ctx context.Context, source, name, provider, clipToken, hubToken string) (*pinixv2.ClipInfo, error) {
+	req := connect.NewRequest(&pinixv2.AddClipRequest{
+		Source:    strings.TrimSpace(source),
+		Name:      strings.TrimSpace(name),
+		Provider:  strings.TrimSpace(provider),
+		ClipToken: strings.TrimSpace(clipToken),
+	})
+	setAuthHeader(req.Header(), hubToken)
+	resp, err := c.hub.AddClip(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg.GetClip(), nil
+}
+
+func (c *Client) Remove(ctx context.Context, clipName, hubToken string) (string, error) {
+	req := connect.NewRequest(&pinixv2.RemoveClipRequest{ClipName: strings.TrimSpace(clipName)})
+	setAuthHeader(req.Header(), hubToken)
+	resp, err := c.hub.RemoveClip(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	return resp.Msg.GetClipName(), nil
+}
+
+func (c *Client) Invoke(ctx context.Context, clipName, command string, input json.RawMessage, clipToken, hubToken string) (json.RawMessage, error) {
+	if len(input) == 0 {
+		input = json.RawMessage(`{}`)
+	}
+
+	req := connect.NewRequest(&pinixv2.InvokeRequest{
+		ClipName:  strings.TrimSpace(clipName),
+		Command:   strings.TrimSpace(command),
+		Input:     cloneBytes(input),
+		ClipToken: strings.TrimSpace(clipToken),
+	})
+	setAuthHeader(req.Header(), hubToken)
+
+	stream, err := c.hub.Invoke(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	defer stream.Close()
+
+	chunks := make([][]byte, 0, 4)
+	for stream.Receive() {
+		msg := stream.Msg()
+		if msg.GetError() != nil {
+			return nil, protoHubError(msg.GetError())
 		}
-		request.Params = data
+		if len(msg.GetOutput()) > 0 {
+			chunks = append(chunks, cloneBytes(msg.GetOutput()))
+		}
 	}
+	if err := stream.Err(); err != nil {
+		if errors.Is(err, io.EOF) {
+			return aggregateOutputs(chunks), nil
+		}
+		return nil, err
+	}
+	return aggregateOutputs(chunks), nil
+}
 
-	encoder := json.NewEncoder(conn)
-	decoder := json.NewDecoder(conn)
+func setAuthHeader(header http.Header, token string) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return
+	}
+	header.Set("Authorization", "Bearer "+token)
+}
 
-	if err := encoder.Encode(&request); err != nil {
-		return fmt.Errorf("send request: %w", err)
-	}
-
-	var response daemon.SocketResponse
-	if err := decoder.Decode(&response); err != nil {
-		return fmt.Errorf("read response: %w", err)
-	}
-	if response.Error != nil {
-		return response.Error
-	}
-	if out == nil || len(response.Result) == 0 {
+func protoHubError(err *pinixv2.HubError) error {
+	if err == nil {
 		return nil
 	}
-	if err := json.Unmarshal(response.Result, out); err != nil {
-		return fmt.Errorf("decode response: %w", err)
-	}
-	return nil
+	return &HubError{Code: strings.TrimSpace(err.GetCode()), Message: strings.TrimSpace(err.GetMessage())}
 }
 
-func (c *Client) Add(ctx context.Context, source, clipToken, authToken string) (*daemon.AddResult, error) {
-	var result daemon.AddResult
-	err := c.Call(ctx, "add", daemon.AddParams{Source: source, Token: clipToken}, authToken, &result)
-	if err != nil {
-		return nil, err
+func aggregateOutputs(chunks [][]byte) json.RawMessage {
+	if len(chunks) == 0 {
+		return json.RawMessage(`{}`)
 	}
-	return &result, nil
+	if len(chunks) == 1 {
+		chunk := cloneBytes(chunks[0])
+		if json.Valid(chunk) {
+			return json.RawMessage(chunk)
+		}
+		wrapped, _ := json.Marshal(string(chunk))
+		return json.RawMessage(wrapped)
+	}
+
+	size := 0
+	for _, chunk := range chunks {
+		size += len(chunk)
+	}
+	combined := make([]byte, 0, size)
+	for _, chunk := range chunks {
+		combined = append(combined, chunk...)
+	}
+	if len(combined) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	if json.Valid(combined) {
+		return json.RawMessage(combined)
+	}
+	wrapped, _ := json.Marshal(string(combined))
+	return json.RawMessage(wrapped)
 }
 
-func (c *Client) Remove(ctx context.Context, name, authToken string) (*daemon.RemoveResult, error) {
-	var result daemon.RemoveResult
-	err := c.Call(ctx, "remove", daemon.RemoveParams{Name: name}, authToken, &result)
-	if err != nil {
-		return nil, err
+func cloneBytes(data []byte) []byte {
+	if len(data) == 0 {
+		return nil
 	}
-	return &result, nil
-}
-
-func (c *Client) List(ctx context.Context) (*daemon.ListResult, error) {
-	var result daemon.ListResult
-	err := c.Call(ctx, "list", struct{}{}, "", &result)
-	if err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-func (c *Client) Invoke(ctx context.Context, clip, command string, input json.RawMessage, authToken string) (json.RawMessage, error) {
-	var result json.RawMessage
-	err := c.Call(ctx, "invoke", daemon.InvokeParams{Clip: clip, Command: command, Input: input}, authToken, &result)
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
+	return append([]byte(nil), data...)
 }

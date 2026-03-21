@@ -1,6 +1,6 @@
 // Role:    File-locked config registry for Pinix daemon state
 // Depends: encoding/json, fmt, os, path/filepath, sort, strings, syscall
-// Exports: ClipConfig, ManifestCache, Config, Registry, DefaultRootDir, DefaultConfigPath, DefaultSocketPath, DefaultClipsDir, NewRegistry
+// Exports: ClipConfig, CommandInfo, ManifestCache, Config, Registry, DefaultRootDir, DefaultConfigPath, DefaultSocketPath, DefaultClipsDir, NewRegistry
 
 package daemon
 
@@ -22,10 +22,24 @@ type ClipConfig struct {
 	Manifest *ManifestCache `json:"manifest,omitempty"`
 }
 
+type CommandInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Input       string `json:"input,omitempty"`
+	Output      string `json:"output,omitempty"`
+}
+
 type ManifestCache struct {
-	Name     string   `json:"name"`
-	Domain   string   `json:"domain"`
-	Commands []string `json:"commands"`
+	Name           string        `json:"name"`
+	Package        string        `json:"package,omitempty"`
+	Version        string        `json:"version,omitempty"`
+	Domain         string        `json:"domain,omitempty"`
+	Description    string        `json:"description,omitempty"`
+	Commands       []string      `json:"commands,omitempty"`
+	CommandDetails []CommandInfo `json:"command_details,omitempty"`
+	HasWeb         bool          `json:"has_web,omitempty"`
+	Dependencies   []string      `json:"dependencies,omitempty"`
+	Patterns       []string      `json:"patterns,omitempty"`
 }
 
 type Config struct {

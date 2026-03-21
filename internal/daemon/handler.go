@@ -75,6 +75,9 @@ func (h *Handler) handleAdd(ctx context.Context, authToken string, params AddPar
 	}
 
 	stagingName := deriveNameFromSource(normalizedSource)
+	if explicitName := normalizeName(params.Name); explicitName != "" {
+		stagingName = explicitName
+	}
 	if stagingName == "" {
 		return nil, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("could not derive clip name from %q", normalizedSource)}
 	}
@@ -129,7 +132,9 @@ func (h *Handler) handleAdd(ctx context.Context, authToken string, params AddPar
 	}
 
 	finalName := stagingName
-	if manifest != nil && strings.TrimSpace(manifest.Name) != "" {
+	if explicitName := normalizeName(params.Name); explicitName != "" {
+		finalName = explicitName
+	} else if manifest != nil && strings.TrimSpace(manifest.Name) != "" {
 		finalName = normalizeName(manifest.Name)
 	}
 	if finalName == "" {
@@ -232,22 +237,17 @@ func (h *Handler) handleList() (*ListResult, error) {
 
 	result := &ListResult{Clips: make([]ClipStatus, 0, len(clips))}
 	for _, clip := range clips {
-		hasWeb := false
-		webDir := filepath.Join(clip.Path, "web")
-		if info, err := os.Stat(webDir); err == nil && info.IsDir() {
-			hasWeb = true
-		}
-
+		manifest := enrichManifestForClip(clip, clip.Manifest)
 		result.Clips = append(result.Clips, ClipStatus{
 			Name:           clip.Name,
 			Source:         clip.Source,
 			Path:           clip.Path,
 			Running:        h.process.IsRunning(clip.Name),
 			Online:         h.process.IsRunning(clip.Name),
-			HasWeb:         hasWeb,
+			HasWeb:         manifest != nil && manifest.HasWeb,
 			TokenProtected: clip.Token != "",
-			Commands:       clipManifestCommands(clip.Manifest),
-			Manifest:       clip.Manifest,
+			Commands:       clipManifestCommands(manifest),
+			Manifest:       manifest,
 		})
 	}
 	if h.providers != nil {

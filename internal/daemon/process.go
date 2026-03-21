@@ -151,6 +151,14 @@ func (m *ProcessManager) Invoke(ctx context.Context, name, command string, input
 }
 
 func (m *ProcessManager) LoadManifest(ctx context.Context, name string) (*ManifestCache, error) {
+	clip, ok, err := m.registry.GetClip(strings.TrimSpace(name))
+	if err != nil {
+		return nil, fmt.Errorf("load clip %s: %w", name, err)
+	}
+	if !ok {
+		return nil, fmt.Errorf("clip %q not found", name)
+	}
+
 	commands := []string{"manifest", "get_manifest", "getManifest", "list"}
 	var lastErr error
 
@@ -161,9 +169,17 @@ func (m *ProcessManager) LoadManifest(ctx context.Context, name string) (*Manife
 			continue
 		}
 		if manifest, ok := decodeManifest(output, name); ok {
-			return manifest, nil
+			return enrichManifestForClip(clip, manifest), nil
 		}
 		lastErr = fmt.Errorf("clip %s returned an unsupported manifest payload for %q", name, command)
+	}
+
+	fallback := enrichManifestForClip(clip, clip.Manifest)
+	if fallback != nil {
+		hasMeaningfulData := fallback.Package != "" || fallback.Version != "" || fallback.Description != "" || fallback.Domain != "" || len(fallback.CommandDetails) > 0 || len(fallback.Dependencies) > 0 || len(fallback.Patterns) > 0 || fallback.HasWeb
+		if hasMeaningfulData {
+			return fallback, nil
+		}
 	}
 
 	if lastErr == nil {

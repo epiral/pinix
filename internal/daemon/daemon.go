@@ -48,7 +48,7 @@ func NewDaemon(socketPath string, registry *Registry, process *ProcessManager) (
 		socketPath: socketPath,
 		registry:   registry,
 		process:    process,
-		provider:   NewProviderManager(),
+		provider:   NewProviderManager(registry),
 	}
 	d.handler = NewHandler(registry, process, d.provider)
 	return d, nil

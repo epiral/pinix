@@ -1,6 +1,6 @@
-// Role:    WebSocket-backed provider registry and invocation router for provider-backed Clips
-// Depends: context, encoding/json, errors, fmt, sort, strings, sync, sync/atomic, time, golang.org/x/net/websocket
-// Exports: ProviderManager, ProviderClip, NewProviderManager
+// Role:    Connect-RPC provider session registry and invocation router for provider-backed Clips
+// Depends: context, encoding/json, errors, fmt, io, sort, strings, sync, sync/atomic, time, pinix v2
+// Exports: ProviderManager, ProviderInvokeHandle, ProviderManageHandle, NewProviderManager
 
 package daemon
 
@@ -9,204 +9,201 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/net/websocket"
+	pinixv2 "github.com/epiral/pinix/gen/go/pinix/v2"
 )
 
-const providerInvokeTimeout = 30 * time.Second
+const (
+	providerInvokeTimeout = 30 * time.Second
+	localProviderName     = "pinixd"
+)
 
-type ProviderManager struct {
-	mu        sync.RWMutex
-	clips     map[string]*ProviderClip
-	nextID    atomic.Uint64
-	sourceTag string
+type providerStream interface {
+	Receive() (*pinixv2.ProviderMessage, error)
+	Send(*pinixv2.HubMessage) error
 }
 
-type ProviderClip struct {
-	Name     string
-	Commands []string
-	conn     *websocket.Conn
+type ProviderManager struct {
+	registry *Registry
 
-	writeMu sync.Mutex
+	mu        sync.RWMutex
+	providers map[string]*providerSession
+	clips     map[string]*providerClipRef
+	nextID    atomic.Uint64
+}
 
-	pending   map[string]chan providerResponseMessage
-	pendingMu sync.Mutex
+type ProviderInvokeHandle struct {
+	session   *providerSession
+	requestID string
+	responses chan providerInvokeChunk
+
+	closeOnce sync.Once
+}
+
+type ProviderManageHandle struct {
+	session   *providerSession
+	requestID string
+	events    chan providerManageEvent
+
+	closeOnce sync.Once
+}
+
+type providerSession struct {
+	manager       *ProviderManager
+	name          string
+	acceptsManage bool
+	connectedAt   time.Time
+	stream        providerStream
+
+	sendMu sync.Mutex
+
+	pendingMu      sync.Mutex
+	pendingInvokes map[string]chan providerInvokeChunk
+	pendingManage  map[string]chan providerManageEvent
 
 	closeOnce sync.Once
 	closed    chan struct{}
 
 	closeErrMu sync.RWMutex
 	closeErr   error
+
+	clips map[string]*providerClip
 }
 
-type providerRegisterMessage struct {
-	Type     string   `json:"type"`
-	Name     string   `json:"name"`
-	Commands []string `json:"capabilities"`
+type providerClip struct {
+	registration *pinixv2.ClipRegistration
 }
 
-type providerInvokeMessage struct {
-	ID      string          `json:"id"`
-	Command string          `json:"command"`
-	Input   json.RawMessage `json:"input,omitempty"`
+type providerClipRef struct {
+	session *providerSession
+	clip    *providerClip
 }
 
-type providerResponseMessage struct {
-	ID     string          `json:"id"`
-	Output json.RawMessage `json:"output,omitempty"`
-	Error  *ResponseError  `json:"error,omitempty"`
+type providerInvokeChunk struct {
+	output []byte
+	err    *ResponseError
+	done   bool
 }
 
-type providerEnvelope struct {
-	Type     string          `json:"type,omitempty"`
-	Name     string          `json:"name,omitempty"`
-	Commands []string        `json:"capabilities,omitempty"`
-	ID       string          `json:"id,omitempty"`
-	Command  string          `json:"command,omitempty"`
-	Input    json.RawMessage `json:"input,omitempty"`
-	Output   json.RawMessage `json:"output,omitempty"`
-	Error    *ResponseError  `json:"error,omitempty"`
+type providerManageEvent struct {
+	clip    *pinixv2.ClipInfo
+	removed string
+	err     *ResponseError
+	done    bool
 }
 
-func NewProviderManager() *ProviderManager {
-	return &ProviderManager{clips: make(map[string]*ProviderClip), sourceTag: "provider"}
+func NewProviderManager(registry *Registry) *ProviderManager {
+	return &ProviderManager{
+		registry:  registry,
+		providers: make(map[string]*providerSession),
+		clips:     make(map[string]*providerClipRef),
+	}
 }
 
-func (m *ProviderManager) HandleConnection(conn *websocket.Conn) error {
-	if conn == nil {
-		return fmt.Errorf("provider websocket connection is required")
+func (m *ProviderManager) HandleStream(ctx context.Context, stream providerStream) error {
+	if stream == nil {
+		return fmt.Errorf("provider stream is required")
 	}
 
-	var register providerRegisterMessage
-	if err := websocket.JSON.Receive(conn, &register); err != nil {
+	first, err := stream.Receive()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
 		return fmt.Errorf("read provider register: %w", err)
 	}
-	if !strings.EqualFold(strings.TrimSpace(register.Type), "register") {
-		_ = conn.Close()
-		return daemonError{Code: "invalid_argument", Message: "first provider message must be a register message"}
+
+	register := first.GetRegister()
+	if register == nil {
+		_ = stream.Send(registerResponse(false, "first provider message must be register"))
+		return nil
 	}
 
-	clip, err := m.Register(register.Name, register.Commands, conn)
+	session, err := m.registerSession(register, stream)
 	if err != nil {
-		_ = conn.Close()
+		_ = stream.Send(registerResponse(false, err.Error()))
+		return nil
+	}
+	if err := session.send(registerResponse(true, "registered")); err != nil {
+		session.closeWithError(err)
 		return err
 	}
-	defer m.unregisterIfSame(clip.Name, clip)
 
-	return clip.readLoop()
-}
-
-func (m *ProviderManager) Register(name string, commands []string, conn *websocket.Conn) (*ProviderClip, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil, daemonError{Code: "invalid_argument", Message: "clip name is required"}
-	}
-	if conn == nil {
-		return nil, daemonError{Code: "invalid_argument", Message: "provider connection is required"}
-	}
-
-	clip := &ProviderClip{
-		Name:     name,
-		Commands: normalizeProviderCommands(commands),
-		conn:     conn,
-		pending:  make(map[string]chan providerResponseMessage),
-		closed:   make(chan struct{}),
-	}
-
-	var replaced *ProviderClip
-	m.mu.Lock()
-	replaced = m.clips[name]
-	m.clips[name] = clip
-	m.mu.Unlock()
-
-	if replaced != nil && replaced != clip {
-		replaced.closeWithError(fmt.Errorf("clip %s replaced by a newer provider connection", name))
-	}
-
-	return clip, nil
-}
-
-func (m *ProviderManager) Unregister(name string) {
-	m.unregisterIfSame(strings.TrimSpace(name), nil)
-}
-
-func (m *ProviderManager) Invoke(ctx context.Context, name, command string, input json.RawMessage) (json.RawMessage, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil, daemonError{Code: "invalid_argument", Message: "clip is required"}
-	}
-	command = strings.TrimSpace(command)
-	if command == "" {
-		return nil, daemonError{Code: "invalid_argument", Message: "command is required"}
-	}
-	if len(input) == 0 {
-		input = json.RawMessage(`{}`)
-	}
-
-	clip := m.get(name)
-	if clip == nil {
-		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", name)}
-	}
-	if !clip.Supports(command) {
-		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q does not support command %q", name, command)}
-	}
-
-	id := fmt.Sprintf("req-%d", m.nextID.Add(1))
-	respCh := make(chan providerResponseMessage, 1)
-	if err := clip.registerPending(id, respCh); err != nil {
-		return nil, daemonError{Code: "internal", Message: err.Error()}
-	}
-	defer clip.unregisterPending(id)
-
-	if err := clip.send(providerInvokeMessage{ID: id, Command: command, Input: input}); err != nil {
-		return nil, daemonError{Code: "internal", Message: err.Error()}
-	}
-
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	invokeCtx, cancel := context.WithTimeout(ctx, providerInvokeTimeout)
-	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- session.readLoop()
+	}()
 
 	select {
-	case resp := <-respCh:
-		if resp.Error != nil {
-			return nil, daemonError{Code: resp.Error.Code, Message: resp.Error.Message}
+	case <-ctx.Done():
+		session.closeWithError(ctx.Err())
+		<-done
+		return nil
+	case err := <-done:
+		if err != nil && !errors.Is(err, io.EOF) {
+			return err
 		}
-		output := append(json.RawMessage(nil), resp.Output...)
-		if len(output) == 0 {
-			output = json.RawMessage(`{}`)
-		}
-		return output, nil
-	case <-invokeCtx.Done():
-		if errors.Is(invokeCtx.Err(), context.DeadlineExceeded) {
-			return nil, daemonError{Code: "timeout", Message: fmt.Sprintf("invoke clip %q timed out after %s", name, providerInvokeTimeout)}
-		}
-		return nil, daemonError{Code: "canceled", Message: fmt.Sprintf("invoke clip %q canceled", name)}
-	case <-clip.closed:
-		return nil, daemonError{Code: "internal", Message: clip.err().Error()}
+		return nil
 	}
+}
+
+func (m *ProviderManager) ListProviders() []*pinixv2.ProviderInfo {
+	m.mu.RLock()
+	providers := make([]*pinixv2.ProviderInfo, 0, len(m.providers))
+	for _, session := range m.providers {
+		clipNames := make([]string, 0, len(session.clips))
+		for name := range session.clips {
+			clipNames = append(clipNames, name)
+		}
+		sort.Strings(clipNames)
+		providers = append(providers, &pinixv2.ProviderInfo{
+			Name:          session.name,
+			AcceptsManage: session.acceptsManage,
+			Clips:         clipNames,
+			ConnectedAt:   session.connectedAt.UnixMilli(),
+		})
+	}
+	m.mu.RUnlock()
+
+	sort.Slice(providers, func(i, j int) bool {
+		return providers[i].GetName() < providers[j].GetName()
+	})
+	return providers
+}
+
+func (m *ProviderManager) ListClipInfos() []*pinixv2.ClipInfo {
+	m.mu.RLock()
+	clips := make([]*pinixv2.ClipInfo, 0, len(m.clips))
+	for _, ref := range m.clips {
+		clips = append(clips, providerClipToClipInfo(ref.session.name, ref.clip.registration))
+	}
+	m.mu.RUnlock()
+
+	sort.Slice(clips, func(i, j int) bool {
+		return clips[i].GetName() < clips[j].GetName()
+	})
+	return clips
 }
 
 func (m *ProviderManager) ListClips() []ClipStatus {
 	m.mu.RLock()
 	result := make([]ClipStatus, 0, len(m.clips))
-	for _, clip := range m.clips {
+	for _, ref := range m.clips {
+		manifest := providerClipToManifest(ref.clip.registration)
 		result = append(result, ClipStatus{
-			Name:     clip.Name,
-			Source:   m.sourceTag,
-			Online:   clip.alive(),
-			Commands: append([]string(nil), clip.Commands...),
-			Manifest: &ManifestCache{
-				Name:     clip.Name,
-				Domain:   providerClipDomain(clip.Name),
-				Commands: append([]string(nil), clip.Commands...),
-			},
+			Name:           ref.clip.registration.GetName(),
+			Source:         "provider",
+			Online:         ref.session.alive(),
+			HasWeb:         manifest.HasWeb,
+			TokenProtected: ref.clip.registration.GetTokenProtected(),
+			Commands:       append([]string(nil), manifest.Commands...),
+			Manifest:       manifest,
 		})
 	}
 	m.mu.RUnlock()
@@ -218,222 +215,778 @@ func (m *ProviderManager) ListClips() []ClipStatus {
 }
 
 func (m *ProviderManager) Manifest(name string) (*ManifestCache, bool) {
-	clip := m.get(strings.TrimSpace(name))
-	if clip == nil {
+	ref := m.lookupClip(strings.TrimSpace(name))
+	if ref == nil {
 		return nil, false
 	}
-	return &ManifestCache{
-		Name:     clip.Name,
-		Domain:   providerClipDomain(clip.Name),
-		Commands: append([]string(nil), clip.Commands...),
-	}, true
+	return providerClipToManifest(ref.clip.registration), true
+}
+
+func (m *ProviderManager) HasClip(name string) bool {
+	return m.lookupClip(strings.TrimSpace(name)) != nil
 }
 
 func (m *ProviderManager) IsAvailable(name string) bool {
-	clip := m.get(strings.TrimSpace(name))
-	return clip != nil && clip.alive()
+	ref := m.lookupClip(strings.TrimSpace(name))
+	return ref != nil && ref.session.alive()
+}
+
+func (m *ProviderManager) OpenInvoke(clipName, command string, input []byte, clipToken string) (*ProviderInvokeHandle, error) {
+	clipName = strings.TrimSpace(clipName)
+	if clipName == "" {
+		return nil, daemonError{Code: "invalid_argument", Message: "clip is required"}
+	}
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return nil, daemonError{Code: "invalid_argument", Message: "command is required"}
+	}
+
+	ref := m.lookupClip(clipName)
+	if ref == nil {
+		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", clipName)}
+	}
+	if !providerClipSupports(ref.clip.registration, command) {
+		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q does not support command %q", clipName, command)}
+	}
+
+	handle := &ProviderInvokeHandle{
+		session:   ref.session,
+		requestID: fmt.Sprintf("req-%d", m.nextID.Add(1)),
+		responses: make(chan providerInvokeChunk, 32),
+	}
+	if err := ref.session.registerInvoke(handle.requestID, handle.responses); err != nil {
+		return nil, daemonError{Code: "internal", Message: err.Error()}
+	}
+
+	message := &pinixv2.HubMessage{Payload: &pinixv2.HubMessage_InvokeCommand{InvokeCommand: &pinixv2.InvokeCommand{
+		RequestId: handle.requestID,
+		ClipName:  clipName,
+		Command:   command,
+		Input:     cloneBytes(input),
+		ClipToken: strings.TrimSpace(clipToken),
+	}}}
+	if err := ref.session.send(message); err != nil {
+		handle.Close()
+		return nil, daemonError{Code: "internal", Message: err.Error()}
+	}
+	return handle, nil
+}
+
+func (m *ProviderManager) OpenManage(providerName string, command *pinixv2.ManageCommand) (*ProviderManageHandle, error) {
+	providerName = strings.TrimSpace(providerName)
+	if providerName == "" {
+		return nil, daemonError{Code: "invalid_argument", Message: "provider is required"}
+	}
+	if command == nil {
+		return nil, daemonError{Code: "invalid_argument", Message: "manage command is required"}
+	}
+
+	session := m.lookupProvider(providerName)
+	if session == nil {
+		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("provider %q not found", providerName)}
+	}
+	if !session.acceptsManage {
+		return nil, daemonError{Code: "permission_denied", Message: fmt.Sprintf("provider %q does not accept manage operations", providerName)}
+	}
+
+	handle := &ProviderManageHandle{
+		session:   session,
+		requestID: fmt.Sprintf("req-%d", m.nextID.Add(1)),
+		events:    make(chan providerManageEvent, 16),
+	}
+	command.RequestId = handle.requestID
+	if err := session.registerManage(handle.requestID, handle.events); err != nil {
+		return nil, daemonError{Code: "internal", Message: err.Error()}
+	}
+	message := &pinixv2.HubMessage{Payload: &pinixv2.HubMessage_ManageCommand{ManageCommand: command}}
+	if err := session.send(message); err != nil {
+		handle.Close()
+		return nil, daemonError{Code: "internal", Message: err.Error()}
+	}
+	return handle, nil
+}
+
+func (m *ProviderManager) Invoke(ctx context.Context, name, command string, input json.RawMessage) (json.RawMessage, error) {
+	handle, err := m.OpenInvoke(name, command, input, "")
+	if err != nil {
+		return nil, err
+	}
+	defer handle.Close()
+
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	invokeCtx, cancel := context.WithTimeout(ctx, providerInvokeTimeout)
+	defer cancel()
+
+	chunks := make([][]byte, 0, 4)
+	for {
+		chunk, err := handle.Receive(invokeCtx)
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				return nil, daemonError{Code: "timeout", Message: fmt.Sprintf("invoke clip %q timed out after %s", name, providerInvokeTimeout)}
+			}
+			if errors.Is(err, context.Canceled) {
+				return nil, daemonError{Code: "canceled", Message: fmt.Sprintf("invoke clip %q canceled", name)}
+			}
+			return nil, daemonError{Code: "internal", Message: err.Error()}
+		}
+		if chunk.err != nil {
+			return nil, daemonError{Code: chunk.err.Code, Message: chunk.err.Message}
+		}
+		if len(chunk.output) > 0 {
+			chunks = append(chunks, cloneBytes(chunk.output))
+		}
+		if chunk.done {
+			break
+		}
+	}
+	return aggregateInvokeOutputs(chunks), nil
 }
 
 func (m *ProviderManager) Close() error {
-	m.mu.Lock()
-	conns := make([]*ProviderClip, 0, len(m.clips))
-	for name, clip := range m.clips {
-		delete(m.clips, name)
-		conns = append(conns, clip)
+	m.mu.RLock()
+	sessions := make([]*providerSession, 0, len(m.providers))
+	for _, session := range m.providers {
+		sessions = append(sessions, session)
 	}
-	m.mu.Unlock()
+	m.mu.RUnlock()
 
 	var errs []error
-	for _, clip := range conns {
-		if err := clip.closeWithError(fmt.Errorf("provider connection closed")); err != nil {
+	for _, session := range sessions {
+		if err := session.closeWithError(fmt.Errorf("provider connection closed")); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
 }
 
-func (m *ProviderManager) get(name string) *ProviderClip {
+func (m *ProviderManager) lookupProvider(name string) *providerSession {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.providers[name]
+}
+
+func (m *ProviderManager) lookupClip(name string) *providerClipRef {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.clips[name]
 }
 
-func (m *ProviderManager) unregisterIfSame(name string, target *ProviderClip) {
+func (m *ProviderManager) registerSession(register *pinixv2.RegisterRequest, stream providerStream) (*providerSession, error) {
+	providerName := strings.TrimSpace(register.GetProviderName())
+	if providerName == "" {
+		return nil, daemonError{Code: "invalid_argument", Message: "provider_name is required"}
+	}
+	if isLocalProvider(providerName) {
+		return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("provider %q is reserved", providerName)}
+	}
+
+	clips := make(map[string]*providerClip, len(register.GetClips()))
+	for _, registration := range register.GetClips() {
+		clip, err := sanitizeProviderClip(registration)
+		if err != nil {
+			return nil, err
+		}
+		if _, exists := clips[clip.registration.GetName()]; exists {
+			return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already registered in request", clip.registration.GetName())}
+		}
+		if exists, err := m.localClipExists(clip.registration.GetName()); err != nil {
+			return nil, err
+		} else if exists {
+			return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", clip.registration.GetName())}
+		}
+		clips[clip.registration.GetName()] = clip
+	}
+
+	session := &providerSession{
+		manager:        m,
+		name:           providerName,
+		acceptsManage:  register.GetAcceptsManage(),
+		connectedAt:    time.Now(),
+		stream:         stream,
+		pendingInvokes: make(map[string]chan providerInvokeChunk),
+		pendingManage:  make(map[string]chan providerManageEvent),
+		closed:         make(chan struct{}),
+		clips:          make(map[string]*providerClip, len(clips)),
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, exists := m.providers[providerName]; exists {
+		return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("provider %q already connected", providerName)}
+	}
+	for name := range clips {
+		if _, exists := m.clips[name]; exists {
+			return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", name)}
+		}
+	}
+
+	m.providers[providerName] = session
+	for name, clip := range clips {
+		session.clips[name] = clip
+		m.clips[name] = &providerClipRef{session: session, clip: clip}
+	}
+	return session, nil
+}
+
+func (m *ProviderManager) localClipExists(name string) (bool, error) {
+	if m.registry == nil {
+		return false, nil
+	}
+	_, exists, err := m.registry.GetClip(strings.TrimSpace(name))
+	if err != nil {
+		return false, daemonError{Code: "internal", Message: fmt.Sprintf("check local clip %q: %v", name, err)}
+	}
+	return exists, nil
+}
+
+func (m *ProviderManager) unregisterSession(session *providerSession) {
+	if session == nil {
+		return
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	current, ok := m.providers[session.name]
+	if !ok || current != session {
+		return
+	}
+	delete(m.providers, session.name)
+	for name := range session.clips {
+		ref, ok := m.clips[name]
+		if ok && ref.session == session {
+			delete(m.clips, name)
+		}
+	}
+}
+
+func (m *ProviderManager) addClipToSession(session *providerSession, registration *pinixv2.ClipRegistration) (*pinixv2.ClipInfo, error) {
+	clip, err := sanitizeProviderClip(registration)
+	if err != nil {
+		return nil, err
+	}
+	if exists, err := m.localClipExists(clip.registration.GetName()); err != nil {
+		return nil, err
+	} else if exists {
+		return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", clip.registration.GetName())}
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	ref, exists := m.clips[clip.registration.GetName()]
+	if exists && ref.session != session {
+		return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", clip.registration.GetName())}
+	}
+
+	session.clips[clip.registration.GetName()] = clip
+	m.clips[clip.registration.GetName()] = &providerClipRef{session: session, clip: clip}
+	return providerClipToClipInfo(session.name, clip.registration), nil
+}
+
+func (m *ProviderManager) removeClipFromSession(session *providerSession, name string) {
+	name = strings.TrimSpace(name)
 	if name == "" {
 		return
 	}
 
-	var removed *ProviderClip
 	m.mu.Lock()
-	current, ok := m.clips[name]
-	if ok && (target == nil || current == target) {
-		removed = current
+	defer m.mu.Unlock()
+
+	delete(session.clips, name)
+	if ref, ok := m.clips[name]; ok && ref.session == session {
 		delete(m.clips, name)
 	}
-	m.mu.Unlock()
+}
 
-	if removed != nil && removed != target {
-		removed.closeWithError(fmt.Errorf("clip %s unregistered", name))
+func (h *ProviderInvokeHandle) Receive(ctx context.Context) (providerInvokeChunk, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	select {
+	case chunk := <-h.responses:
+		return chunk, nil
+	case <-h.session.closed:
+		return providerInvokeChunk{}, h.session.err()
+	case <-ctx.Done():
+		return providerInvokeChunk{}, ctx.Err()
 	}
 }
 
-func (c *ProviderClip) Supports(command string) bool {
-	command = strings.TrimSpace(command)
-	for _, registered := range c.Commands {
-		if registered == command {
-			return true
-		}
+func (h *ProviderInvokeHandle) SendInput(data []byte, done bool) error {
+	if h == nil || h.session == nil {
+		return fmt.Errorf("provider invoke handle is not available")
 	}
-	return false
+	return h.session.send(&pinixv2.HubMessage{Payload: &pinixv2.HubMessage_InvokeInput{InvokeInput: &pinixv2.InvokeInput{
+		RequestId: h.requestID,
+		Data:      cloneBytes(data),
+		Done:      done,
+	}}})
 }
 
-func (c *ProviderClip) readLoop() error {
+func (h *ProviderInvokeHandle) Close() {
+	if h == nil || h.session == nil {
+		return
+	}
+	h.closeOnce.Do(func() {
+		h.session.unregisterInvoke(h.requestID)
+	})
+}
+
+func (h *ProviderManageHandle) Receive(ctx context.Context) (providerManageEvent, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	select {
+	case event := <-h.events:
+		return event, nil
+	case <-h.session.closed:
+		return providerManageEvent{}, h.session.err()
+	case <-ctx.Done():
+		return providerManageEvent{}, ctx.Err()
+	}
+}
+
+func (h *ProviderManageHandle) Close() {
+	if h == nil || h.session == nil {
+		return
+	}
+	h.closeOnce.Do(func() {
+		h.session.unregisterManage(h.requestID)
+	})
+}
+
+func (s *providerSession) readLoop() error {
 	for {
-		var message providerEnvelope
-		if err := websocket.JSON.Receive(c.conn, &message); err != nil {
-			c.closeWithError(fmt.Errorf("read provider clip %s response: %w", c.Name, err))
-			return c.err()
+		message, err := s.stream.Receive()
+		if err != nil {
+			s.closeWithError(err)
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
 		}
 
-		if strings.EqualFold(strings.TrimSpace(message.Type), "register") {
+		switch payload := message.GetPayload().(type) {
+		case *pinixv2.ProviderMessage_ClipAdded:
+			if err := s.handleClipAdded(payload.ClipAdded); err != nil {
+				s.closeWithError(err)
+				return err
+			}
+		case *pinixv2.ProviderMessage_ClipRemoved:
+			s.handleClipRemoved(payload.ClipRemoved)
+		case *pinixv2.ProviderMessage_InvokeResult:
+			s.handleInvokeResult(payload.InvokeResult)
+		case *pinixv2.ProviderMessage_ManageResult:
+			s.handleManageResult(payload.ManageResult)
+		case *pinixv2.ProviderMessage_Ping:
+			if err := s.send(&pinixv2.HubMessage{Payload: &pinixv2.HubMessage_Pong{Pong: &pinixv2.Heartbeat{SentAtUnixMs: payload.Ping.GetSentAtUnixMs()}}}); err != nil {
+				s.closeWithError(err)
+				return err
+			}
+		case *pinixv2.ProviderMessage_Register:
+			err := daemonError{Code: "invalid_argument", Message: "register message is only allowed once"}
+			s.closeWithError(err)
+			return err
+		default:
 			continue
 		}
-		if strings.TrimSpace(message.ID) == "" {
-			c.closeWithError(fmt.Errorf("read provider clip %s response: missing id", c.Name))
-			return c.err()
-		}
-
-		c.dispatch(providerResponseMessage{
-			ID:     message.ID,
-			Output: append(json.RawMessage(nil), message.Output...),
-			Error:  message.Error,
-		})
 	}
 }
 
-func (c *ProviderClip) send(message providerInvokeMessage) error {
-	select {
-	case <-c.closed:
-		return c.err()
-	default:
+func (s *providerSession) handleClipAdded(message *pinixv2.ClipAdded) error {
+	if message == nil || message.GetClip() == nil {
+		if message != nil && strings.TrimSpace(message.GetRequestId()) != "" {
+			s.dispatchManage(message.GetRequestId(), providerManageEvent{err: &ResponseError{Code: "invalid_argument", Message: "clip_added.clip is required"}, done: true})
+			return nil
+		}
+		return daemonError{Code: "invalid_argument", Message: "clip_added.clip is required"}
 	}
 
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
-
-	if err := websocket.JSON.Send(c.conn, message); err != nil {
-		c.closeWithError(fmt.Errorf("write provider request: %w", err))
-		return c.err()
+	clipInfo, err := s.manager.addClipToSession(s, message.GetClip())
+	if err != nil {
+		if strings.TrimSpace(message.GetRequestId()) != "" {
+			s.dispatchManage(message.GetRequestId(), providerManageEvent{err: responseErrorFromErr(err), done: true})
+			return nil
+		}
+		return err
+	}
+	if requestID := strings.TrimSpace(message.GetRequestId()); requestID != "" {
+		s.dispatchManage(requestID, providerManageEvent{clip: clipInfo})
 	}
 	return nil
 }
 
-func (c *ProviderClip) dispatch(resp providerResponseMessage) {
-	c.pendingMu.Lock()
-	ch, ok := c.pending[resp.ID]
-	c.pendingMu.Unlock()
-	if !ok {
+func (s *providerSession) handleClipRemoved(message *pinixv2.ClipRemoved) {
+	if message == nil {
+		return
+	}
+	name := strings.TrimSpace(message.GetName())
+	if name == "" {
+		if requestID := strings.TrimSpace(message.GetRequestId()); requestID != "" {
+			s.dispatchManage(requestID, providerManageEvent{err: &ResponseError{Code: "invalid_argument", Message: "clip_removed.name is required"}, done: true})
+		}
 		return
 	}
 
-	select {
-	case ch <- resp:
-	default:
+	s.manager.removeClipFromSession(s, name)
+	if requestID := strings.TrimSpace(message.GetRequestId()); requestID != "" {
+		s.dispatchManage(requestID, providerManageEvent{removed: name})
 	}
 }
 
-func (c *ProviderClip) registerPending(id string, ch chan providerResponseMessage) error {
+func (s *providerSession) handleInvokeResult(message *pinixv2.InvokeResult) {
+	if message == nil {
+		return
+	}
+	s.dispatchInvoke(strings.TrimSpace(message.GetRequestId()), providerInvokeChunk{
+		output: cloneBytes(message.GetOutput()),
+		err:    hubErrorToResponseError(message.GetError()),
+		done:   message.GetDone(),
+	})
+}
+
+func (s *providerSession) handleManageResult(message *pinixv2.ManageResult) {
+	if message == nil {
+		return
+	}
+	s.dispatchManage(strings.TrimSpace(message.GetRequestId()), providerManageEvent{
+		err:  hubErrorToResponseError(message.GetError()),
+		done: true,
+	})
+}
+
+func (s *providerSession) send(message *pinixv2.HubMessage) error {
 	select {
-	case <-c.closed:
-		return c.err()
+	case <-s.closed:
+		return s.err()
 	default:
 	}
 
-	c.pendingMu.Lock()
-	defer c.pendingMu.Unlock()
-	if _, exists := c.pending[id]; exists {
-		return fmt.Errorf("duplicate provider request id: %s", id)
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+
+	if err := s.stream.Send(message); err != nil {
+		s.closeWithError(fmt.Errorf("send provider message: %w", err))
+		return s.err()
 	}
-	c.pending[id] = ch
 	return nil
 }
 
-func (c *ProviderClip) unregisterPending(id string) {
-	c.pendingMu.Lock()
-	defer c.pendingMu.Unlock()
-	delete(c.pending, id)
+func (s *providerSession) registerInvoke(requestID string, ch chan providerInvokeChunk) error {
+	select {
+	case <-s.closed:
+		return s.err()
+	default:
+	}
+
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	if _, exists := s.pendingInvokes[requestID]; exists {
+		return fmt.Errorf("duplicate provider invoke request id: %s", requestID)
+	}
+	s.pendingInvokes[requestID] = ch
+	return nil
 }
 
-func (c *ProviderClip) closeWithError(err error) error {
-	var closeErr error
-	c.closeOnce.Do(func() {
+func (s *providerSession) unregisterInvoke(requestID string) {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	delete(s.pendingInvokes, requestID)
+}
+
+func (s *providerSession) dispatchInvoke(requestID string, chunk providerInvokeChunk) {
+	if requestID == "" {
+		return
+	}
+	s.pendingMu.Lock()
+	ch, ok := s.pendingInvokes[requestID]
+	s.pendingMu.Unlock()
+	if !ok {
+		return
+	}
+	select {
+	case ch <- chunk:
+	default:
+	}
+}
+
+func (s *providerSession) registerManage(requestID string, ch chan providerManageEvent) error {
+	select {
+	case <-s.closed:
+		return s.err()
+	default:
+	}
+
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	if _, exists := s.pendingManage[requestID]; exists {
+		return fmt.Errorf("duplicate provider manage request id: %s", requestID)
+	}
+	s.pendingManage[requestID] = ch
+	return nil
+}
+
+func (s *providerSession) unregisterManage(requestID string) {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	delete(s.pendingManage, requestID)
+}
+
+func (s *providerSession) dispatchManage(requestID string, event providerManageEvent) {
+	if requestID == "" {
+		return
+	}
+	s.pendingMu.Lock()
+	ch, ok := s.pendingManage[requestID]
+	s.pendingMu.Unlock()
+	if !ok {
+		return
+	}
+	select {
+	case ch <- event:
+	default:
+	}
+}
+
+func (s *providerSession) closeWithError(err error) error {
+	s.closeOnce.Do(func() {
 		if err == nil {
-			err = fmt.Errorf("provider connection closed")
+			err = io.EOF
 		}
 
-		c.closeErrMu.Lock()
-		c.closeErr = err
-		c.closeErrMu.Unlock()
+		s.closeErrMu.Lock()
+		s.closeErr = err
+		s.closeErrMu.Unlock()
 
-		c.pendingMu.Lock()
-		pending := c.pending
-		c.pending = make(map[string]chan providerResponseMessage)
-		c.pendingMu.Unlock()
+		s.manager.unregisterSession(s)
 
-		for id, ch := range pending {
-			resp := providerResponseMessage{ID: id, Error: &ResponseError{Code: "closed", Message: err.Error()}}
+		s.pendingMu.Lock()
+		pendingInvokes := s.pendingInvokes
+		pendingManage := s.pendingManage
+		s.pendingInvokes = make(map[string]chan providerInvokeChunk)
+		s.pendingManage = make(map[string]chan providerManageEvent)
+		s.pendingMu.Unlock()
+
+		respErr := &ResponseError{Code: "closed", Message: err.Error()}
+		for id, ch := range pendingInvokes {
 			select {
-			case ch <- resp:
+			case ch <- providerInvokeChunk{err: respErr, done: true}:
 			default:
+				_ = id
+			}
+		}
+		for id, ch := range pendingManage {
+			select {
+			case ch <- providerManageEvent{err: respErr, done: true}:
+			default:
+				_ = id
 			}
 		}
 
-		close(c.closed)
-		closeErr = c.conn.Close()
+		close(s.closed)
 	})
-	return closeErr
+	return nil
 }
 
-func (c *ProviderClip) alive() bool {
+func (s *providerSession) alive() bool {
 	select {
-	case <-c.closed:
+	case <-s.closed:
 		return false
 	default:
 		return true
 	}
 }
 
-func (c *ProviderClip) err() error {
-	c.closeErrMu.RLock()
-	defer c.closeErrMu.RUnlock()
-	if c.closeErr == nil {
-		return fmt.Errorf("provider connection closed")
+func (s *providerSession) err() error {
+	s.closeErrMu.RLock()
+	defer s.closeErrMu.RUnlock()
+	if s.closeErr == nil {
+		return io.EOF
 	}
-	return c.closeErr
+	return s.closeErr
 }
 
-func normalizeProviderCommands(commands []string) []string {
-	seen := make(map[string]struct{}, len(commands))
-	result := make([]string, 0, len(commands))
+func registerResponse(accepted bool, message string) *pinixv2.HubMessage {
+	return &pinixv2.HubMessage{Payload: &pinixv2.HubMessage_RegisterResponse{RegisterResponse: &pinixv2.RegisterResponse{
+		Accepted: accepted,
+		Message:  strings.TrimSpace(message),
+	}}}
+}
+
+func sanitizeProviderClip(registration *pinixv2.ClipRegistration) (*providerClip, error) {
+	if registration == nil {
+		return nil, daemonError{Code: "invalid_argument", Message: "clip registration is required"}
+	}
+	name := strings.TrimSpace(registration.GetName())
+	if name == "" {
+		return nil, daemonError{Code: "invalid_argument", Message: "clip registration name is required"}
+	}
+
+	sanitized := &pinixv2.ClipRegistration{
+		Name:           name,
+		Package:        strings.TrimSpace(registration.GetPackage()),
+		Version:        strings.TrimSpace(registration.GetVersion()),
+		Domain:         strings.TrimSpace(registration.GetDomain()),
+		Commands:       cloneProtoCommands(registration.GetCommands()),
+		HasWeb:         registration.GetHasWeb(),
+		Dependencies:   normalizeStrings(registration.GetDependencies()),
+		TokenProtected: registration.GetTokenProtected(),
+	}
+	return &providerClip{registration: sanitized}, nil
+}
+
+func providerClipSupports(registration *pinixv2.ClipRegistration, command string) bool {
+	commands := registration.GetCommands()
+	if len(commands) == 0 {
+		return true
+	}
+	command = strings.TrimSpace(command)
+	for _, item := range commands {
+		if strings.TrimSpace(item.GetName()) == command {
+			return true
+		}
+	}
+	return false
+}
+
+func providerClipToClipInfo(providerName string, registration *pinixv2.ClipRegistration) *pinixv2.ClipInfo {
+	if registration == nil {
+		return &pinixv2.ClipInfo{Provider: strings.TrimSpace(providerName)}
+	}
+	return &pinixv2.ClipInfo{
+		Name:           strings.TrimSpace(registration.GetName()),
+		Package:        strings.TrimSpace(registration.GetPackage()),
+		Version:        strings.TrimSpace(registration.GetVersion()),
+		Provider:       strings.TrimSpace(providerName),
+		Domain:         strings.TrimSpace(registration.GetDomain()),
+		Commands:       cloneProtoCommands(registration.GetCommands()),
+		HasWeb:         registration.GetHasWeb(),
+		TokenProtected: registration.GetTokenProtected(),
+		Dependencies:   normalizeStrings(registration.GetDependencies()),
+	}
+}
+
+func providerClipToManifest(registration *pinixv2.ClipRegistration) *ManifestCache {
+	if registration == nil {
+		return nil
+	}
+	manifest := &ManifestCache{
+		Name:           strings.TrimSpace(registration.GetName()),
+		Package:        strings.TrimSpace(registration.GetPackage()),
+		Version:        strings.TrimSpace(registration.GetVersion()),
+		Domain:         strings.TrimSpace(registration.GetDomain()),
+		Commands:       commandNames(protoCommandsToInternal(registration.GetCommands())),
+		CommandDetails: protoCommandsToInternal(registration.GetCommands()),
+		HasWeb:         registration.GetHasWeb(),
+		Dependencies:   normalizeStrings(registration.GetDependencies()),
+	}
+	return finalizeManifestCache(manifest)
+}
+
+func protoCommandsToInternal(commands []*pinixv2.CommandInfo) []CommandInfo {
+	result := make([]CommandInfo, 0, len(commands))
 	for _, command := range commands {
-		command = strings.TrimSpace(command)
-		if command == "" {
+		if command == nil {
 			continue
 		}
-		if _, ok := seen[command]; ok {
-			continue
-		}
-		seen[command] = struct{}{}
-		result = append(result, command)
+		result = append(result, CommandInfo{
+			Name:        strings.TrimSpace(command.GetName()),
+			Description: strings.TrimSpace(command.GetDescription()),
+			Input:       strings.TrimSpace(command.GetInput()),
+			Output:      strings.TrimSpace(command.GetOutput()),
+		})
+	}
+	return normalizeCommandDetails(result)
+}
+
+func internalCommandsToProto(commands []CommandInfo) []*pinixv2.CommandInfo {
+	normalized := normalizeCommandDetails(commands)
+	result := make([]*pinixv2.CommandInfo, 0, len(normalized))
+	for _, command := range normalized {
+		result = append(result, &pinixv2.CommandInfo{
+			Name:        command.Name,
+			Description: command.Description,
+			Input:       command.Input,
+			Output:      command.Output,
+		})
 	}
 	return result
 }
 
-func providerClipDomain(name string) string {
-	switch strings.TrimSpace(name) {
-	case "browser":
-		return "Browser automation clip"
+func cloneProtoCommands(commands []*pinixv2.CommandInfo) []*pinixv2.CommandInfo {
+	return internalCommandsToProto(protoCommandsToInternal(commands))
+}
+
+func responseErrorFromErr(err error) *ResponseError {
+	if err == nil {
+		return nil
+	}
+	var responseErr *ResponseError
+	if errors.As(err, &responseErr) {
+		return &ResponseError{Code: responseErr.Code, Message: responseErr.Message}
+	}
+	var daemonErr daemonError
+	if errors.As(err, &daemonErr) {
+		return &ResponseError{Code: daemonErr.Code, Message: daemonErr.Message}
+	}
+	return &ResponseError{Code: "internal", Message: err.Error()}
+}
+
+func hubErrorToResponseError(err *pinixv2.HubError) *ResponseError {
+	if err == nil {
+		return nil
+	}
+	return &ResponseError{Code: strings.TrimSpace(err.GetCode()), Message: strings.TrimSpace(err.GetMessage())}
+}
+
+func aggregateInvokeOutputs(chunks [][]byte) json.RawMessage {
+	if len(chunks) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	if len(chunks) == 1 {
+		chunk := cloneBytes(chunks[0])
+		if json.Valid(chunk) {
+			return json.RawMessage(chunk)
+		}
+		wrapped, _ := json.Marshal(string(chunk))
+		return json.RawMessage(wrapped)
+	}
+
+	size := 0
+	for _, chunk := range chunks {
+		size += len(chunk)
+	}
+	combined := make([]byte, 0, size)
+	for _, chunk := range chunks {
+		combined = append(combined, chunk...)
+	}
+	if len(combined) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	if json.Valid(combined) {
+		return json.RawMessage(combined)
+	}
+	wrapped, _ := json.Marshal(string(combined))
+	return json.RawMessage(wrapped)
+}
+
+func cloneBytes(data []byte) []byte {
+	if len(data) == 0 {
+		return nil
+	}
+	return append([]byte(nil), data...)
+}
+
+func isLocalProvider(name string) bool {
+	switch strings.TrimSpace(strings.ToLower(name)) {
+	case "", "local", strings.ToLower(localProviderName):
+		return true
 	default:
-		return "Pinix clip"
+		return false
 	}
 }
