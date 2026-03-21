@@ -1,64 +1,25 @@
-// Role:    Request handler for Pinix daemon Unix socket operations
-// Depends: context, encoding/json, fmt, net, os, os/exec, path/filepath, sort, strings
+// Role:    Shared add/remove/install helpers for the Pinix daemon HubService
+// Depends: context, fmt, os, os/exec, path/filepath, strings
 // Exports: Handler, NewHandler
 
 package daemon
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
 type Handler struct {
-	registry  *Registry
-	process   *ProcessManager
-	providers *ProviderManager
+	registry *Registry
+	process  *ProcessManager
 }
 
-func NewHandler(registry *Registry, process *ProcessManager, providers *ProviderManager) *Handler {
-	return &Handler{registry: registry, process: process, providers: providers}
-}
-
-func (h *Handler) Handle(ctx context.Context, req *Request) SocketResponse {
-	if req == nil {
-		return errorResponse("invalid_request", "request is required")
-	}
-
-	switch req.Method {
-	case "add":
-		var params AddParams
-		if err := decodeParams(req.Params, &params); err != nil {
-			return errorResponse("invalid_argument", err.Error())
-		}
-		result, err := h.handleAdd(ctx, req.Token, params)
-		return marshalResponse(result, err)
-	case "remove":
-		var params RemoveParams
-		if err := decodeParams(req.Params, &params); err != nil {
-			return errorResponse("invalid_argument", err.Error())
-		}
-		result, err := h.handleRemove(req.Token, params)
-		return marshalResponse(result, err)
-	case "list":
-		result, err := h.handleList()
-		return marshalResponse(result, err)
-	case "invoke":
-		var params InvokeParams
-		if err := decodeParams(req.Params, &params); err != nil {
-			return errorResponse("invalid_argument", err.Error())
-		}
-		result, err := h.handleInvoke(ctx, req.Token, params)
-		return marshalResponse(result, err)
-	default:
-		return errorResponse("method_not_found", fmt.Sprintf("unknown method %q", req.Method))
-	}
+func NewHandler(registry *Registry, process *ProcessManager) *Handler {
+	return &Handler{registry: registry, process: process}
 }
 
 func (h *Handler) handleAdd(ctx context.Context, authToken string, params AddParams) (*AddResult, error) {
@@ -227,75 +188,6 @@ func (h *Handler) handleRemove(authToken string, params RemoveParams) (*RemoveRe
 	}
 
 	return &RemoveResult{Name: clip.Name, Path: clip.Path}, nil
-}
-
-func (h *Handler) handleList() (*ListResult, error) {
-	clips, err := h.registry.ListClips()
-	if err != nil {
-		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("list clips: %v", err)}
-	}
-
-	result := &ListResult{Clips: make([]ClipStatus, 0, len(clips))}
-	for _, clip := range clips {
-		manifest := enrichManifestForClip(clip, clip.Manifest)
-		result.Clips = append(result.Clips, ClipStatus{
-			Name:           clip.Name,
-			Source:         clip.Source,
-			Path:           clip.Path,
-			Running:        h.process.IsRunning(clip.Name),
-			Online:         h.process.IsRunning(clip.Name),
-			HasWeb:         manifest != nil && manifest.HasWeb,
-			TokenProtected: clip.Token != "",
-			Commands:       clipManifestCommands(manifest),
-			Manifest:       manifest,
-		})
-	}
-	if h.providers != nil {
-		result.Clips = append(result.Clips, h.providers.ListClips()...)
-	}
-	sort.Slice(result.Clips, func(i, j int) bool {
-		return result.Clips[i].Name < result.Clips[j].Name
-	})
-	return result, nil
-}
-
-func (h *Handler) handleInvoke(ctx context.Context, authToken string, params InvokeParams) (json.RawMessage, error) {
-	if strings.TrimSpace(params.Clip) == "" {
-		return nil, daemonError{Code: "invalid_argument", Message: "clip is required"}
-	}
-	if strings.TrimSpace(params.Command) == "" {
-		return nil, daemonError{Code: "invalid_argument", Message: "command is required"}
-	}
-
-	clip, ok, err := h.registry.GetClip(params.Clip)
-	if err != nil {
-		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)}
-	}
-	if !ok {
-		if h.providers == nil {
-			return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", params.Clip)}
-		}
-		return h.providers.Invoke(ctx, params.Clip, params.Command, params.Input)
-	}
-	if clip.Token != "" && clip.Token != authToken {
-		return nil, daemonError{Code: "permission_denied", Message: "invalid clip token"}
-	}
-
-	output, err := h.process.Invoke(ctx, clip.Name, params.Command, params.Input)
-	if err != nil {
-		return nil, daemonError{Code: "internal", Message: err.Error()}
-	}
-	if len(output) == 0 {
-		output = json.RawMessage(`{}`)
-	}
-	return output, nil
-}
-
-func clipManifestCommands(manifest *ManifestCache) []string {
-	if manifest == nil || len(manifest.Commands) == 0 {
-		return nil
-	}
-	return append([]string(nil), manifest.Commands...)
 }
 
 func (h *Handler) inspectClip(ctx context.Context, clip ClipConfig) (*ManifestCache, error) {
@@ -486,44 +378,3 @@ type daemonError struct {
 }
 
 func (e daemonError) Error() string { return e.Message }
-
-func decodeParams(data json.RawMessage, out any) error {
-	if len(data) == 0 {
-		data = json.RawMessage(`{}`)
-	}
-	if err := json.Unmarshal(data, out); err != nil {
-		return fmt.Errorf("decode params: %w", err)
-	}
-	return nil
-}
-
-func marshalResponse(result any, err error) SocketResponse {
-	if err != nil {
-		return errorResponseFromError(err)
-	}
-	if result == nil {
-		result = struct{}{}
-	}
-	data, marshalErr := json.Marshal(result)
-	if marshalErr != nil {
-		return errorResponse("internal", fmt.Sprintf("marshal result: %v", marshalErr))
-	}
-	return SocketResponse{Result: data}
-}
-
-func errorResponse(code, message string) SocketResponse {
-	return SocketResponse{Error: &ResponseError{Code: code, Message: message}}
-}
-
-func errorResponseFromError(err error) SocketResponse {
-	if err == nil {
-		return SocketResponse{}
-	}
-	if derr, ok := err.(daemonError); ok {
-		return errorResponse(derr.Code, derr.Message)
-	}
-	if nerr, ok := err.(*net.OpError); ok {
-		return errorResponse("internal", nerr.Error())
-	}
-	return errorResponse("internal", err.Error())
-}

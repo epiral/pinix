@@ -1,24 +1,12 @@
-// Role:    Shared daemon request/response protocol types for clips and provider-backed clips
-// Depends: encoding/json, fmt
-// Exports: Request, SocketResponse, ResponseError, AddParams, RemoveParams, InvokeParams, AddResult, RemoveResult, ListResult, ClipStatus
+// Role:    Shared daemon response and parameter types for HubService and provider routing
+// Depends: fmt
+// Exports: ResponseError, AddParams, RemoveParams, AddResult, RemoveResult
 
 package daemon
 
 import (
-	"encoding/json"
 	"fmt"
 )
-
-type Request struct {
-	Method string          `json:"method"`
-	Params json.RawMessage `json:"params,omitempty"`
-	Token  string          `json:"token,omitempty"`
-}
-
-type SocketResponse struct {
-	Result json.RawMessage `json:"result,omitempty"`
-	Error  *ResponseError  `json:"error,omitempty"`
-}
 
 type ResponseError struct {
 	Message string `json:"message"`
@@ -45,12 +33,6 @@ type RemoveParams struct {
 	Name string `json:"name"`
 }
 
-type InvokeParams struct {
-	Clip    string          `json:"clip"`
-	Command string          `json:"command"`
-	Input   json.RawMessage `json:"input,omitempty"`
-}
-
 type AddResult struct {
 	Clip ClipConfig `json:"clip"`
 }
@@ -58,20 +40,4 @@ type AddResult struct {
 type RemoveResult struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
-}
-
-type ListResult struct {
-	Clips []ClipStatus `json:"clips"`
-}
-
-type ClipStatus struct {
-	Name           string         `json:"name"`
-	Source         string         `json:"source"`
-	Path           string         `json:"path"`
-	Running        bool           `json:"running"`
-	Online         bool           `json:"online,omitempty"`
-	HasWeb         bool           `json:"has_web"`
-	TokenProtected bool           `json:"token_protected"`
-	Commands       []string       `json:"commands,omitempty"`
-	Manifest       *ManifestCache `json:"manifest,omitempty"`
 }

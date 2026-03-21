@@ -1,12 +1,11 @@
 // Role:    Connect-RPC provider session registry and invocation router for provider-backed Clips
-// Depends: context, encoding/json, errors, fmt, io, sort, strings, sync, sync/atomic, time, pinix v2
+// Depends: context, errors, fmt, io, sort, strings, sync, sync/atomic, time, pinix v2
 // Exports: ProviderManager, ProviderInvokeHandle, ProviderManageHandle, NewProviderManager
 
 package daemon
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,8 +19,7 @@ import (
 )
 
 const (
-	providerInvokeTimeout = 30 * time.Second
-	localProviderName     = "pinixd"
+	localProviderName = "pinixd"
 )
 
 type providerStream interface {
@@ -191,29 +189,6 @@ func (m *ProviderManager) ListClipInfos() []*pinixv2.ClipInfo {
 	return clips
 }
 
-func (m *ProviderManager) ListClips() []ClipStatus {
-	m.mu.RLock()
-	result := make([]ClipStatus, 0, len(m.clips))
-	for _, ref := range m.clips {
-		manifest := providerClipToManifest(ref.clip.registration)
-		result = append(result, ClipStatus{
-			Name:           ref.clip.registration.GetName(),
-			Source:         "provider",
-			Online:         ref.session.alive(),
-			HasWeb:         manifest.HasWeb,
-			TokenProtected: ref.clip.registration.GetTokenProtected(),
-			Commands:       append([]string(nil), manifest.Commands...),
-			Manifest:       manifest,
-		})
-	}
-	m.mu.RUnlock()
-
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Name < result[j].Name
-	})
-	return result
-}
-
 func (m *ProviderManager) Manifest(name string) (*ManifestCache, bool) {
 	ref := m.lookupClip(strings.TrimSpace(name))
 	if ref == nil {
@@ -304,44 +279,6 @@ func (m *ProviderManager) OpenManage(providerName string, command *pinixv2.Manag
 		return nil, daemonError{Code: "internal", Message: err.Error()}
 	}
 	return handle, nil
-}
-
-func (m *ProviderManager) Invoke(ctx context.Context, name, command string, input json.RawMessage) (json.RawMessage, error) {
-	handle, err := m.OpenInvoke(name, command, input, "")
-	if err != nil {
-		return nil, err
-	}
-	defer handle.Close()
-
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	invokeCtx, cancel := context.WithTimeout(ctx, providerInvokeTimeout)
-	defer cancel()
-
-	chunks := make([][]byte, 0, 4)
-	for {
-		chunk, err := handle.Receive(invokeCtx)
-		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				return nil, daemonError{Code: "timeout", Message: fmt.Sprintf("invoke clip %q timed out after %s", name, providerInvokeTimeout)}
-			}
-			if errors.Is(err, context.Canceled) {
-				return nil, daemonError{Code: "canceled", Message: fmt.Sprintf("invoke clip %q canceled", name)}
-			}
-			return nil, daemonError{Code: "internal", Message: err.Error()}
-		}
-		if chunk.err != nil {
-			return nil, daemonError{Code: chunk.err.Code, Message: chunk.err.Message}
-		}
-		if len(chunk.output) > 0 {
-			chunks = append(chunks, cloneBytes(chunk.output))
-		}
-		if chunk.done {
-			break
-		}
-	}
-	return aggregateInvokeOutputs(chunks), nil
 }
 
 func (m *ProviderManager) Close() error {
@@ -942,37 +879,6 @@ func hubErrorToResponseError(err *pinixv2.HubError) *ResponseError {
 		return nil
 	}
 	return &ResponseError{Code: strings.TrimSpace(err.GetCode()), Message: strings.TrimSpace(err.GetMessage())}
-}
-
-func aggregateInvokeOutputs(chunks [][]byte) json.RawMessage {
-	if len(chunks) == 0 {
-		return json.RawMessage(`{}`)
-	}
-	if len(chunks) == 1 {
-		chunk := cloneBytes(chunks[0])
-		if json.Valid(chunk) {
-			return json.RawMessage(chunk)
-		}
-		wrapped, _ := json.Marshal(string(chunk))
-		return json.RawMessage(wrapped)
-	}
-
-	size := 0
-	for _, chunk := range chunks {
-		size += len(chunk)
-	}
-	combined := make([]byte, 0, size)
-	for _, chunk := range chunks {
-		combined = append(combined, chunk...)
-	}
-	if len(combined) == 0 {
-		return json.RawMessage(`{}`)
-	}
-	if json.Valid(combined) {
-		return json.RawMessage(combined)
-	}
-	wrapped, _ := json.Marshal(string(combined))
-	return json.RawMessage(wrapped)
 }
 
 func cloneBytes(data []byte) []byte {

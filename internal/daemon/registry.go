@@ -1,6 +1,6 @@
 // Role:    File-locked config registry for Pinix daemon state
 // Depends: encoding/json, fmt, os, path/filepath, sort, strings, syscall
-// Exports: ClipConfig, CommandInfo, ManifestCache, Config, Registry, DefaultRootDir, DefaultConfigPath, DefaultSocketPath, DefaultClipsDir, NewRegistry
+// Exports: ClipConfig, CommandInfo, ManifestCache, Config, Registry, DefaultRootDir, DefaultConfigPath, DefaultClipsDir, NewRegistry
 
 package daemon
 
@@ -66,14 +66,6 @@ func DefaultConfigPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(root, "config.json"), nil
-}
-
-func DefaultSocketPath() (string, error) {
-	root, err := DefaultRootDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(root, "pinix.sock"), nil
 }
 
 func DefaultClipsDir() (string, error) {
