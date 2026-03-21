@@ -1,5 +1,5 @@
-// Role:    Embedded HTTP server for Pinix portal APIs, provider WebSockets, clip web files, and static assets
-// Depends: context, encoding/json, errors, fmt, mime, net, net/http, os, path/filepath, strings, github.com/epiral/pinix/web, golang.org/x/net/websocket
+// Role:    Embedded HTTP server for Pinix portal APIs, Connect-RPC, clip web files, and static assets
+// Depends: context, encoding/json, errors, fmt, mime, net, net/http, os, path/filepath, strings, time, pinixv2connect, github.com/epiral/pinix/web, http2, h2c
 // Exports: Daemon.ServeHTTP
 
 package daemon
@@ -15,9 +15,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/epiral/pinix/gen/go/pinix/v2/pinixv2connect"
 	portalweb "github.com/epiral/pinix/web"
-	"golang.org/x/net/websocket"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 type invokeHTTPRequest struct {
@@ -38,8 +41,10 @@ func (d *Daemon) ServeHTTP(ctx context.Context, addr string) error {
 	}
 
 	server := &http.Server{
-		Addr:    addr,
-		Handler: d.httpMux(),
+		Addr:              addr,
+		Handler:           h2c.NewHandler(d.httpMux(), &http2.Server{}),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 		BaseContext: func(net.Listener) context.Context {
 			return ctx
 		},
@@ -70,6 +75,8 @@ func (d *Daemon) ServeHTTP(ctx context.Context, addr string) error {
 
 func (d *Daemon) httpMux() http.Handler {
 	mux := http.NewServeMux()
+	hubPath, hubHandler := pinixv2connect.NewHubServiceHandler(NewHubService(d))
+	mux.Handle(hubPath, hubHandler)
 	mux.HandleFunc("/", d.handleIndex)
 	mux.HandleFunc("/style.css", d.handleStyle)
 	mux.HandleFunc("/app.js", d.handleApp)
@@ -77,7 +84,7 @@ func (d *Daemon) httpMux() http.Handler {
 	mux.HandleFunc("/api/list", d.handleAPIList)
 	mux.HandleFunc("/api/invoke", d.handleAPIInvoke)
 	mux.HandleFunc("/api/manifest", d.handleAPIManifest)
-	mux.Handle("/ws/provider", d.providerWebSocketHandler())
+	mux.HandleFunc("/ws/provider", d.handleLegacyProviderWebSocket)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
@@ -222,7 +229,11 @@ func (d *Daemon) handleAPIInvoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := d.Invoke(r.Context(), requestToken(r, req.Token), req.Clip, req.Command, req.Input)
+	result, err := d.handler.handleInvoke(r.Context(), requestToken(r, req.Token), InvokeParams{
+		Clip:    req.Clip,
+		Command: req.Command,
+		Input:   req.Input,
+	})
 	if err != nil {
 		writeJSONError(w, err)
 		return
@@ -280,31 +291,16 @@ func isWithinDir(path, base string) bool {
 	return strings.HasPrefix(path, base+string(filepath.Separator))
 }
 
-func (d *Daemon) providerWebSocketHandler() http.Handler {
-	server := websocket.Server{
-		Handshake: func(*websocket.Config, *http.Request) error {
-			return nil
-		},
-		Handler: websocket.Handler(func(conn *websocket.Conn) {
-			if d.provider == nil {
-				_ = conn.Close()
-				return
-			}
-			_ = d.provider.HandleConnection(conn)
-		}),
+func (d *Daemon) handleLegacyProviderWebSocket(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/ws/provider" {
+		http.NotFound(w, r)
+		return
 	}
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/ws/provider" {
-			http.NotFound(w, r)
-			return
-		}
-		if r.Method != http.MethodGet {
-			writeMethodNotAllowed(w, http.MethodGet)
-			return
-		}
-		server.ServeHTTP(w, r)
-	})
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+	http.Error(w, "websocket provider endpoint removed; use Connect-RPC ProviderStream", http.StatusGone)
 }
 
 func setCORSHeaders(w http.ResponseWriter) {

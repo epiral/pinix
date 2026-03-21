@@ -1,0 +1,256 @@
+syntax = "proto3";
+
+package pinix.v2;
+
+option go_package = "github.com/epiral/pinix/gen/go/pinix/v2;pinixv2";
+
+// ============================================================
+//
+//  HubService — Pinix Hub 的唯一服务
+//
+//  Hub 是实时路由表 + 消息转发器。
+//  Provider 连入 → Clips 出现。Provider 断开 → Clips 消失。
+//  Hub 不维护状态，不做鉴权（Clip Token 透传）。
+//
+//  认证模型：
+//    Hub Token  → Authorization header（Hub middleware 校验）
+//    Clip Token → proto 字段透传（Provider/Clip 自行校验）
+//
+// ============================================================
+
+service HubService {
+  // 所有 Provider（Runtime / Edge Clip）统一协议。
+  rpc ProviderStream(stream ProviderMessage) returns (stream HubMessage);
+
+  rpc ListClips(ListClipsRequest) returns (ListClipsResponse);
+  rpc ListProviders(ListProvidersRequest) returns (ListProvidersResponse);
+  rpc GetManifest(GetManifestRequest) returns (GetManifestResponse);
+  rpc GetClipWeb(GetClipWebRequest) returns (GetClipWebResponse);
+  rpc Invoke(InvokeRequest) returns (stream InvokeResponse);
+  rpc InvokeStream(stream InvokeStreamMessage) returns (stream InvokeResponse);
+  rpc AddClip(AddClipRequest) returns (AddClipResponse);
+  rpc RemoveClip(RemoveClipRequest) returns (RemoveClipResponse);
+}
+
+message HubError {
+  string code = 1;
+  string message = 2;
+}
+
+message CommandInfo {
+  string name = 1;
+  string description = 2;
+  string input = 3;
+  string output = 4;
+}
+
+// Hub 路由表中的 Clip 条目。
+// 出现在列表里 = 可用，不存在离线概念。
+message ClipInfo {
+  string name = 1;
+  string package = 2;
+  string version = 3;
+  string provider = 4;
+  string domain = 5;
+  repeated CommandInfo commands = 6;
+  bool has_web = 7;
+  bool token_protected = 8;
+  repeated string dependencies = 9;
+}
+
+message ClipManifest {
+  string name = 1;
+  string package = 2;
+  string version = 3;
+  string domain = 4;
+  string description = 5;
+  repeated CommandInfo commands = 6;
+  repeated string dependencies = 7;
+  bool has_web = 8;
+  repeated string patterns = 9;
+}
+
+// 当前连入的 Provider（在列表里 = 在线）。
+message ProviderInfo {
+  string name = 1;
+  bool accepts_manage = 2;
+  repeated string clips = 3;
+  int64 connected_at = 4;
+}
+
+message ProviderMessage {
+  oneof payload {
+    RegisterRequest register = 1;
+    ClipAdded clip_added = 2;
+    ClipRemoved clip_removed = 3;
+    InvokeResult invoke_result = 4;
+    Heartbeat ping = 5;
+    ManageResult manage_result = 6;
+  }
+}
+
+message HubMessage {
+  oneof payload {
+    RegisterResponse register_response = 1;
+    InvokeCommand invoke_command = 2;
+    InvokeInput invoke_input = 3;
+    ManageCommand manage_command = 4;
+    Heartbeat pong = 5;
+  }
+}
+
+message RegisterRequest {
+  string provider_name = 1;
+  bool accepts_manage = 2;
+  repeated ClipRegistration clips = 3;
+}
+
+message ClipRegistration {
+  string name = 1;
+  string package = 2;
+  string version = 3;
+  string domain = 4;
+  repeated CommandInfo commands = 5;
+  bool has_web = 6;
+  repeated string dependencies = 7;
+  bool token_protected = 8;
+}
+
+message ClipAdded {
+  ClipRegistration clip = 1;
+  string request_id = 2;
+}
+
+message ClipRemoved {
+  string name = 1;
+  string request_id = 2;
+}
+
+message InvokeResult {
+  string request_id = 1;
+  bytes output = 2;
+  HubError error = 3;
+  bool done = 4;
+}
+
+message ManageResult {
+  string request_id = 1;
+  HubError error = 2;
+}
+
+message RegisterResponse {
+  bool accepted = 1;
+  string message = 2;
+}
+
+message InvokeCommand {
+  string request_id = 1;
+  string clip_name = 2;
+  string command = 3;
+  bytes input = 4;
+  string clip_token = 5;
+}
+
+message InvokeInput {
+  string request_id = 1;
+  bytes data = 2;
+  bool done = 3;
+}
+
+message ManageCommand {
+  string request_id = 1;
+  oneof action {
+    AddClipAction add = 2;
+    RemoveClipAction remove = 3;
+  }
+}
+
+message AddClipAction {
+  string source = 1;
+  string name = 2;
+  string clip_token = 3;
+}
+
+message RemoveClipAction {
+  string clip_name = 1;
+}
+
+message Heartbeat {
+  int64 sent_at_unix_ms = 1;
+}
+
+message ListClipsRequest {}
+
+message ListClipsResponse {
+  repeated ClipInfo clips = 1;
+}
+
+message ListProvidersRequest {}
+
+message ListProvidersResponse {
+  repeated ProviderInfo providers = 1;
+}
+
+message GetManifestRequest {
+  string clip_name = 1;
+}
+
+message GetManifestResponse {
+  ClipManifest manifest = 1;
+}
+
+message GetClipWebRequest {
+  string clip_name = 1;
+  string path = 2;
+  string if_none_match = 3;
+}
+
+message GetClipWebResponse {
+  bytes content = 1;
+  string content_type = 2;
+  string etag = 3;
+  bool not_modified = 4;
+}
+
+message InvokeRequest {
+  string clip_name = 1;
+  string command = 2;
+  bytes input = 3;
+  string clip_token = 4;
+}
+
+message InvokeResponse {
+  bytes output = 1;
+  HubError error = 2;
+}
+
+message InvokeStreamMessage {
+  oneof payload {
+    InvokeRequest start = 1;
+    InputChunk chunk = 2;
+  }
+}
+
+message InputChunk {
+  bytes data = 1;
+  bool done = 2;
+}
+
+message AddClipRequest {
+  string source = 1;
+  string name = 2;
+  string provider = 3;
+  string clip_token = 4;
+}
+
+message AddClipResponse {
+  ClipInfo clip = 1;
+}
+
+message RemoveClipRequest {
+  string clip_name = 1;
+}
+
+message RemoveClipResponse {
+  string clip_name = 1;
+}
