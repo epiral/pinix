@@ -60,16 +60,19 @@ func (h *HubService) ListClips(context.Context, *connect.Request[pinixv2.ListCli
 }
 
 func (h *HubService) ListProviders(context.Context, *connect.Request[pinixv2.ListProvidersRequest]) (*connect.Response[pinixv2.ListProvidersResponse], error) {
-	clipNames, err := h.localClipNames()
-	if err != nil {
-		return nil, connectErrorFromErr(err)
+	providers := make([]*pinixv2.ProviderInfo, 0, 1)
+	if h.daemon != nil && h.daemon.hasLocalRuntime() {
+		clipNames, err := h.localClipNames()
+		if err != nil {
+			return nil, connectErrorFromErr(err)
+		}
+		providers = append(providers, &pinixv2.ProviderInfo{
+			Name:          localProviderName,
+			AcceptsManage: true,
+			Clips:         clipNames,
+			ConnectedAt:   time.Now().UnixMilli(),
+		})
 	}
-	providers := []*pinixv2.ProviderInfo{{
-		Name:          localProviderName,
-		AcceptsManage: true,
-		Clips:         clipNames,
-		ConnectedAt:   time.Now().UnixMilli(),
-	}}
 	if h.daemon != nil && h.daemon.provider != nil {
 		providers = append(providers, h.daemon.provider.ListProviders()...)
 	}
@@ -127,12 +130,14 @@ func (h *HubService) Invoke(ctx context.Context, req *connect.Request[pinixv2.In
 		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("command is required"))
 	}
 
-	clip, ok, err := h.daemon.registry.GetClip(clipName)
-	if err != nil {
-		return connectErrorFromErr(daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)})
-	}
-	if ok {
-		return h.invokeLocalClip(ctx, clip, command, req.Msg.GetInput(), req.Msg.GetClipToken(), stream)
+	if h.daemon != nil && h.daemon.hasLocalRuntime() {
+		clip, ok, err := h.daemon.registry.GetClip(clipName)
+		if err != nil {
+			return connectErrorFromErr(daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)})
+		}
+		if ok {
+			return h.invokeLocalClip(ctx, clip, command, req.Msg.GetInput(), req.Msg.GetClipToken(), stream)
+		}
 	}
 	if h.daemon.provider == nil || !h.daemon.provider.HasClip(clipName) {
 		return connect.NewError(connect.CodeNotFound, fmt.Errorf("clip %q not found", clipName))
@@ -162,12 +167,14 @@ func (h *HubService) InvokeStream(ctx context.Context, stream *connect.BidiStrea
 		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("command is required"))
 	}
 
-	clip, ok, err := h.daemon.registry.GetClip(clipName)
-	if err != nil {
-		return connectErrorFromErr(daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)})
-	}
-	if ok {
-		return h.invokeStreamLocalClip(ctx, clip, command, start, stream)
+	if h.daemon != nil && h.daemon.hasLocalRuntime() {
+		clip, ok, err := h.daemon.registry.GetClip(clipName)
+		if err != nil {
+			return connectErrorFromErr(daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)})
+		}
+		if ok {
+			return h.invokeStreamLocalClip(ctx, clip, command, start, stream)
+		}
 	}
 	if h.daemon.provider == nil || !h.daemon.provider.HasClip(clipName) {
 		return connect.NewError(connect.CodeNotFound, fmt.Errorf("clip %q not found", clipName))
@@ -179,13 +186,17 @@ func (h *HubService) AddClip(ctx context.Context, req *connect.Request[pinixv2.A
 	if strings.TrimSpace(req.Msg.GetSource()) == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("source is required"))
 	}
-	if err := h.daemon.handler.requireSuperToken(requestAuthHeader(req.Header())); err != nil {
+	authToken := requestAuthHeader(req.Header())
+	if err := requireSuperToken(h.daemon.registry, authToken); err != nil {
 		return nil, connectErrorFromErr(err)
 	}
 
 	providerName := strings.TrimSpace(req.Msg.GetProvider())
-	if providerName == "" || isLocalProvider(providerName) {
-		result, err := h.daemon.handler.handleAdd(ctx, requestAuthHeader(req.Header()), AddParams{
+	if isLocalProvider(providerName) {
+		if h.daemon == nil || !h.daemon.hasLocalRuntime() || h.daemon.handler == nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("local runtime is not configured; specify provider to target a connected runtime"))
+		}
+		result, err := h.daemon.handler.handleAdd(ctx, authToken, AddParams{
 			Source: req.Msg.GetSource(),
 			Name:   req.Msg.GetName(),
 			Token:  req.Msg.GetClipToken(),
@@ -235,18 +246,21 @@ func (h *HubService) RemoveClip(ctx context.Context, req *connect.Request[pinixv
 	if clipName == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("clip_name is required"))
 	}
-	if err := h.daemon.handler.requireSuperToken(requestAuthHeader(req.Header())); err != nil {
+	authToken := requestAuthHeader(req.Header())
+	if err := requireSuperToken(h.daemon.registry, authToken); err != nil {
 		return nil, connectErrorFromErr(err)
 	}
 
-	if _, ok, err := h.daemon.registry.GetClip(clipName); err != nil {
-		return nil, connectErrorFromErr(daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)})
-	} else if ok {
-		result, err := h.daemon.handler.handleRemove(requestAuthHeader(req.Header()), RemoveParams{Name: clipName})
-		if err != nil {
-			return nil, connectErrorFromErr(err)
+	if h.daemon != nil && h.daemon.hasLocalRuntime() {
+		if _, ok, err := h.daemon.registry.GetClip(clipName); err != nil {
+			return nil, connectErrorFromErr(daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)})
+		} else if ok {
+			result, err := h.daemon.handler.handleRemove(authToken, RemoveParams{Name: clipName})
+			if err != nil {
+				return nil, connectErrorFromErr(err)
+			}
+			return connect.NewResponse(&pinixv2.RemoveClipResponse{ClipName: result.Name}), nil
 		}
-		return connect.NewResponse(&pinixv2.RemoveClipResponse{ClipName: result.Name}), nil
 	}
 	if h.daemon.provider == nil {
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("clip %q not found", clipName))
@@ -281,6 +295,9 @@ func (h *HubService) RemoveClip(ctx context.Context, req *connect.Request[pinixv
 }
 
 func (h *HubService) listLocalClipInfos() ([]*pinixv2.ClipInfo, error) {
+	if h.daemon == nil || !h.daemon.hasLocalRuntime() {
+		return nil, nil
+	}
 	clips, err := h.daemon.registry.ListClips()
 	if err != nil {
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("list clips: %v", err)}
@@ -296,6 +313,9 @@ func (h *HubService) listLocalClipInfos() ([]*pinixv2.ClipInfo, error) {
 }
 
 func (h *HubService) localClipNames() ([]string, error) {
+	if h.daemon == nil || !h.daemon.hasLocalRuntime() {
+		return nil, nil
+	}
 	clips, err := h.daemon.registry.ListClips()
 	if err != nil {
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("list clips: %v", err)}
@@ -309,6 +329,9 @@ func (h *HubService) localClipNames() ([]string, error) {
 }
 
 func (h *HubService) readLocalClipWebFile(clipName, requestedPath string) ([]byte, string, string, error) {
+	if h.daemon == nil || !h.daemon.hasLocalRuntime() {
+		return nil, "", "", daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", clipName)}
+	}
 	clip, found, err := h.daemon.registry.GetClip(clipName)
 	if err != nil {
 		return nil, "", "", daemonError{Code: "internal", Message: fmt.Sprintf("load clip %q: %v", clipName, err)}
@@ -360,6 +383,9 @@ func (h *HubService) readLocalClipWebFile(clipName, requestedPath string) ([]byt
 }
 
 func (h *HubService) invokeLocalClip(ctx context.Context, clip ClipConfig, command string, input []byte, clipToken string, stream *connect.ServerStream[pinixv2.InvokeResponse]) error {
+	if h.daemon == nil || h.daemon.process == nil {
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("local runtime is not configured"))
+	}
 	if clip.Token != "" && clip.Token != clipToken {
 		return stream.Send(&pinixv2.InvokeResponse{Error: &pinixv2.HubError{Code: "permission_denied", Message: "invalid clip token"}})
 	}
@@ -407,6 +433,9 @@ func (h *HubService) invokeProviderClip(ctx context.Context, clipName, command s
 }
 
 func (h *HubService) invokeStreamLocalClip(ctx context.Context, clip ClipConfig, command string, start *pinixv2.InvokeRequest, stream *connect.BidiStream[pinixv2.InvokeStreamMessage, pinixv2.InvokeResponse]) error {
+	if h.daemon == nil || h.daemon.process == nil {
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("local runtime is not configured"))
+	}
 	if clip.Token != "" && clip.Token != start.GetClipToken() {
 		return stream.Send(&pinixv2.InvokeResponse{Error: &pinixv2.HubError{Code: "permission_denied", Message: "invalid clip token"}})
 	}
