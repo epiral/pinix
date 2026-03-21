@@ -1,4 +1,4 @@
-// Role:    Embedded HTTP server for Pinix portal APIs, Connect-RPC, clip web files, and static assets
+// Role:    Embedded HTTP server for the Pinix portal, Connect-RPC, clip web files, and JSON errors
 // Depends: context, encoding/json, errors, fmt, mime, net, net/http, os, path/filepath, strings, time, pinixv2connect, github.com/epiral/pinix/web, http2, h2c
 // Exports: Daemon.ServeHTTP
 
@@ -22,13 +22,6 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
-
-type invokeHTTPRequest struct {
-	Clip    string          `json:"clip"`
-	Command string          `json:"command"`
-	Input   json.RawMessage `json:"input,omitempty"`
-	Token   string          `json:"token,omitempty"`
-}
 
 func (d *Daemon) ServeHTTP(ctx context.Context, addr string) error {
 	if strings.TrimSpace(addr) == "" {
@@ -81,10 +74,6 @@ func (d *Daemon) httpMux() http.Handler {
 	mux.HandleFunc("/style.css", d.handleStyle)
 	mux.HandleFunc("/app.js", d.handleApp)
 	mux.HandleFunc("/clips/", d.handleClipWeb)
-	mux.HandleFunc("/api/list", d.handleAPIList)
-	mux.HandleFunc("/api/invoke", d.handleAPIInvoke)
-	mux.HandleFunc("/api/manifest", d.handleAPIManifest)
-	mux.HandleFunc("/ws/provider", d.handleLegacyProviderWebSocket)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
@@ -199,62 +188,6 @@ func (d *Daemon) handleClipWeb(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
-func (d *Daemon) handleAPIList(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeMethodNotAllowed(w, http.MethodGet)
-		return
-	}
-
-	result, err := d.List()
-	if err != nil {
-		writeJSONError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
-}
-
-func (d *Daemon) handleAPIInvoke(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeMethodNotAllowed(w, http.MethodPost)
-		return
-	}
-
-	defer r.Body.Close()
-
-	var req invokeHTTPRequest
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&req); err != nil {
-		writeJSONError(w, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("decode request: %v", err)})
-		return
-	}
-
-	result, err := d.handler.handleInvoke(r.Context(), requestToken(r, req.Token), InvokeParams{
-		Clip:    req.Clip,
-		Command: req.Command,
-		Input:   req.Input,
-	})
-	if err != nil {
-		writeJSONError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
-}
-
-func (d *Daemon) handleAPIManifest(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeMethodNotAllowed(w, http.MethodGet)
-		return
-	}
-
-	manifest, err := d.GetManifest(r.Context(), r.URL.Query().Get("clip"))
-	if err != nil {
-		writeJSONError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, manifest)
-}
-
 func (d *Daemon) serveAsset(w http.ResponseWriter, name, contentType string) {
 	data, err := portalweb.ReadFile(name)
 	if err != nil {
@@ -291,35 +224,11 @@ func isWithinDir(path, base string) bool {
 	return strings.HasPrefix(path, base+string(filepath.Separator))
 }
 
-func (d *Daemon) handleLegacyProviderWebSocket(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/ws/provider" {
-		http.NotFound(w, r)
-		return
-	}
-	if r.Method != http.MethodGet {
-		writeMethodNotAllowed(w, http.MethodGet)
-		return
-	}
-	http.Error(w, "websocket provider endpoint removed; use Connect-RPC ProviderStream", http.StatusGone)
-}
-
 func setCORSHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Connect-Protocol-Version")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 	w.Header().Set("Vary", "Origin")
-}
-
-func requestToken(r *http.Request, bodyToken string) string {
-	if token := strings.TrimSpace(bodyToken); token != "" {
-		return token
-	}
-
-	header := strings.TrimSpace(r.Header.Get("Authorization"))
-	if len(header) < 7 || !strings.EqualFold(header[:7], "Bearer ") {
-		return ""
-	}
-	return strings.TrimSpace(header[7:])
 }
 
 func writeMethodNotAllowed(w http.ResponseWriter, allowed string) {
@@ -328,9 +237,12 @@ func writeMethodNotAllowed(w http.ResponseWriter, allowed string) {
 }
 
 func writeJSONError(w http.ResponseWriter, err error) {
-	resp := errorResponseFromError(err)
-	status := httpStatusCode(http.StatusInternalServerError, resp.Error)
-	writeJSON(w, status, map[string]any{"error": resp.Error})
+	respErr := responseErrorFromErr(err)
+	if respErr == nil {
+		respErr = &ResponseError{Code: "internal", Message: "internal error"}
+	}
+	status := httpStatusCode(http.StatusInternalServerError, respErr)
+	writeJSON(w, status, map[string]any{"error": respErr})
 }
 
 func httpStatusCode(fallback int, respErr *ResponseError) int {

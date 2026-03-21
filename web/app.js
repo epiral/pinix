@@ -1,3 +1,24 @@
+const HUB_PROCEDURES = {
+  listClips: "/pinix.v2.HubService/ListClips",
+  getManifest: "/pinix.v2.HubService/GetManifest",
+  invoke: "/pinix.v2.HubService/Invoke",
+};
+
+const CONNECT_PROTOCOL_VERSION = "1";
+const JSON_HEADERS = {
+  Accept: "application/json",
+  "Content-Type": "application/json",
+  "Connect-Protocol-Version": CONNECT_PROTOCOL_VERSION,
+};
+const STREAM_HEADERS = {
+  Accept: "application/connect+json",
+  "Content-Type": "application/connect+json",
+  "Connect-Protocol-Version": CONNECT_PROTOCOL_VERSION,
+};
+
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+
 const state = {
   clips: [],
   selectedClipName: null,
@@ -25,8 +46,8 @@ async function refreshClips() {
   clipList.innerHTML = '<div class="loading">Loading clips...</div>';
 
   try {
-    const payload = await apiJSON("/api/list");
-    state.clips = Array.isArray(payload.clips) ? payload.clips : [];
+    const payload = await hubUnary(HUB_PROCEDURES.listClips, {});
+    state.clips = Array.isArray(payload?.clips) ? payload.clips.map(normalizeClipInfo) : [];
 
     if (state.selectedClipName) {
       const current = getSelectedClip();
@@ -84,11 +105,12 @@ async function loadManifest(name, options = {}) {
   }
 
   try {
-    state.selectedManifest = await apiJSON(`/api/manifest?clip=${encodeURIComponent(name)}`);
+    const payload = await hubUnary(HUB_PROCEDURES.getManifest, { clipName: name });
+    state.selectedManifest = normalizeManifest(payload?.manifest, selected);
     selected.manifest = state.selectedManifest;
     renderClipList();
   } catch (error) {
-    state.selectedManifest = selected.manifest || null;
+    state.selectedManifest = selected.manifest || normalizeManifest(null, selected);
     state.detailError = String(error.message || error);
   }
 
@@ -105,7 +127,7 @@ async function invokeCommand(commandName) {
   let input;
 
   try {
-    input = JSON.parse(inputText);
+    input = inputText ? JSON.parse(inputText) : {};
   } catch (error) {
     state.lastResult = {
       ok: false,
@@ -122,15 +144,7 @@ async function invokeCommand(commandName) {
   renderDetail();
 
   try {
-    const payload = await apiJSON("/api/invoke", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        clip: clip.name,
-        command: commandName,
-        input,
-      }),
-    });
+    const payload = await hubInvoke(clip.name, commandName, input);
 
     state.lastResult = {
       ok: true,
@@ -186,6 +200,7 @@ function renderClipList(errorMessage = "") {
       <p class="clip-source">${escapeHTML(displayClipSource(clip))}</p>
       <div class="clip-stats">
         <span class="badge">${commandCount} command${commandCount === 1 ? "" : "s"}</span>
+        ${clip.tokenProtected ? '<span class="badge">token</span>' : ""}
       </div>
     `;
 
@@ -205,7 +220,7 @@ function renderDetail(isLoading = false) {
     return;
   }
 
-  const manifest = state.selectedManifest || clip.manifest || { name: clip.name, domain: "", commands: [] };
+  const manifest = state.selectedManifest || clip.manifest || normalizeManifest(null, clip) || { name: clip.name, commands: [] };
   const commands = Array.isArray(manifest.commands) ? manifest.commands : [];
 
   detailView.innerHTML = `
@@ -213,7 +228,7 @@ function renderDetail(isLoading = false) {
       <div class="detail-header">
         <div class="detail-title">
           <h2>${escapeHTML(clip.name)}</h2>
-          <p class="detail-meta">Inspect manifest metadata and invoke clip commands from the local portal.</p>
+          <p class="detail-meta">Inspect manifest metadata and invoke clip commands through HubService.</p>
         </div>
         <span class="status-pill ${clipStateClass(clip)}">${clipStateLabel(clip)}</span>
       </div>
@@ -224,8 +239,12 @@ function renderDetail(isLoading = false) {
           <div class="meta-value">${escapeHTML(manifest.domain || "-")}</div>
         </div>
         <div class="meta-card">
-          <span class="meta-label">Source</span>
-          <div class="meta-value">${escapeHTML(displayClipSource(clip))}</div>
+          <span class="meta-label">Provider</span>
+          <div class="meta-value">${escapeHTML(clip.provider || "-")}</div>
+        </div>
+        <div class="meta-card">
+          <span class="meta-label">Package</span>
+          <div class="meta-value">${escapeHTML(manifest.package || clip.package || "-")}</div>
         </div>
         <div class="meta-card">
           <span class="meta-label">Commands</span>
@@ -259,7 +278,7 @@ function renderDetail(isLoading = false) {
   `;
 
   for (const commandObj of commands) {
-    const commandName = typeof commandObj === 'string' ? commandObj : commandObj.name;
+    const commandName = typeof commandObj === "string" ? commandObj : commandObj.name;
 
     const toggle = document.querySelector(`[data-command-toggle="${cssEscape(commandName)}"]`);
     if (toggle) {
@@ -279,17 +298,16 @@ function renderDetail(isLoading = false) {
 }
 
 function renderCommandCard(clip, commandObj) {
-  const commandName = typeof commandObj === 'string' ? commandObj : commandObj.name;
+  const commandName = typeof commandObj === "string" ? commandObj : commandObj.name;
   const expanded = state.expandedCommand === commandName;
   const running = state.runningCommand === commandName;
+  const commandDescription = typeof commandObj === "object" ? String(commandObj.description || "").trim() : "";
 
   let inputValue = getCommandInput(clip.name, commandName);
-  if (!inputValue || inputValue === "{}") {
-    const exampleArgs = commandObj.args_example || {};
-    inputValue = JSON.stringify(exampleArgs, null, 2);
-    setCommandInput(clip.name, commandName, inputValue); // Set the default example
+  if (!inputValue) {
+    inputValue = "{}";
+    setCommandInput(clip.name, commandName, inputValue);
   }
-
 
   return `
     <article class="command-card${expanded ? " expanded" : ""}">
@@ -299,6 +317,7 @@ function renderCommandCard(clip, commandObj) {
       </button>
       ${expanded ? `
         <div class="command-body">
+          ${commandDescription ? `<p class="command-help">${escapeHTML(commandDescription)}</p>` : ""}
           <label class="command-label" for="command-input-${escapeHTML(commandName)}">Input JSON</label>
           <textarea
             id="command-input-${escapeHTML(commandName)}"
@@ -308,7 +327,7 @@ function renderCommandCard(clip, commandObj) {
             oninput="setCommandInput('${escapeHTML(clip.name)}', '${escapeHTML(commandName)}', this.value)"
           >${escapeHTML(inputValue)}</textarea>
           <div class="command-footer">
-            <p class="status-note">Requests are sent to <code>/api/invoke</code>.</p>
+            <p class="status-note">Requests are sent to <code>${escapeHTML(HUB_PROCEDURES.invoke)}</code>.</p>
             <button type="button" class="run-button" data-command-run="${escapeHTML(commandName)}" ${running ? "disabled" : ""}>
               ${running ? "Running..." : "Run command"}
             </button>
@@ -329,6 +348,9 @@ function renderResultMeta() {
 function renderResultBody() {
   if (!state.lastResult) {
     return JSON.stringify({ status: "idle" }, null, 2);
+  }
+  if (typeof state.lastResult.payload === "string") {
+    return state.lastResult.payload;
   }
   return JSON.stringify(state.lastResult.payload, null, 2);
 }
@@ -360,26 +382,26 @@ function getClipCommands(clip) {
   return [];
 }
 
-function isProviderClip(clip) {
-  return String(clip?.source || "").toLowerCase() === "provider";
+function clipStateClass() {
+  return "running";
 }
 
-function clipStateClass(clip) {
-  return clipStateLabel(clip) === "online" || clipStateLabel(clip) === "running" ? "running" : "stopped";
-}
-
-function clipStateLabel(clip) {
-  if (isProviderClip(clip)) {
-    return clip.online ? "online" : "offline";
-  }
-  return clip.running ? "running" : "stopped";
+function clipStateLabel() {
+  return "available";
 }
 
 function displayClipSource(clip) {
-  if (isProviderClip(clip)) {
-    return "provider";
+  const parts = [];
+  if (clip.provider) {
+    parts.push(clip.provider);
   }
-  return clip.source || "-";
+  if (clip.package && clip.package !== clip.name) {
+    parts.push(clip.package);
+  }
+  if (clip.version) {
+    parts.push(`v${clip.version}`);
+  }
+  return parts.join(" / ") || "-";
 }
 
 function getCommandInput(clipName, commandName) {
@@ -394,34 +416,320 @@ function setCommandInput(clipName, commandName, value) {
   state.inputs[`${clipName}:${commandName}`] = value;
 }
 
-async function apiJSON(url, options = {}) {
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      ...(options.headers || {}),
-    },
-    ...options,
+async function hubUnary(path, message) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(message || {}),
   });
 
-  const text = await response.text();
-  let payload = null;
-
-  if (text) {
-    try {
-      payload = JSON.parse(text);
-    } catch {
-      if (!response.ok) {
-        throw new Error(text);
-      }
-      return text;
-    }
+  const payload = await parseResponsePayload(response);
+  if (!response.ok) {
+    throw new Error(extractErrorMessage(payload, response));
   }
+  return payload || {};
+}
+
+async function hubInvoke(clipName, commandName, input) {
+  const response = await fetch(HUB_PROCEDURES.invoke, {
+    method: "POST",
+    headers: STREAM_HEADERS,
+    body: encodeConnectEnvelope({
+      clipName,
+      command: commandName,
+      input: encodeProtoBytes(input),
+    }),
+  });
 
   if (!response.ok) {
-    throw new Error(payload?.error?.message || response.statusText || "Request failed");
+    const payload = await parseResponsePayload(response);
+    throw new Error(extractErrorMessage(payload, response));
+  }
+  if (!response.body) {
+    throw new Error("Streaming response body is unavailable");
   }
 
-  return payload;
+  const outputs = [];
+  for await (const message of readConnectStream(response.body)) {
+    if (message?.error) {
+      throw new Error(message.error.message || "Invocation failed");
+    }
+    if (typeof message?.output === "string" && message.output !== "") {
+      outputs.push(decodeBase64Bytes(message.output));
+    }
+  }
+  return decodeInvocationOutput(outputs);
+}
+
+async function parseResponsePayload(response) {
+  const text = await response.text();
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function extractErrorMessage(payload, response) {
+  if (payload && typeof payload === "object") {
+    if (typeof payload.message === "string" && payload.message.trim()) {
+      return payload.message;
+    }
+    if (typeof payload.error?.message === "string" && payload.error.message.trim()) {
+      return payload.error.message;
+    }
+  }
+  if (typeof payload === "string" && payload.trim()) {
+    return payload.trim();
+  }
+  return response.statusText || "Request failed";
+}
+
+async function* readConnectStream(body) {
+  const reader = body.getReader();
+  let buffer = new Uint8Array(0);
+  let streamEnded = false;
+
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      if (value && value.length > 0) {
+        buffer = concatByteArrays(buffer, value);
+      }
+
+      for (;;) {
+        const frame = readConnectFrame(buffer);
+        if (!frame) {
+          break;
+        }
+
+        buffer = frame.rest;
+        if (frame.compressed) {
+          throw new Error("Compressed Connect frames are not supported");
+        }
+
+        const payload = parseConnectJSON(frame.payload);
+        if (frame.endStream) {
+          if (buffer.length > 0) {
+            throw new Error(`Corrupt response: ${buffer.length} extra bytes after end of stream`);
+          }
+          if (payload?.error) {
+            throw new Error(payload.error.message || "Request failed");
+          }
+          streamEnded = true;
+          return;
+        }
+
+        yield payload;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (buffer.length > 0) {
+    throw new Error("Incomplete Connect frame");
+  }
+  if (!streamEnded) {
+    throw new Error("Unexpected EOF while reading Connect stream");
+  }
+}
+
+function readConnectFrame(buffer) {
+  if (!(buffer instanceof Uint8Array) || buffer.length < 5) {
+    return null;
+  }
+
+  const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  const flags = view.getUint8(0);
+  const length = view.getUint32(1);
+  const totalLength = 5 + length;
+
+  if (buffer.length < totalLength) {
+    return null;
+  }
+
+  return {
+    compressed: Boolean(flags & 0b00000001),
+    endStream: Boolean(flags & 0b00000010),
+    payload: buffer.slice(5, totalLength),
+    rest: buffer.slice(totalLength),
+  };
+}
+
+function parseConnectJSON(bytes) {
+  const text = textDecoder.decode(bytes);
+  if (!text) {
+    return {};
+  }
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(`Invalid Connect JSON frame: ${error.message || error}`);
+  }
+}
+
+function encodeConnectEnvelope(message) {
+  const payload = textEncoder.encode(JSON.stringify(message || {}));
+  const frame = new Uint8Array(5 + payload.length);
+  const view = new DataView(frame.buffer);
+  view.setUint8(0, 0);
+  view.setUint32(1, payload.length);
+  frame.set(payload, 5);
+  return frame;
+}
+
+function encodeProtoBytes(value) {
+  return encodeBase64Bytes(textEncoder.encode(JSON.stringify(value || {})));
+}
+
+function decodeInvocationOutput(outputs) {
+  if (!outputs.length) {
+    return {};
+  }
+
+  const bytes = outputs.length === 1 ? outputs[0] : concatManyByteArrays(outputs);
+  const text = textDecoder.decode(bytes);
+  if (!text.trim()) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function concatByteArrays(left, right) {
+  if (!left.length) {
+    return right.slice();
+  }
+  if (!right.length) {
+    return left.slice();
+  }
+  const combined = new Uint8Array(left.length + right.length);
+  combined.set(left, 0);
+  combined.set(right, left.length);
+  return combined;
+}
+
+function concatManyByteArrays(chunks) {
+  let length = 0;
+  for (const chunk of chunks) {
+    length += chunk.length;
+  }
+  const combined = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return combined;
+}
+
+function encodeBase64Bytes(bytes) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+function decodeBase64Bytes(value) {
+  const binary = atob(value || "");
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function normalizeClipInfo(clip) {
+  const commands = Array.isArray(clip?.commands) ? clip.commands.map(normalizeCommandInfo).filter(Boolean) : [];
+  return {
+    name: String(clip?.name || "").trim(),
+    package: String(clip?.package || "").trim(),
+    version: String(clip?.version || "").trim(),
+    provider: String(clip?.provider || "").trim(),
+    domain: String(clip?.domain || "").trim(),
+    commands,
+    hasWeb: Boolean(clip?.hasWeb ?? clip?.has_web),
+    tokenProtected: Boolean(clip?.tokenProtected ?? clip?.token_protected),
+    dependencies: normalizeStringArray(clip?.dependencies),
+    manifest: clip?.manifest ? normalizeManifest(clip.manifest, clip) : null,
+  };
+}
+
+function normalizeManifest(manifest, fallback = null) {
+  if (!manifest && !fallback) {
+    return null;
+  }
+
+  const commandSource = Array.isArray(manifest?.commands)
+    ? manifest.commands
+    : Array.isArray(fallback?.commands)
+      ? fallback.commands
+      : [];
+
+  return {
+    name: String(manifest?.name || fallback?.name || "").trim(),
+    package: String(manifest?.package || fallback?.package || "").trim(),
+    version: String(manifest?.version || fallback?.version || "").trim(),
+    domain: String(manifest?.domain || fallback?.domain || "").trim(),
+    description: String(manifest?.description || "").trim(),
+    commands: commandSource.map(normalizeCommandInfo).filter(Boolean),
+    dependencies: normalizeStringArray(manifest?.dependencies || fallback?.dependencies),
+    hasWeb: Boolean(manifest?.hasWeb ?? manifest?.has_web ?? fallback?.hasWeb ?? fallback?.has_web),
+    patterns: normalizeStringArray(manifest?.patterns),
+  };
+}
+
+function normalizeCommandInfo(command) {
+  if (typeof command === "string") {
+    const name = command.trim();
+    return name ? { name, description: "", input: "", output: "" } : null;
+  }
+  if (!command) {
+    return null;
+  }
+
+  const name = String(command.name || "").trim();
+  if (!name) {
+    return null;
+  }
+
+  return {
+    name,
+    description: String(command.description || "").trim(),
+    input: String(command.input || "").trim(),
+    output: String(command.output || "").trim(),
+  };
+}
+
+function normalizeStringArray(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  const result = [];
+  const seen = new Set();
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (!text || seen.has(text)) {
+      continue;
+    }
+    seen.add(text);
+    result.push(text);
+  }
+  return result.sort();
 }
 
 function escapeHTML(value) {
@@ -437,5 +745,5 @@ function cssEscape(value) {
   if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
     return CSS.escape(value);
   }
-  return String(value).replaceAll('"', '"');
+  return String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
 }
