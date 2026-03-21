@@ -313,7 +313,6 @@ http://127.0.0.1:9000/clips/<clip-name>/
 
 Portal 会把 `POST /clips/<clip-name>/api/<command>` 代理到本地 Clip command。
 
-当前实现里，Portal 下的 Clip Web UI 只支持 **安装在本地 `pinixd` 的 Clip**；provider-backed Clip 的 `GetClipWeb` 代理还没有实现。
 
 ## 8. 参考实现
 
