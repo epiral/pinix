@@ -25,6 +25,7 @@ func main() {
 func execute() error {
 	known := map[string]struct{}{
 		"add":        {},
+		"mcp":        {},
 		"remove":     {},
 		"list":       {},
 		"help":       {},
@@ -59,6 +60,7 @@ func newRootCommand() *cobra.Command {
 	rootCmd.PersistentFlags().StringVar(&authToken, "auth-token", os.Getenv("PINIX_TOKEN"), "daemon auth token for protected add/remove operations")
 
 	rootCmd.AddCommand(newAddCommand(&socketPath, &authToken))
+	rootCmd.AddCommand(newMCPCommand(&socketPath, &authToken))
 	rootCmd.AddCommand(newRemoveCommand(&socketPath, &authToken))
 	rootCmd.AddCommand(newListCommand(&socketPath))
 	return rootCmd
