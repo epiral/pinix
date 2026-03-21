@@ -21,7 +21,7 @@ type Daemon struct {
 	socketPath string
 	registry   *Registry
 	process    *ProcessManager
-	capability *CapabilityManager
+	provider   *ProviderManager
 	handler    *Handler
 
 	mu         sync.Mutex
@@ -48,9 +48,9 @@ func NewDaemon(socketPath string, registry *Registry, process *ProcessManager) (
 		socketPath: socketPath,
 		registry:   registry,
 		process:    process,
-		capability: NewCapabilityManager(),
+		provider:   NewProviderManager(),
 	}
-	d.handler = NewHandler(registry, process, d.capability)
+	d.handler = NewHandler(registry, process, d.provider)
 	return d, nil
 }
 
@@ -62,23 +62,11 @@ func (d *Daemon) List() (*ListResult, error) {
 	return d.handler.handleList()
 }
 
-func (d *Daemon) ListCapabilities() (*CapabilityListResult, error) {
-	return d.handler.handleCapabilityList()
-}
-
 func (d *Daemon) Invoke(ctx context.Context, authToken, clip, command string, input json.RawMessage) (json.RawMessage, error) {
 	return d.handler.handleInvoke(ctx, authToken, InvokeParams{
 		Clip:    clip,
 		Command: command,
 		Input:   input,
-	})
-}
-
-func (d *Daemon) InvokeCapability(ctx context.Context, capability, command string, input json.RawMessage) (json.RawMessage, error) {
-	return d.handler.handleCapabilityInvoke(ctx, CapabilityInvokeRequest{
-		Capability: capability,
-		Command:    command,
-		Input:      input,
 	})
 }
 
@@ -93,6 +81,11 @@ func (d *Daemon) GetManifest(ctx context.Context, name string) (*ManifestCache, 
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)}
 	}
 	if !ok {
+		if d.provider != nil {
+			if manifest, found := d.provider.Manifest(name); found {
+				return manifest, nil
+			}
+		}
 		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", name)}
 	}
 	if clip.Manifest != nil {
@@ -181,8 +174,8 @@ func (d *Daemon) Close() error {
 			errs = append(errs, err)
 		}
 	}
-	if d.capability != nil {
-		if err := d.capability.Close(); err != nil {
+	if d.provider != nil {
+		if err := d.provider.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}

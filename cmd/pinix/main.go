@@ -1,5 +1,5 @@
 // Role:    pinix CLI entrypoint for daemon-backed Clip management and invocation
-// Depends: encoding/json, fmt, os, strconv, strings, internal/client, cobra
+// Depends: encoding/json, fmt, os, strconv, strings, internal/client, internal/daemon, cobra
 // Exports: main
 
 package main
@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/epiral/pinix/internal/client"
+	"github.com/epiral/pinix/internal/daemon"
 	"github.com/spf13/cobra"
 )
 
@@ -123,35 +124,53 @@ func newListCommand(socketPath *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if len(result.Clips) == 0 && len(result.Capabilities) == 0 {
+			if len(result.Clips) == 0 {
 				fmt.Println("(no clips)")
 				return nil
 			}
 
-			if len(result.Clips) > 0 {
-				for _, clip := range result.Clips {
-					commands := ""
-					if clip.Manifest != nil && len(clip.Manifest.Commands) > 0 {
-						commands = strings.Join(clip.Manifest.Commands, ",")
-					}
-					status := "stopped"
-					if clip.Running {
-						status = "running"
-					}
-					fmt.Printf("%s\t%s\t%s\t%s\n", clip.Name, status, clip.Source, commands)
-				}
-			}
-
-			for _, capability := range result.Capabilities {
-				status := "offline"
-				if capability.Online {
-					status = "online"
-				}
-				fmt.Printf("capability:%s\t%s\t%s\n", capability.Name, status, strings.Join(capability.Commands, ","))
+			for _, clip := range result.Clips {
+				commands := strings.Join(listCommands(clip), ",")
+				fmt.Printf("%s\t%s\t%s\t%s\n", clip.Name, clipState(clip), clipSource(clip), commands)
 			}
 			return nil
 		},
 	}
+}
+
+func listCommands(clip daemon.ClipStatus) []string {
+	if clip.Manifest != nil && len(clip.Manifest.Commands) > 0 {
+		return append([]string(nil), clip.Manifest.Commands...)
+	}
+	if len(clip.Commands) > 0 {
+		return append([]string(nil), clip.Commands...)
+	}
+	return nil
+}
+
+func clipState(clip daemon.ClipStatus) string {
+	if isProviderClip(clip) {
+		if clip.Online {
+			return "online"
+		}
+		return "offline"
+	}
+	if clip.Running {
+		return "running"
+	}
+	return "stopped"
+}
+
+func clipSource(clip daemon.ClipStatus) string {
+	source := strings.TrimSpace(clip.Source)
+	if source == "" {
+		return "-"
+	}
+	return source
+}
+
+func isProviderClip(clip daemon.ClipStatus) bool {
+	return strings.EqualFold(strings.TrimSpace(clip.Source), "provider")
 }
 
 func newInvokeCommand() *cobra.Command {

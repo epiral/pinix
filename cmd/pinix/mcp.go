@@ -31,8 +31,7 @@ type pinixMCP struct {
 }
 
 type resolvedTarget struct {
-	clip       *daemon.ClipStatus
-	capability *daemon.CapabilityStatus
+	clip *daemon.ClipStatus
 }
 
 type targetSpec struct {
@@ -196,18 +195,18 @@ func (p *pinixMCP) serveHub(ctx context.Context) error {
 
 	server.AddTool(&mcp.Tool{
 		Name:         "list",
-		Description:  "List all Pinix clips and capabilities, including status and available commands.",
+		Description:  "List all Pinix clips, including status and available commands.",
 		InputSchema:  emptyObjectSchema(),
 		OutputSchema: genericObjectSchema(),
 	}, p.handleHubList)
 
 	server.AddTool(&mcp.Tool{
 		Name:        "info",
-		Description: "Inspect a Pinix clip or capability, including command descriptions and schemas.",
+		Description: "Inspect a Pinix clip, including command descriptions and schemas.",
 		InputSchema: schemaObject(map[string]any{
 			"clip": map[string]any{
 				"type":        "string",
-				"description": "Clip or capability name.",
+				"description": "Clip name.",
 			},
 		}, "clip"),
 		OutputSchema: genericObjectSchema(),
@@ -215,11 +214,11 @@ func (p *pinixMCP) serveHub(ctx context.Context) error {
 
 	server.AddTool(&mcp.Tool{
 		Name:        "invoke",
-		Description: "Invoke a Pinix clip or capability command through pinixd.",
+		Description: "Invoke a Pinix clip command through pinixd.",
 		InputSchema: schemaObject(map[string]any{
 			"clip": map[string]any{
 				"type":        "string",
-				"description": "Clip or capability name.",
+				"description": "Clip name.",
 			},
 			"command": map[string]any{
 				"type":        "string",
@@ -286,7 +285,7 @@ func (p *pinixMCP) handleHubList(ctx context.Context, _ *mcp.CallToolRequest) (*
 		return toolErrorResult(err), nil
 	}
 
-	items := make([]listItem, 0, len(result.Clips)+len(result.Capabilities))
+	items := make([]listItem, 0, len(result.Clips))
 	for _, clip := range result.Clips {
 		item := listItem{
 			Kind:           "clip",
@@ -296,6 +295,7 @@ func (p *pinixMCP) handleHubList(ctx context.Context, _ *mcp.CallToolRequest) (*
 			Path:           clip.Path,
 			Commands:       clipCommands(clip),
 			Running:        clip.Running,
+			Online:         clip.Online,
 			TokenProtected: clip.TokenProtected,
 		}
 		if clip.Manifest != nil {
@@ -303,19 +303,7 @@ func (p *pinixMCP) handleHubList(ctx context.Context, _ *mcp.CallToolRequest) (*
 		}
 		items = append(items, item)
 	}
-	for _, capability := range result.Capabilities {
-		items = append(items, listItem{
-			Kind:     "capability",
-			Name:     capability.Name,
-			Status:   capabilityStatus(capability),
-			Commands: append([]string(nil), capability.Commands...),
-			Online:   capability.Online,
-		})
-	}
 	sort.Slice(items, func(i, j int) bool {
-		if items[i].Name == items[j].Name {
-			return items[i].Kind < items[j].Kind
-		}
 		return items[i].Name < items[j].Name
 	})
 
@@ -389,11 +377,6 @@ func (p *pinixMCP) lookupTarget(ctx context.Context, name string) (resolvedTarge
 			return resolvedTarget{clip: &result.Clips[i]}, nil
 		}
 	}
-	for i := range result.Capabilities {
-		if result.Capabilities[i].Name == name {
-			return resolvedTarget{capability: &result.Capabilities[i]}, nil
-		}
-	}
 	return resolvedTarget{}, fmt.Errorf("target %q not found", name)
 }
 
@@ -401,13 +384,14 @@ func (p *pinixMCP) inspectTarget(ctx context.Context, target resolvedTarget) (*t
 	if target.clip != nil {
 		return p.inspectClip(ctx, *target.clip)
 	}
-	if target.capability != nil {
-		return inspectCapability(*target.capability), nil
-	}
 	return nil, fmt.Errorf("target is required")
 }
 
 func (p *pinixMCP) inspectClip(ctx context.Context, clip daemon.ClipStatus) (*targetSpec, error) {
+	if isProviderClipStatus(clip) {
+		return inspectProviderClip(clip), nil
+	}
+
 	spec := &targetSpec{
 		Kind:           "clip",
 		Name:           clip.Name,
@@ -416,6 +400,7 @@ func (p *pinixMCP) inspectClip(ctx context.Context, clip daemon.ClipStatus) (*ta
 		Path:           clip.Path,
 		Domain:         clipDomain(clip),
 		Running:        clip.Running,
+		Online:         clip.Online,
 		TokenProtected: clip.TokenProtected,
 	}
 
@@ -462,14 +447,15 @@ func (p *pinixMCP) inspectClip(ctx context.Context, clip daemon.ClipStatus) (*ta
 	return spec, nil
 }
 
-func inspectCapability(capability daemon.CapabilityStatus) *targetSpec {
+func inspectProviderClip(clip daemon.ClipStatus) *targetSpec {
 	return &targetSpec{
-		Kind:     "capability",
-		Name:     capability.Name,
-		Status:   capabilityStatus(capability),
-		Domain:   capabilityDomain(capability.Name),
-		Online:   capability.Online,
-		Commands: capabilityCommandSpecs(capability.Name, capability.Commands),
+		Kind:     "clip",
+		Name:     clip.Name,
+		Status:   clipStatus(clip),
+		Source:   clip.Source,
+		Domain:   clipDomain(clip),
+		Online:   clip.Online,
+		Commands: providerClipCommandSpecs(clip.Name, clipCommands(clip)),
 	}
 }
 
@@ -481,9 +467,6 @@ func (p *pinixMCP) invokeTarget(ctx context.Context, target resolvedTarget, comm
 	input = normalizeInput(input)
 	if target.clip != nil {
 		return p.cli.Invoke(ctx, target.clip.Name, command, input, p.authToken)
-	}
-	if target.capability != nil {
-		return p.cli.InvokeCapability(ctx, target.capability.Name, command, input)
 	}
 	return nil, fmt.Errorf("target is required")
 }
@@ -724,18 +707,12 @@ func runServer(ctx context.Context, server *mcp.Server) error {
 }
 
 func (t resolvedTarget) Kind() string {
-	if t.clip != nil {
-		return "clip"
-	}
-	return "capability"
+	return "clip"
 }
 
 func (t resolvedTarget) Name() string {
 	if t.clip != nil {
 		return t.clip.Name
-	}
-	if t.capability != nil {
-		return t.capability.Name
 	}
 	return ""
 }
@@ -787,10 +764,13 @@ func schemaArray(items any) map[string]any {
 }
 
 func clipCommands(clip daemon.ClipStatus) []string {
-	if clip.Manifest == nil || len(clip.Manifest.Commands) == 0 {
-		return nil
+	if clip.Manifest != nil && len(clip.Manifest.Commands) > 0 {
+		return append([]string(nil), clip.Manifest.Commands...)
 	}
-	return append([]string(nil), clip.Manifest.Commands...)
+	if len(clip.Commands) > 0 {
+		return append([]string(nil), clip.Commands...)
+	}
+	return nil
 }
 
 func clipDomain(clip daemon.ClipStatus) string {
@@ -801,32 +781,26 @@ func clipDomain(clip daemon.ClipStatus) string {
 }
 
 func clipStatus(clip daemon.ClipStatus) string {
+	if isProviderClipStatus(clip) {
+		if clip.Online {
+			return "online"
+		}
+		return "offline"
+	}
 	if clip.Running {
 		return "running"
 	}
 	return "stopped"
 }
 
-func capabilityStatus(capability daemon.CapabilityStatus) string {
-	if capability.Online {
-		return "online"
-	}
-	return "offline"
+func isProviderClipStatus(clip daemon.ClipStatus) bool {
+	return strings.EqualFold(strings.TrimSpace(clip.Source), "provider")
 }
 
-func capabilityDomain(name string) string {
-	switch name {
-	case "browser":
-		return "Browser automation capability"
-	default:
-		return "Pinix capability"
-	}
-}
-
-func capabilityCommandSpecs(name string, commands []string) []commandSpec {
+func providerClipCommandSpecs(name string, commands []string) []commandSpec {
 	known := map[string]commandSpec{}
 	if name == "browser" {
-		known = browserCapabilitySpecs()
+		known = browserClipCommandSpecs()
 	}
 
 	names := append([]string(nil), commands...)
@@ -846,7 +820,7 @@ func capabilityCommandSpecs(name string, commands []string) []commandSpec {
 	return specs
 }
 
-func browserCapabilitySpecs() map[string]commandSpec {
+func browserClipCommandSpecs() map[string]commandSpec {
 	return map[string]commandSpec{
 		"click": {
 			Name:        "click",

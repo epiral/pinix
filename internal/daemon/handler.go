@@ -1,5 +1,5 @@
 // Role:    Request handler for Pinix daemon Unix socket operations
-// Depends: context, encoding/json, fmt, net, os, os/exec, path/filepath, strings
+// Depends: context, encoding/json, fmt, net, os, os/exec, path/filepath, sort, strings
 // Exports: Handler, NewHandler
 
 package daemon
@@ -12,17 +12,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
 type Handler struct {
-	registry     *Registry
-	process      *ProcessManager
-	capabilities *CapabilityManager
+	registry  *Registry
+	process   *ProcessManager
+	providers *ProviderManager
 }
 
-func NewHandler(registry *Registry, process *ProcessManager, capabilities *CapabilityManager) *Handler {
-	return &Handler{registry: registry, process: process, capabilities: capabilities}
+func NewHandler(registry *Registry, process *ProcessManager, providers *ProviderManager) *Handler {
+	return &Handler{registry: registry, process: process, providers: providers}
 }
 
 func (h *Handler) Handle(ctx context.Context, req *Request) SocketResponse {
@@ -54,13 +55,6 @@ func (h *Handler) Handle(ctx context.Context, req *Request) SocketResponse {
 			return errorResponse("invalid_argument", err.Error())
 		}
 		result, err := h.handleInvoke(ctx, req.Token, params)
-		return marshalResponse(result, err)
-	case "capability.invoke":
-		var params CapabilityInvokeRequest
-		if err := decodeParams(req.Params, &params); err != nil {
-			return errorResponse("invalid_argument", err.Error())
-		}
-		result, err := h.handleCapabilityInvoke(ctx, params)
 		return marshalResponse(result, err)
 	default:
 		return errorResponse("method_not_found", fmt.Sprintf("unknown method %q", req.Method))
@@ -249,22 +243,19 @@ func (h *Handler) handleList() (*ListResult, error) {
 			Source:         clip.Source,
 			Path:           clip.Path,
 			Running:        h.process.IsRunning(clip.Name),
+			Online:         h.process.IsRunning(clip.Name),
 			HasWeb:         hasWeb,
 			TokenProtected: clip.Token != "",
+			Commands:       clipManifestCommands(clip.Manifest),
 			Manifest:       clip.Manifest,
 		})
 	}
-	if h.capabilities != nil {
-		result.Capabilities = h.capabilities.List()
+	if h.providers != nil {
+		result.Clips = append(result.Clips, h.providers.ListClips()...)
 	}
-	return result, nil
-}
-
-func (h *Handler) handleCapabilityList() (*CapabilityListResult, error) {
-	result := &CapabilityListResult{Capabilities: make([]CapabilityStatus, 0)}
-	if h.capabilities != nil {
-		result.Capabilities = h.capabilities.List()
-	}
+	sort.Slice(result.Clips, func(i, j int) bool {
+		return result.Clips[i].Name < result.Clips[j].Name
+	})
 	return result, nil
 }
 
@@ -281,7 +272,10 @@ func (h *Handler) handleInvoke(ctx context.Context, authToken string, params Inv
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)}
 	}
 	if !ok {
-		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", params.Clip)}
+		if h.providers == nil {
+			return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", params.Clip)}
+		}
+		return h.providers.Invoke(ctx, params.Clip, params.Command, params.Input)
 	}
 	if clip.Token != "" && clip.Token != authToken {
 		return nil, daemonError{Code: "permission_denied", Message: "invalid clip token"}
@@ -297,17 +291,11 @@ func (h *Handler) handleInvoke(ctx context.Context, authToken string, params Inv
 	return output, nil
 }
 
-func (h *Handler) handleCapabilityInvoke(ctx context.Context, params CapabilityInvokeRequest) (json.RawMessage, error) {
-	if strings.TrimSpace(params.Capability) == "" {
-		return nil, daemonError{Code: "invalid_argument", Message: "capability is required"}
+func clipManifestCommands(manifest *ManifestCache) []string {
+	if manifest == nil || len(manifest.Commands) == 0 {
+		return nil
 	}
-	if strings.TrimSpace(params.Command) == "" {
-		return nil, daemonError{Code: "invalid_argument", Message: "command is required"}
-	}
-	if h.capabilities == nil {
-		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("capability %q not found", params.Capability)}
-	}
-	return h.capabilities.Invoke(ctx, params.Capability, params.Command, params.Input)
+	return append([]string(nil), manifest.Commands...)
 }
 
 func (h *Handler) inspectClip(ctx context.Context, clip ClipConfig) (*ManifestCache, error) {

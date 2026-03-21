@@ -201,16 +201,14 @@ button, input, textarea {
   font-size: 0.925rem;
 }
 
-.clip-list,
-.capability-list {
+.clip-list {
   display: flex;
   flex-direction: column;
   padding: var(--spacing-md);
   gap: var(--spacing-sm);
 }
 
-.clip-item,
-.capability-item {
+.clip-item {
   width: 100%;
   padding: var(--spacing-md);
   border: 1px solid var(--color-border-card);
@@ -219,10 +217,6 @@ button, input, textarea {
   text-align: left;
   cursor: pointer;
   transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
-}
-
-.capability-item {
-  cursor: default;
 }
 
 .clip-item:hover,
@@ -581,13 +575,11 @@ button, input, textarea {
     font-size: 1.3rem;
   }
 
-  .clip-list,
-  .capability-list {
+  .clip-list {
     padding: var(--spacing-md);
   }
 
   .clip-item,
-  .capability-item,
   .command-toggle,
   .command-body,
   .result-header,
