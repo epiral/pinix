@@ -22,6 +22,23 @@ func NewHandler(registry *Registry, process *ProcessManager) *Handler {
 	return &Handler{registry: registry, process: process}
 }
 
+func requireSuperToken(registry *Registry, token string) error {
+	if registry == nil {
+		return daemonError{Code: "internal", Message: "registry is required"}
+	}
+	superToken, err := registry.GetSuperToken()
+	if err != nil {
+		return daemonError{Code: "internal", Message: fmt.Sprintf("load super token: %v", err)}
+	}
+	if superToken == "" {
+		return nil
+	}
+	if superToken != token {
+		return daemonError{Code: "permission_denied", Message: "invalid super token"}
+	}
+	return nil
+}
+
 func (h *Handler) handleAdd(ctx context.Context, authToken string, params AddParams) (*AddResult, error) {
 	if strings.TrimSpace(params.Source) == "" {
 		return nil, daemonError{Code: "invalid_argument", Message: "source is required"}
@@ -224,17 +241,7 @@ func (h *Handler) inspectClip(ctx context.Context, clip ClipConfig) (*ManifestCa
 }
 
 func (h *Handler) requireSuperToken(token string) error {
-	superToken, err := h.registry.GetSuperToken()
-	if err != nil {
-		return daemonError{Code: "internal", Message: fmt.Sprintf("load super token: %v", err)}
-	}
-	if superToken == "" {
-		return nil
-	}
-	if superToken != token {
-		return daemonError{Code: "permission_denied", Message: "invalid super token"}
-	}
-	return nil
+	return requireSuperToken(h.registry, token)
 }
 
 type sourceKind string
