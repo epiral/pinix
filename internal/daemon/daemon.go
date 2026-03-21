@@ -1,6 +1,6 @@
-// Role:    Daemon lifecycle and shared runtime state for Pinix HubService and the embedded portal
+// Role:    Daemon lifecycle and shared runtime state for Pinix HubService, the embedded portal, and optional local runtime
 // Depends: context, errors, fmt, net/http, strings, sync
-// Exports: Daemon, NewDaemon
+// Exports: Daemon, NewDaemon, NewHubDaemon
 
 package daemon
 
@@ -42,41 +42,60 @@ func NewDaemon(registry *Registry, process *ProcessManager) (*Daemon, error) {
 	return d, nil
 }
 
+func NewHubDaemon(registry *Registry) (*Daemon, error) {
+	if registry == nil {
+		return nil, fmt.Errorf("registry is required")
+	}
+
+	d := &Daemon{
+		registry: registry,
+		provider: NewProviderManager(nil),
+	}
+	return d, nil
+}
+
+func (d *Daemon) hasLocalRuntime() bool {
+	return d != nil && d.process != nil
+}
+
 func (d *Daemon) GetManifest(ctx context.Context, name string) (*ManifestCache, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, daemonError{Code: "invalid_argument", Message: "clip is required"}
 	}
 
-	clip, ok, err := d.registry.GetClip(name)
-	if err != nil {
-		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)}
-	}
-	if !ok {
-		if d.provider != nil {
-			if manifest, found := d.provider.Manifest(name); found {
-				return manifest, nil
-			}
+	if d.hasLocalRuntime() {
+		clip, ok, err := d.registry.GetClip(name)
+		if err != nil {
+			return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)}
 		}
-		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", name)}
-	}
-	if clip.Manifest != nil {
-		return clip.Manifest, nil
+		if ok {
+			if clip.Manifest != nil {
+				return clip.Manifest, nil
+			}
+
+			manifest, err := d.process.LoadManifest(ctx, clip.Name)
+			if err != nil {
+				return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip manifest: %v", err)}
+			}
+			if manifest == nil {
+				return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q manifest unavailable", name)}
+			}
+
+			clip.Manifest = manifest
+			if err := d.registry.PutClip(clip); err != nil {
+				return nil, daemonError{Code: "internal", Message: fmt.Sprintf("save clip manifest: %v", err)}
+			}
+			return manifest, nil
+		}
 	}
 
-	manifest, err := d.process.LoadManifest(ctx, clip.Name)
-	if err != nil {
-		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip manifest: %v", err)}
+	if d.provider != nil {
+		if manifest, found := d.provider.Manifest(name); found {
+			return manifest, nil
+		}
 	}
-	if manifest == nil {
-		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q manifest unavailable", name)}
-	}
-
-	clip.Manifest = manifest
-	if err := d.registry.PutClip(clip); err != nil {
-		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("save clip manifest: %v", err)}
-	}
-	return manifest, nil
+	return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", name)}
 }
 
 func (d *Daemon) Close() error {
@@ -101,8 +120,10 @@ func (d *Daemon) Close() error {
 			errs = append(errs, err)
 		}
 	}
-	if err := d.process.StopAll(); err != nil {
-		errs = append(errs, err)
+	if d.process != nil {
+		if err := d.process.StopAll(); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	return errors.Join(errs...)
 }
