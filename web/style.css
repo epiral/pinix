@@ -244,6 +244,14 @@ button, input, textarea {
   gap: var(--spacing-sm);
 }
 
+.detail-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
 .clip-item-head {
   margin-bottom: var(--spacing-xs);
 }
@@ -327,6 +335,13 @@ button, input, textarea {
 .secondary {
   color: var(--color-text-base);
   background: var(--color-text-base / 0.08);
+}
+
+.detail-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
 
 .primary:hover,
