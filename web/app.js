@@ -222,6 +222,7 @@ function renderDetail(isLoading = false) {
 
   const manifest = state.selectedManifest || clip.manifest || normalizeManifest(null, clip) || { name: clip.name, commands: [] };
   const commands = Array.isArray(manifest.commands) ? manifest.commands : [];
+  const hasWeb = Boolean(manifest.hasWeb ?? clip.hasWeb);
 
   detailView.innerHTML = `
     <div class="detail-wrap">
@@ -230,7 +231,10 @@ function renderDetail(isLoading = false) {
           <h2>${escapeHTML(clip.name)}</h2>
           <p class="detail-meta">Inspect manifest metadata and invoke clip commands through HubService.</p>
         </div>
-        <span class="status-pill ${clipStateClass(clip)}">${clipStateLabel(clip)}</span>
+        <div class="detail-actions">
+          ${hasWeb ? `<a class="secondary detail-link" href="${escapeHTML(clipWebURL(clip.name))}">Open Web UI</a>` : ""}
+          <span class="status-pill ${clipStateClass(clip)}">${clipStateLabel(clip)}</span>
+        </div>
       </div>
 
       <div class="detail-grid">
@@ -402,6 +406,10 @@ function displayClipSource(clip) {
     parts.push(`v${clip.version}`);
   }
   return parts.join(" / ") || "-";
+}
+
+function clipWebURL(name) {
+  return `/clips/${encodeURIComponent(String(name || "").trim())}/`;
 }
 
 function getCommandInput(clipName, commandName) {

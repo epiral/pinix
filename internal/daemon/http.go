@@ -1,14 +1,16 @@
 // Role:    Embedded HTTP server for the Pinix portal, Connect-RPC, clip web files, and JSON errors
-// Depends: context, encoding/json, errors, fmt, mime, net, net/http, os, path/filepath, strings, time, pinixv2connect, github.com/epiral/pinix/web, http2, h2c
+// Depends: bytes, context, encoding/json, errors, fmt, io, mime, net, net/http, os, path/filepath, strings, time, pinixv2connect, github.com/epiral/pinix/web, http2, h2c
 // Exports: Daemon.ServeHTTP
 
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"net"
 	"net/http"
@@ -122,17 +124,92 @@ func (d *Daemon) handleApp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) handleClipWeb(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeMethodNotAllowed(w, http.MethodGet)
-		return
-	}
-
 	clipName, filePath, ok := parseClipWebPath(r.URL.Path)
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
 
+	if filePath == "" && !strings.HasSuffix(r.URL.Path, "/") {
+		d.redirectClipWebRoot(w, r, clipName)
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		if command, ok := parseClipAPIPath(filePath); ok {
+			d.handleClipWebInvoke(w, r, clipName, command)
+			return
+		}
+	}
+
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	d.serveClipWebFile(w, r, clipName, filePath)
+}
+
+func (d *Daemon) redirectClipWebRoot(w http.ResponseWriter, r *http.Request, clipName string) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	_, found, err := d.registry.GetClip(clipName)
+	if err != nil {
+		writeJSONError(w, daemonError{Code: "internal", Message: fmt.Sprintf("load clip %q: %v", clipName, err)})
+		return
+	}
+	if !found {
+		http.NotFound(w, r)
+		return
+	}
+
+	location := "/clips/" + clipName + "/"
+	if r.URL.RawQuery != "" {
+		location += "?" + r.URL.RawQuery
+	}
+	http.Redirect(w, r, location, http.StatusMovedPermanently)
+}
+
+func (d *Daemon) handleClipWebInvoke(w http.ResponseWriter, r *http.Request, clipName, command string) {
+	if _, found, err := d.registry.GetClip(clipName); err != nil {
+		writeJSONError(w, daemonError{Code: "internal", Message: fmt.Sprintf("load clip %q: %v", clipName, err)})
+		return
+	} else if !found {
+		http.NotFound(w, r)
+		return
+	}
+
+	input, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeJSONError(w, daemonError{Code: "internal", Message: fmt.Sprintf("read invoke body: %v", err)})
+		return
+	}
+	input = bytes.TrimSpace(input)
+	if len(input) == 0 {
+		input = []byte(`{}`)
+	}
+	if !json.Valid(input) {
+		writeJSONError(w, daemonError{Code: "invalid_argument", Message: "request body must be valid JSON"})
+		return
+	}
+
+	if d.process == nil {
+		writeJSONError(w, daemonError{Code: "internal", Message: "process manager is not configured"})
+		return
+	}
+
+	output, err := d.process.Invoke(r.Context(), clipName, command, json.RawMessage(input))
+	if err != nil {
+		writeJSONError(w, err)
+		return
+	}
+	writeJSONBytes(w, http.StatusOK, output)
+}
+
+func (d *Daemon) serveClipWebFile(w http.ResponseWriter, r *http.Request, clipName, filePath string) {
 	clip, found, err := d.registry.GetClip(clipName)
 	if err != nil {
 		writeJSONError(w, daemonError{Code: "internal", Message: fmt.Sprintf("load clip %q: %v", clipName, err)})
@@ -215,6 +292,22 @@ func parseClipWebPath(requestPath string) (clipName, filePath string, ok bool) {
 	return clipName, filePath, true
 }
 
+func parseClipAPIPath(filePath string) (command string, ok bool) {
+	trimmed := strings.Trim(strings.TrimSpace(filePath), "/")
+	if trimmed == "" {
+		return "", false
+	}
+	parts := strings.Split(trimmed, "/")
+	if len(parts) != 2 || parts[0] != "api" {
+		return "", false
+	}
+	command = strings.TrimSpace(parts[1])
+	if command == "" {
+		return "", false
+	}
+	return command, true
+}
+
 func isWithinDir(path, base string) bool {
 	path = filepath.Clean(path)
 	base = filepath.Clean(base)
@@ -285,4 +378,19 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = w.Write(append(data, '\n'))
+}
+
+func writeJSONBytes(w http.ResponseWriter, status int, payload []byte) {
+	trimmed := bytes.TrimSpace(payload)
+	if len(trimmed) == 0 {
+		trimmed = []byte(`{}`)
+	}
+	if !json.Valid(trimmed) {
+		writeJSONError(w, daemonError{Code: "internal", Message: "clip returned invalid JSON"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write(append(trimmed, '\n'))
 }
