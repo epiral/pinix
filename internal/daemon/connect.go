@@ -1,5 +1,5 @@
 // Role:    Connect-RPC HubService implementation backed by the Pinix daemon runtime and provider registry
-// Depends: bytes, context, crypto/sha256, errors, fmt, io, mime, net/http, os, path/filepath, sort, strings, time, connectrpc, internal/ipc, pinix v2, pinixv2connect
+// Depends: bytes, context, crypto/sha256, errors, fmt, io, net/http, sort, strings, time, connectrpc, internal/ipc, pinix v2, pinixv2connect
 // Exports: HubService, NewHubService
 
 package daemon
@@ -11,10 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -94,30 +91,45 @@ func (h *HubService) GetManifest(ctx context.Context, req *connect.Request[pinix
 	return connect.NewResponse(&pinixv2.GetManifestResponse{Manifest: manifestToProto(manifest)}), nil
 }
 
-func (h *HubService) GetClipWeb(_ context.Context, req *connect.Request[pinixv2.GetClipWebRequest]) (*connect.Response[pinixv2.GetClipWebResponse], error) {
+func (h *HubService) GetClipWeb(ctx context.Context, req *connect.Request[pinixv2.GetClipWebRequest]) (*connect.Response[pinixv2.GetClipWebResponse], error) {
 	clipName := strings.TrimSpace(req.Msg.GetClipName())
 	if clipName == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("clip_name is required"))
 	}
 
-	content, contentType, etag, err := h.readLocalClipWebFile(clipName, req.Msg.GetPath())
-	if err != nil {
-		if h.daemon != nil && h.daemon.provider != nil && h.daemon.provider.HasClip(clipName) {
-			return nil, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("provider-backed clip web proxy is not implemented"))
-		}
+	options := clipWebReadOptions{
+		Offset:      req.Msg.GetOffset(),
+		Length:      req.Msg.GetLength(),
+		IfNoneMatch: req.Msg.GetIfNoneMatch(),
+	}
+	if result, err := h.readLocalClipWebFile(clipName, req.Msg.GetPath(), options); err == nil {
+		return connect.NewResponse(clipWebResultToProto(result)), nil
+	} else if !isDaemonCode(err, "not_found") {
 		return nil, connectErrorFromErr(err)
 	}
 
-	response := &pinixv2.GetClipWebResponse{
-		ContentType: contentType,
-		Etag:        etag,
+	if h.daemon != nil && h.daemon.provider != nil && h.daemon.provider.HasClip(clipName) {
+		result, err := h.readProviderClipWebFile(ctx, clipName, req.Msg.GetPath(), options)
+		if err != nil {
+			return nil, connectErrorFromErr(err)
+		}
+		return connect.NewResponse(clipWebResultToProto(result)), nil
 	}
-	if etag != "" && strings.TrimSpace(req.Msg.GetIfNoneMatch()) == etag {
-		response.NotModified = true
-		return connect.NewResponse(response), nil
+
+	return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("clip %q not found", clipName))
+}
+
+func clipWebResultToProto(result *clipWebReadResult) *pinixv2.GetClipWebResponse {
+	if result == nil {
+		return &pinixv2.GetClipWebResponse{}
 	}
-	response.Content = content
-	return connect.NewResponse(response), nil
+	return &pinixv2.GetClipWebResponse{
+		Content:     cloneBytes(result.Content),
+		ContentType: result.ContentType,
+		Etag:        result.ETag,
+		NotModified: result.NotModified,
+		TotalSize:   result.TotalSize,
+	}
 }
 
 func (h *HubService) Invoke(ctx context.Context, req *connect.Request[pinixv2.InvokeRequest], stream *connect.ServerStream[pinixv2.InvokeResponse]) error {
@@ -328,58 +340,59 @@ func (h *HubService) localClipNames() ([]string, error) {
 	return result, nil
 }
 
-func (h *HubService) readLocalClipWebFile(clipName, requestedPath string) ([]byte, string, string, error) {
+func (h *HubService) readLocalClipWebFile(clipName, requestedPath string, opts clipWebReadOptions) (*clipWebReadResult, error) {
 	if h.daemon == nil || !h.daemon.hasLocalRuntime() {
-		return nil, "", "", daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", clipName)}
+		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", clipName)}
 	}
 	clip, found, err := h.daemon.registry.GetClip(clipName)
 	if err != nil {
-		return nil, "", "", daemonError{Code: "internal", Message: fmt.Sprintf("load clip %q: %v", clipName, err)}
+		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip %q: %v", clipName, err)}
 	}
 	if !found {
-		return nil, "", "", daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", clipName)}
+		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", clipName)}
 	}
+	return readClipWebFile(clip.Path, requestedPath, opts)
+}
 
-	webRoot := filepath.Clean(filepath.Join(clip.Path, "web"))
-	requestedPath = filepath.Clean(strings.TrimPrefix(strings.TrimSpace(requestedPath), "/"))
-	if requestedPath == "." {
-		requestedPath = ""
-	}
-
-	targetPath := filepath.Clean(filepath.Join(webRoot, requestedPath))
-	if !isWithinDir(targetPath, webRoot) {
-		return nil, "", "", daemonError{Code: "not_found", Message: "clip web asset not found"}
-	}
-
-	if requestedPath == "" {
-		targetPath = filepath.Join(webRoot, "index.html")
-	} else {
-		info, err := os.Stat(targetPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil, "", "", daemonError{Code: "not_found", Message: "clip web asset not found"}
-			}
-			return nil, "", "", daemonError{Code: "internal", Message: fmt.Sprintf("stat clip web file %q: %v", targetPath, err)}
-		}
-		if info.IsDir() {
-			targetPath = filepath.Join(targetPath, "index.html")
-		}
-	}
-
-	data, err := os.ReadFile(targetPath)
+func (h *HubService) readProviderClipWebFile(ctx context.Context, clipName, requestedPath string, opts clipWebReadOptions) (*clipWebReadResult, error) {
+	handle, err := h.daemon.provider.OpenClipWeb(clipName, requestedPath, opts.Offset, opts.Length, opts.IfNoneMatch)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, "", "", daemonError{Code: "not_found", Message: "clip web asset not found"}
-		}
-		return nil, "", "", daemonError{Code: "internal", Message: fmt.Sprintf("read clip web file %q: %v", targetPath, err)}
+		return nil, err
 	}
+	defer handle.Close()
 
-	contentType := mime.TypeByExtension(filepath.Ext(targetPath))
-	if contentType == "" {
-		contentType = http.DetectContentType(data)
+	event, err := handle.Receive(ctx)
+	if err != nil {
+		return nil, err
 	}
-	etag := makeETag(data)
-	return data, contentType, etag, nil
+	if event.err != nil {
+		return nil, daemonErrorFromResponseError(event.err)
+	}
+	if !event.done {
+		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("provider clip web request for %q did not complete", clipName)}
+	}
+	return &clipWebReadResult{
+		Content:     cloneBytes(event.content),
+		ContentType: event.contentType,
+		ETag:        event.etag,
+		TotalSize:   event.totalSize,
+		NotModified: event.notModified,
+	}, nil
+}
+
+func isDaemonCode(err error, code string) bool {
+	if strings.TrimSpace(code) == "" || err == nil {
+		return false
+	}
+	var daemonErr daemonError
+	if errors.As(err, &daemonErr) {
+		return strings.EqualFold(strings.TrimSpace(daemonErr.Code), code)
+	}
+	var responseErr *ResponseError
+	if errors.As(err, &responseErr) {
+		return strings.EqualFold(strings.TrimSpace(responseErr.Code), code)
+	}
+	return false
 }
 
 func (h *HubService) invokeLocalClip(ctx context.Context, clip ClipConfig, command string, input []byte, clipToken string, stream *connect.ServerStream[pinixv2.InvokeResponse]) error {
