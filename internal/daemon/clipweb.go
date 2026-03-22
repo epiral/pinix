@@ -34,8 +34,8 @@ type clipWebRangeRequest struct {
 	Partial bool
 }
 
-func readClipWebFile(workdir, requestedPath string, opts clipWebReadOptions) (*clipWebReadResult, error) {
-	webRoot := filepath.Clean(filepath.Join(workdir, "web"))
+func readClipWebFile(webRoot, requestedPath string, opts clipWebReadOptions) (*clipWebReadResult, error) {
+	webRoot = filepath.Clean(strings.TrimSpace(webRoot))
 	requestedPath = filepath.Clean(strings.TrimPrefix(strings.TrimSpace(requestedPath), "/"))
 	if requestedPath == "." {
 		requestedPath = ""

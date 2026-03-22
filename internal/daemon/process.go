@@ -274,7 +274,7 @@ func (m *ProcessManager) startLocked(clip ClipConfig) (*clipProcess, error) {
 	}
 
 	cmd := exec.Command(m.bunPath, "run", entrypoint, "--ipc")
-	cmd.Dir = clip.Path
+	cmd.Dir = clipProjectDir(clip)
 	cmd.Env = append(os.Environ(), fmt.Sprintf("PINIX_URL=%s", m.pinixURL))
 
 	stdin, err := cmd.StdinPipe()
@@ -603,6 +603,8 @@ func (m *ProcessManager) persistRegisteredManifest(clip ClipConfig, manifest *Ma
 		return nil
 	}
 	updated.Name = strings.TrimSpace(stored.Name)
+	stored.Package = firstNonEmpty(strings.TrimSpace(updated.Package), strings.TrimSpace(stored.Package))
+	stored.Version = firstNonEmpty(strings.TrimSpace(updated.Version), strings.TrimSpace(stored.Version))
 	stored.Manifest = finalizeManifestCache(updated)
 	if err := m.registry.PutClip(stored); err != nil {
 		return fmt.Errorf("save clip %s manifest: %w", clip.Name, err)
@@ -876,20 +878,25 @@ func findBunBinary() (string, error) {
 }
 
 func resolveEntrypoint(clip ClipConfig) (string, error) {
-	indexPath := filepath.Join(clip.Path, "index.ts")
+	if hint := clipEntrypointHint(clip); isRegularFile(hint) {
+		return hint, nil
+	}
+
+	workdir := clipProjectDir(clip)
+	indexPath := filepath.Join(workdir, "index.ts")
 	if isRegularFile(indexPath) {
 		return indexPath, nil
 	}
 
 	if strings.HasPrefix(clip.Source, "npm:") {
-		pkg := strings.TrimPrefix(clip.Source, "npm:")
+		pkg := firstNonEmpty(strings.TrimSpace(clip.Package), strings.TrimPrefix(clip.Source, "npm:"))
 		npmPath := filepath.Join(clip.Path, "node_modules", filepath.FromSlash(pkg), "index.ts")
 		if isRegularFile(npmPath) {
 			return npmPath, nil
 		}
 	}
 
-	return "", fmt.Errorf("clip %s entrypoint not found under %s", clip.Name, clip.Path)
+	return "", fmt.Errorf("clip %s entrypoint not found under %s", clip.Name, workdir)
 }
 
 func isRegularFile(path string) bool {
@@ -999,6 +1006,8 @@ func registeredManifestForClip(clip ClipConfig, manifest *ipc.Manifest) (*Manife
 
 	registered := &ManifestCache{
 		Name:         strings.TrimSpace(manifest.Name),
+		Package:      firstNonEmpty(strings.TrimSpace(manifest.Package), strings.TrimSpace(clip.Package)),
+		Version:      firstNonEmpty(strings.TrimSpace(manifest.Version), strings.TrimSpace(clip.Version)),
 		Domain:       strings.TrimSpace(manifest.Domain),
 		Description:  strings.TrimSpace(manifest.Description),
 		Commands:     normalizeCommands(extractCommandsJSON(manifest.Commands)),

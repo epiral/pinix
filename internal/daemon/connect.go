@@ -351,7 +351,7 @@ func (h *HubService) readLocalClipWebFile(clipName, requestedPath string, opts c
 	if !found {
 		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", clipName)}
 	}
-	return readClipWebFile(clip.Path, requestedPath, opts)
+	return readClipWebFile(clipWebDir(clip), requestedPath, opts)
 }
 
 func (h *HubService) readProviderClipWebFile(ctx context.Context, clipName, requestedPath string, opts clipWebReadOptions) (*clipWebReadResult, error) {

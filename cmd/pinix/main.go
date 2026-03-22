@@ -29,6 +29,8 @@ func execute() error {
 		"mcp":        {},
 		"remove":     {},
 		"list":       {},
+		"search":     {},
+		"publish":    {},
 		"help":       {},
 		"completion": {},
 	}
@@ -64,6 +66,8 @@ func newRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newMCPCommand(&serverURL, &hubToken))
 	rootCmd.AddCommand(newRemoveCommand(&serverURL, &hubToken))
 	rootCmd.AddCommand(newListCommand(&serverURL, &hubToken))
+	rootCmd.AddCommand(newSearchCommand())
+	rootCmd.AddCommand(newPublishCommand())
 	return rootCmd
 }
 
@@ -71,26 +75,32 @@ func newAddCommand(serverURL, hubToken *string) *cobra.Command {
 	var clipToken string
 	var name string
 	var provider string
+	var registryURL string
 	cmd := &cobra.Command{
 		Use:   "add <source>",
 		Short: "Install and register a Clip",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			source, err := normalizeAddSource(args[0], registryURL)
+			if err != nil {
+				return err
+			}
 			cli, err := client.New(*serverURL)
 			if err != nil {
 				return err
 			}
-			clip, err := cli.Add(cmd.Context(), args[0], name, provider, clipToken, *hubToken)
+			clip, err := cli.Add(cmd.Context(), source, name, provider, clipToken, *hubToken)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("%s\t%s\t%s\n", clip.GetName(), clip.GetProvider(), firstNonEmpty(clip.GetPackage(), "-"))
+			fmt.Printf("%s\t%s\t%s\t%s\n", clip.GetName(), firstNonEmpty(clip.GetPackage(), "-"), firstNonEmpty(clip.GetVersion(), "-"), clip.GetProvider())
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&clipToken, "token", "", "clip token required for invoking this Clip")
 	cmd.Flags().StringVar(&name, "name", "", "explicit clip instance name")
 	cmd.Flags().StringVar(&provider, "provider", "", "target provider for add/remove operations")
+	cmd.Flags().StringVar(&registryURL, "registry", os.Getenv("PINIX_REGISTRY"), "install Clip from a Pinix Registry instead of npm")
 	return cmd
 }
 
@@ -134,7 +144,7 @@ func newListCommand(serverURL, hubToken *string) *cobra.Command {
 			}
 			for _, clip := range clips {
 				commands := strings.Join(clipCommandNames(clip), ",")
-				fmt.Printf("%s\t%s\t%s\t%s\n", clip.GetName(), clip.GetProvider(), firstNonEmpty(clip.GetPackage(), "-"), commands)
+				fmt.Printf("%s\t%s\t%s\t%s\t%s\n", clip.GetName(), firstNonEmpty(clip.GetPackage(), "-"), firstNonEmpty(clip.GetVersion(), "-"), clip.GetProvider(), commands)
 			}
 			return nil
 		},

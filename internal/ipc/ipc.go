@@ -36,6 +36,8 @@ type Message struct {
 
 type Manifest struct {
 	Name         string          `json:"name,omitempty"`
+	Package      string          `json:"package,omitempty"`
+	Version      string          `json:"version,omitempty"`
 	Domain       string          `json:"domain,omitempty"`
 	Description  string          `json:"description,omitempty"`
 	Commands     json.RawMessage `json:"commands,omitempty"`

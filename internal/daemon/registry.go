@@ -16,6 +16,8 @@ import (
 
 type ClipConfig struct {
 	Name     string         `json:"name"`
+	Package  string         `json:"package,omitempty"`
+	Version  string         `json:"version,omitempty"`
 	Source   string         `json:"source"`
 	Path     string         `json:"path"`
 	Token    string         `json:"token,omitempty"`

@@ -1,5 +1,5 @@
 // Role:    Shared add/remove/install helpers for the Pinix daemon HubService
-// Depends: context, fmt, os, os/exec, path/filepath, strings
+// Depends: context, fmt, os, path/filepath, strings
 // Exports: Handler, NewHandler
 
 package daemon
@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -57,17 +56,21 @@ func (h *Handler) handleAddTrusted(ctx context.Context, params AddParams) (*AddR
 }
 
 func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, error) {
-	sourceType, normalizedSource, err := classifySource(params.Source)
+	if h == nil || h.registry == nil || h.process == nil {
+		return nil, daemonError{Code: "internal", Message: "handler is not configured"}
+	}
+
+	ref, err := parseSource(params.Source)
 	if err != nil {
 		return nil, err
 	}
 
-	stagingName := deriveNameFromSource(normalizedSource)
+	stagingName := deriveNameFromSource(ref.Source)
 	if explicitName := normalizeName(params.Name); explicitName != "" {
 		stagingName = explicitName
 	}
 	if stagingName == "" {
-		return nil, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("could not derive clip name from %q", normalizedSource)}
+		return nil, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("could not derive clip name from %q", ref.Source)}
 	}
 
 	stagePath := filepath.Join(h.registry.ClipsDir(), ".staging-"+stagingName)
@@ -80,42 +83,23 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 		_ = os.RemoveAll(stagePath)
 	}
 
-	var clipPath string
-	switch sourceType {
-	case sourceTypeNPM:
-		if err := installFromNPM(stagePath, normalizedSource, h.process.BunPath()); err != nil {
-			cleanup()
-			return nil, daemonError{Code: "internal", Message: err.Error()}
-		}
-		clipPath = stagePath
-	case sourceTypeGitHub:
-		if err := installFromGitHub(stagePath, normalizedSource, h.process.BunPath()); err != nil {
-			cleanup()
-			return nil, daemonError{Code: "internal", Message: err.Error()}
-		}
-		clipPath = stagePath
-	case sourceTypeLocal:
-		resolvedPath, err := filepath.Abs(normalizedSource)
-		if err != nil {
-			return nil, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("resolve local path: %v", err)}
-		}
-		info, err := os.Stat(resolvedPath)
-		if err != nil {
-			return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("local clip path %s not found", resolvedPath)}
-		}
-		if !info.IsDir() {
-			return nil, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("local clip path %s is not a directory", resolvedPath)}
-		}
-		clipPath = resolvedPath
-	default:
-		return nil, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("unsupported source %q", normalizedSource)}
-	}
-
-	manifest, err := h.inspectClip(ctx, ClipConfig{Name: stagingName, Source: normalizedSource, Path: clipPath, Token: params.Token})
+	installedRef, clipPath, err := h.installClip(ctx, ref, stagePath)
 	if err != nil {
-		if sourceType != sourceTypeLocal {
-			cleanup()
-		}
+		cleanup()
+		return nil, err
+	}
+	ref = installedRef
+
+	manifest, err := h.inspectClip(ctx, ClipConfig{
+		Name:    stagingName,
+		Package: strings.TrimSpace(ref.Package),
+		Version: strings.TrimSpace(ref.Version),
+		Source:  ref.Source,
+		Path:    clipPath,
+		Token:   params.Token,
+	})
+	if err != nil {
+		cleanup()
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip manifest: %v", err)}
 	}
 
@@ -126,54 +110,43 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 		finalName = normalizeName(manifest.Name)
 	}
 	if finalName == "" {
-		if sourceType != sourceTypeLocal {
-			cleanup()
-		}
+		cleanup()
 		return nil, daemonError{Code: "invalid_argument", Message: "clip manifest did not provide a usable name"}
 	}
 
 	if _, exists, err := h.registry.GetClip(finalName); err != nil {
-		if sourceType != sourceTypeLocal {
-			cleanup()
-		}
+		cleanup()
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("check existing clip: %v", err)}
 	} else if exists {
-		if sourceType != sourceTypeLocal {
-			cleanup()
-		}
+		cleanup()
 		return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", finalName)}
 	}
 
-	finalPath := clipPath
-	if sourceType == sourceTypeLocal {
-		finalPath = filepath.Join(h.registry.ClipsDir(), finalName)
-		if err := os.Symlink(clipPath, finalPath); err != nil {
-			if os.IsExist(err) {
-				return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip path %s already exists", finalPath)}
-			}
-			return nil, daemonError{Code: "internal", Message: fmt.Sprintf("create clip symlink: %v", err)}
-		}
-		cleanup = func() { _ = os.Remove(finalPath) }
-	} else if stagePath != filepath.Join(h.registry.ClipsDir(), finalName) {
-		finalPath = filepath.Join(h.registry.ClipsDir(), finalName)
-		_ = os.RemoveAll(finalPath)
-		if err := os.Rename(stagePath, finalPath); err != nil {
-			cleanup()
-			return nil, daemonError{Code: "internal", Message: fmt.Sprintf("move clip into place: %v", err)}
-		}
-		cleanup = func() { _ = os.RemoveAll(finalPath) }
+	finalPath := filepath.Join(h.registry.ClipsDir(), finalName)
+	if err := moveInstalledClip(stagePath, finalPath); err != nil {
+		cleanup()
+		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("move clip into place: %v", err)}
 	}
+	cleanup = func() { _ = os.RemoveAll(finalPath) }
 
 	clip := ClipConfig{
 		Name:     finalName,
-		Source:   normalizedSource,
+		Package:  firstNonEmpty(strings.TrimSpace(ref.Package), manifestPackage(manifest)),
+		Version:  firstNonEmpty(strings.TrimSpace(ref.Version), manifestVersion(manifest)),
+		Source:   ref.Source,
 		Path:     finalPath,
 		Token:    params.Token,
-		Manifest: manifest,
+		Manifest: cloneManifest(manifest),
 	}
-	if manifest != nil {
-		clip.Manifest = manifest
+	if clip.Manifest != nil {
 		clip.Manifest.Name = finalName
+		if clip.Package != "" {
+			clip.Manifest.Package = clip.Package
+		}
+		if clip.Version != "" {
+			clip.Manifest.Version = clip.Version
+		}
+		clip.Manifest = finalizeManifestCache(clip.Manifest)
 	}
 
 	if err := h.registry.PutClip(clip); err != nil {
@@ -187,6 +160,10 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("start clip: %v", err)}
 	}
 
+	stored, ok, err := h.registry.GetClip(finalName)
+	if err == nil && ok {
+		clip = stored
+	}
 	return &AddResult{Clip: clip}, nil
 }
 
@@ -228,157 +205,11 @@ func (h *Handler) removeClip(params RemoveParams) (*RemoveResult, error) {
 }
 
 func (h *Handler) inspectClip(ctx context.Context, clip ClipConfig) (*ManifestCache, error) {
-	tempFile, err := os.CreateTemp(h.registry.RootDir(), ".inspect-*.json")
-	if err != nil {
-		return nil, err
-	}
-	tempPath := tempFile.Name()
-	if err := tempFile.Close(); err != nil {
-		return nil, err
-	}
-	if err := os.Remove(tempPath); err != nil && !os.IsNotExist(err) {
-		return nil, err
-	}
-
-	tempRegistry, err := NewRegistry(tempPath)
-	if err != nil {
-		return nil, err
-	}
-	pm, err := NewProcessManager(tempRegistry, h.process.BunPath(), h.process.PinixURL())
-	if err != nil {
-		return nil, err
-	}
-	pm.provider = h.process.provider
-	pm.SetHubClient(h.process.hub, h.process.hubToken)
-	if err := tempRegistry.PutClip(clip); err != nil {
-		return nil, err
-	}
-	defer func() {
-		_ = pm.StopClip(clip.Name)
-		_, _, _ = tempRegistry.RemoveClip(clip.Name)
-		_ = os.Remove(tempRegistry.Path())
-		_ = os.Remove(tempRegistry.Path() + ".lock")
-	}()
-	return pm.LoadManifest(ctx, clip.Name)
+	return InspectClipManifest(ctx, clip, h.process.BunPath(), h.process.PinixURL(), h.process.provider, h.process.hub, h.process.hubToken)
 }
 
 func (h *Handler) requireSuperToken(token string) error {
 	return requireSuperToken(h.registry, token)
-}
-
-type sourceKind string
-
-const (
-	sourceTypeNPM    sourceKind = "npm"
-	sourceTypeGitHub sourceKind = "github"
-	sourceTypeLocal  sourceKind = "local"
-)
-
-func classifySource(source string) (sourceKind, string, error) {
-	source = strings.TrimSpace(source)
-	if source == "" {
-		return "", "", daemonError{Code: "invalid_argument", Message: "source is required"}
-	}
-	if strings.HasPrefix(source, "npm:") {
-		pkg := strings.TrimSpace(strings.TrimPrefix(source, "npm:"))
-		if pkg == "" {
-			return "", "", daemonError{Code: "invalid_argument", Message: "npm source is empty"}
-		}
-		return sourceTypeNPM, "npm:" + pkg, nil
-	}
-	if strings.HasPrefix(source, "github:") {
-		repo := strings.TrimSpace(strings.TrimPrefix(source, "github:"))
-		if repo == "" {
-			return "", "", daemonError{Code: "invalid_argument", Message: "github source is empty"}
-		}
-		return sourceTypeGitHub, "github:" + repo, nil
-	}
-	if _, err := os.Stat(source); err == nil {
-		return sourceTypeLocal, source, nil
-	}
-	if strings.Contains(source, "/") || strings.HasPrefix(source, ".") || strings.HasPrefix(source, "~") {
-		if strings.HasPrefix(source, "~") {
-			home, err := os.UserHomeDir()
-			if err != nil {
-				return "", "", daemonError{Code: "internal", Message: fmt.Sprintf("get home dir: %v", err)}
-			}
-			if source == "~" {
-				source = home
-			} else {
-				source = filepath.Join(home, strings.TrimPrefix(source, "~/"))
-			}
-		}
-		return sourceTypeLocal, source, nil
-	}
-	return sourceTypeNPM, "npm:" + source, nil
-}
-
-func deriveNameFromSource(source string) string {
-	source = strings.TrimPrefix(source, "npm:")
-	source = strings.TrimPrefix(source, "github:")
-	source = strings.TrimSuffix(source, ".git")
-	if idx := strings.Index(source, "#"); idx >= 0 {
-		source = source[:idx]
-	}
-	base := filepath.Base(source)
-	base = strings.TrimPrefix(base, "clip-")
-	base = strings.TrimPrefix(base, "@")
-	if strings.Contains(base, "/") {
-		base = filepath.Base(base)
-	}
-	return normalizeName(base)
-}
-
-func normalizeName(name string) string {
-	name = strings.TrimSpace(strings.ToLower(name))
-	var b strings.Builder
-	prevDash := false
-	for _, r := range name {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-			prevDash = false
-		case r == '-', r == '_', r == '.', r == ' ':
-			if b.Len() > 0 && !prevDash {
-				b.WriteByte('-')
-				prevDash = true
-			}
-		}
-	}
-	return strings.Trim(b.String(), "-")
-}
-
-func installFromNPM(targetPath, source, bunPath string) error {
-	pkg := strings.TrimPrefix(source, "npm:")
-	if err := os.MkdirAll(targetPath, 0o755); err != nil {
-		return fmt.Errorf("create clip dir: %w", err)
-	}
-	packageJSON := []byte("{\n  \"name\": \"pinix-clip-host\",\n  \"private\": true\n}\n")
-	if err := os.WriteFile(filepath.Join(targetPath, "package.json"), packageJSON, 0o644); err != nil {
-		return fmt.Errorf("write package.json: %w", err)
-	}
-	cmd := exec.Command(bunPath, "add", pkg)
-	cmd.Dir = targetPath
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("bun add %s: %w: %s", pkg, err, strings.TrimSpace(string(output)))
-	}
-	return nil
-}
-
-func installFromGitHub(targetPath, source, bunPath string) error {
-	repo := strings.TrimPrefix(source, "github:")
-	url := fmt.Sprintf("https://github.com/%s.git", strings.TrimSuffix(repo, ".git"))
-	clone := exec.Command("git", "clone", url, targetPath)
-	if output, err := clone.CombinedOutput(); err != nil {
-		return fmt.Errorf("git clone %s: %w: %s", url, err, strings.TrimSpace(string(output)))
-	}
-	install := exec.Command(bunPath, "install")
-	install.Dir = targetPath
-	if output, err := install.CombinedOutput(); err != nil {
-		return fmt.Errorf("bun install: %w: %s", err, strings.TrimSpace(string(output)))
-	}
-	return nil
 }
 
 func removeInstalledPath(clip ClipConfig) error {
@@ -399,6 +230,29 @@ func removeInstalledPath(clip ClipConfig) error {
 		return fmt.Errorf("remove clip dir: %w", err)
 	}
 	return nil
+}
+
+func manifestPackage(manifest *ManifestCache) string {
+	if manifest == nil {
+		return ""
+	}
+	return strings.TrimSpace(manifest.Package)
+}
+
+func manifestVersion(manifest *ManifestCache) string {
+	if manifest == nil {
+		return ""
+	}
+	return strings.TrimSpace(manifest.Version)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 type daemonError struct {
