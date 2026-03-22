@@ -1,5 +1,5 @@
 // Role:    Embedded HTTP server for the Pinix portal, Connect-RPC, clip web files, and JSON errors
-// Depends: bytes, context, encoding/json, errors, fmt, io, mime, net, net/http, os, path/filepath, strings, time, pinixv2connect, github.com/epiral/pinix/web, http2, h2c
+// Depends: bytes, context, encoding/json, errors, fmt, io, net, net/http, strings, time, connectrpc, pinix v2, pinixv2connect, github.com/epiral/pinix/web, http2, h2c
 // Exports: Daemon.ServeHTTP
 
 package daemon
@@ -11,14 +11,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	connect "connectrpc.com/connect"
+	pinixv2 "github.com/epiral/pinix/gen/go/pinix/v2"
 	"github.com/epiral/pinix/gen/go/pinix/v2/pinixv2connect"
 	portalweb "github.com/epiral/pinix/web"
 	"golang.org/x/net/http2"
@@ -156,9 +156,9 @@ func (d *Daemon) redirectClipWebRoot(w http.ResponseWriter, r *http.Request, cli
 		return
 	}
 
-	_, found, err := d.registry.GetClip(clipName)
+	found, err := d.hasClip(clipName)
 	if err != nil {
-		writeJSONError(w, daemonError{Code: "internal", Message: fmt.Sprintf("load clip %q: %v", clipName, err)})
+		writeJSONError(w, err)
 		return
 	}
 	if !found {
@@ -210,59 +210,67 @@ func (d *Daemon) handleClipWebInvoke(w http.ResponseWriter, r *http.Request, cli
 }
 
 func (d *Daemon) serveClipWebFile(w http.ResponseWriter, r *http.Request, clipName, filePath string) {
-	clip, found, err := d.registry.GetClip(clipName)
+	rangeReq, err := parseHTTPRangeHeader(r.Header.Get("Range"))
 	if err != nil {
-		writeJSONError(w, daemonError{Code: "internal", Message: fmt.Sprintf("load clip %q: %v", clipName, err)})
-		return
-	}
-	if !found {
-		http.NotFound(w, r)
+		writeJSONError(w, err)
 		return
 	}
 
-	webRoot := filepath.Clean(filepath.Join(clip.Path, "web"))
-	requestedPath := filepath.Clean(strings.TrimPrefix(filePath, "/"))
-	if requestedPath == "." {
-		requestedPath = ""
-	}
-
-	targetPath := filepath.Clean(filepath.Join(webRoot, requestedPath))
-	if !isWithinDir(targetPath, webRoot) {
-		http.NotFound(w, r)
-		return
-	}
-
-	if requestedPath == "" {
-		targetPath = filepath.Join(webRoot, "index.html")
-	} else {
-		info, err := os.Stat(targetPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				http.NotFound(w, r)
-				return
-			}
-			writeJSONError(w, daemonError{Code: "internal", Message: fmt.Sprintf("stat clip web file %q: %v", targetPath, err)})
-			return
-		}
-		if info.IsDir() {
-			targetPath = filepath.Join(targetPath, "index.html")
-		}
-	}
-
-	data, err := os.ReadFile(targetPath)
+	resp, err := NewHubService(d).GetClipWeb(r.Context(), connect.NewRequest(&pinixv2.GetClipWebRequest{
+		ClipName:    clipName,
+		Path:        filePath,
+		Offset:      rangeReq.Offset,
+		Length:      rangeReq.Length,
+		IfNoneMatch: r.Header.Get("If-None-Match"),
+	}))
 	if err != nil {
-		if os.IsNotExist(err) {
+		err = daemonErrorFromConnect(err)
+		if isDaemonCode(err, "not_found") {
 			http.NotFound(w, r)
 			return
 		}
-		writeJSONError(w, daemonError{Code: "internal", Message: fmt.Sprintf("read clip web file %q: %v", targetPath, err)})
+		writeJSONError(w, err)
 		return
 	}
 
-	if contentType := mime.TypeByExtension(filepath.Ext(targetPath)); contentType != "" {
+	result := resp.Msg
+	w.Header().Set("Accept-Ranges", "bytes")
+	if contentType := strings.TrimSpace(result.GetContentType()); contentType != "" {
 		w.Header().Set("Content-Type", contentType)
 	}
-	_, _ = w.Write(data)
+	if etag := strings.TrimSpace(result.GetEtag()); etag != "" {
+		w.Header().Set("ETag", etag)
+	}
+	if result.GetNotModified() {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	status := http.StatusOK
+	content := result.GetContent()
+	if rangeReq.Partial {
+		status = http.StatusPartialContent
+		if result.GetTotalSize() > 0 {
+			end := rangeReq.Offset + int64(len(content)) - 1
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", rangeReq.Offset, end, result.GetTotalSize()))
+		}
+	}
+	w.WriteHeader(status)
+	_, _ = w.Write(content)
+}
+
+func (d *Daemon) hasClip(name string) (bool, error) {
+	if d == nil {
+		return false, daemonError{Code: "internal", Message: "daemon is not configured"}
+	}
+	_, found, err := d.registry.GetClip(strings.TrimSpace(name))
+	if err != nil {
+		return false, daemonError{Code: "internal", Message: fmt.Sprintf("load clip %q: %v", name, err)}
+	}
+	if found {
+		return true, nil
+	}
+	return d.provider != nil && d.provider.HasClip(name), nil
 }
 
 func (d *Daemon) serveAsset(w http.ResponseWriter, name, contentType string) {
@@ -345,6 +353,8 @@ func httpStatusCode(fallback int, respErr *ResponseError) int {
 	switch strings.ToLower(respErr.Code) {
 	case "invalid_argument":
 		return http.StatusBadRequest
+	case "unauthenticated":
+		return http.StatusUnauthorized
 	case "permission_denied":
 		return http.StatusForbidden
 	case "not_found", "method_not_found":
@@ -357,8 +367,46 @@ func httpStatusCode(fallback int, respErr *ResponseError) int {
 		return http.StatusGatewayTimeout
 	case "canceled", "cancelled":
 		return http.StatusRequestTimeout
+	case "unavailable", "closed":
+		return http.StatusServiceUnavailable
 	default:
 		return fallback
+	}
+}
+
+func daemonErrorFromConnect(err error) error {
+	if err == nil {
+		return nil
+	}
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) {
+		return err
+	}
+	return daemonError{Code: daemonCodeFromConnectCode(connectErr.Code()), Message: strings.TrimSpace(connectErr.Message())}
+}
+
+func daemonCodeFromConnectCode(code connect.Code) string {
+	switch code {
+	case connect.CodeInvalidArgument:
+		return "invalid_argument"
+	case connect.CodeUnauthenticated:
+		return "unauthenticated"
+	case connect.CodePermissionDenied:
+		return "permission_denied"
+	case connect.CodeNotFound:
+		return "not_found"
+	case connect.CodeAlreadyExists:
+		return "already_exists"
+	case connect.CodeDeadlineExceeded:
+		return "timeout"
+	case connect.CodeCanceled:
+		return "canceled"
+	case connect.CodeUnavailable:
+		return "unavailable"
+	case connect.CodeUnimplemented:
+		return "unimplemented"
+	default:
+		return "internal"
 	}
 }
 
