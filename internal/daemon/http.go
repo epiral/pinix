@@ -201,12 +201,49 @@ func (d *Daemon) handleClipWebInvoke(w http.ResponseWriter, r *http.Request, cli
 		return
 	}
 
+	// Check if client wants SSE streaming
+	accept := r.Header.Get("Accept")
+	if strings.Contains(accept, "text/event-stream") {
+		d.handleClipWebInvokeSSE(w, r, clipName, command, json.RawMessage(input))
+		return
+	}
+
 	output, err := d.process.Invoke(r.Context(), clipName, command, json.RawMessage(input))
 	if err != nil {
 		writeJSONError(w, err)
 		return
 	}
 	writeJSONBytes(w, http.StatusOK, output)
+}
+
+func (d *Daemon) handleClipWebInvokeSSE(w http.ResponseWriter, r *http.Request, clipName, command string, input json.RawMessage) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeJSONError(w, daemonError{Code: "internal", Message: "streaming not supported"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	output, err := d.process.InvokeStream(r.Context(), clipName, command, input, func(chunk json.RawMessage) {
+		fmt.Fprintf(w, "data: %s\n\n", chunk)
+		flusher.Flush()
+	})
+
+	if err != nil {
+		errJSON, _ := json.Marshal(map[string]string{"error": err.Error()})
+		fmt.Fprintf(w, "data: %s\n\n", errJSON)
+		flusher.Flush()
+		return
+	}
+
+	fmt.Fprintf(w, "data: %s\n\n", output)
+	fmt.Fprintf(w, "event: done\ndata: {}\n\n")
+	flusher.Flush()
 }
 
 func (d *Daemon) serveClipWebFile(w http.ResponseWriter, r *http.Request, clipName, filePath string) {
