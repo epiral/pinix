@@ -121,7 +121,7 @@ camera (Clip, abstraction layer)
   depends on: iphone, macbook
   takePhoto() -> choose an available device
 
-iphone (Edge Clip)
+iPhone (Edge Clip)
   takePhoto, getSteps, getLocation
 
 macbook (Edge Clip)
@@ -136,20 +136,24 @@ macbook (Edge Clip)
 
 `camera` 只是推荐模式，不是本仓库内置的系统 Clip。
 
-## 当前代码里的二进制角色
+## 当前代码里的运行模式
 
 ```text
-pinixd     = Hub + local Runtime + Portal
-pinix-hub  = Hub + Portal
-pinix      = CLI + MCP gateway
+pinixd                     = Hub + Runtime + Portal
+pinixd --hub-only          = Hub + Portal
+pinixd --hub http://...    = Runtime Provider
+pinix                      = CLI + MCP gateway
 ```
 
-当前 release 里：
+当前实现里：
 
-- `pinixd` 适合单机全包。
-- `pinix-hub` 适合做中心 Hub。
-- `bb-browserd` 是 Provider/Edge Clip 的参考实现。
+- `pinixd` 默认模式适合单机全包。
+- `pinixd --hub-only` 适合中心 Hub。
+- `pinixd --hub <url>` 适合把本地 Runtime 接到远端 Hub。
+- `bb-browserd` 是 Provider / Edge Clip 的参考实现。
 
 ## 设计记录
 
 - 架构讨论与最终定稿：https://github.com/epiral/pinix/issues/9
+- binary 合并：https://github.com/epiral/pinix/issues/25
+- 外部 Hub 连接模式：https://github.com/epiral/pinix/issues/26

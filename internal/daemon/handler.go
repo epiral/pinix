@@ -46,7 +46,17 @@ func (h *Handler) handleAdd(ctx context.Context, authToken string, params AddPar
 	if err := h.requireSuperToken(authToken); err != nil {
 		return nil, err
 	}
+	return h.addClip(ctx, params)
+}
 
+func (h *Handler) handleAddTrusted(ctx context.Context, params AddParams) (*AddResult, error) {
+	if strings.TrimSpace(params.Source) == "" {
+		return nil, daemonError{Code: "invalid_argument", Message: "source is required"}
+	}
+	return h.addClip(ctx, params)
+}
+
+func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, error) {
 	sourceType, normalizedSource, err := classifySource(params.Source)
 	if err != nil {
 		return nil, err
@@ -187,7 +197,17 @@ func (h *Handler) handleRemove(authToken string, params RemoveParams) (*RemoveRe
 	if err := h.requireSuperToken(authToken); err != nil {
 		return nil, err
 	}
+	return h.removeClip(params)
+}
 
+func (h *Handler) handleRemoveTrusted(params RemoveParams) (*RemoveResult, error) {
+	if strings.TrimSpace(params.Name) == "" {
+		return nil, daemonError{Code: "invalid_argument", Message: "name is required"}
+	}
+	return h.removeClip(params)
+}
+
+func (h *Handler) removeClip(params RemoveParams) (*RemoveResult, error) {
 	clip, ok, err := h.registry.RemoveClip(params.Name)
 	if err != nil {
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("remove clip config: %v", err)}
@@ -224,10 +244,12 @@ func (h *Handler) inspectClip(ctx context.Context, clip ClipConfig) (*ManifestCa
 	if err != nil {
 		return nil, err
 	}
-	pm, err := NewProcessManager(tempRegistry, h.process.BunPath())
+	pm, err := NewProcessManager(tempRegistry, h.process.BunPath(), h.process.PinixURL())
 	if err != nil {
 		return nil, err
 	}
+	pm.provider = h.process.provider
+	pm.SetHubClient(h.process.hub, h.process.hubToken)
 	if err := tempRegistry.PutClip(clip); err != nil {
 		return nil, err
 	}

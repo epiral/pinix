@@ -9,7 +9,7 @@
 | 2026-03-21 | 在 Pinix 里"出现在列表里 = 可用"，Hub 不维护 offline 状态枚举。 | https://github.com/epiral/pinix/issues/9 |
 | 2026-03-21 | Provider 保留为连接协议层概念，而不是用户侧核心概念。 | https://github.com/epiral/pinix/issues/9 |
 | 2026-03-21 | Runtime 是一种 Provider，额外负责安装、进程管理和生命周期。 | https://github.com/epiral/pinix/issues/9 |
-| 2026-03-21 | `pinixd` 定位为 standalone：Hub + Runtime + Portal；`pinix-hub` 定位为纯 Hub binary。 | https://github.com/epiral/pinix/issues/9 |
+| 2026-03-21 | `pinixd` 负责 standalone（Hub + Runtime + Portal），并保留纯 Hub 与外连 Hub 两种运行模式。 | https://github.com/epiral/pinix/issues/9 |
 | 2026-03-21 | `pinix` 定位为 CLI + MCP gateway，和 Hub / Runtime 解耦。 | https://github.com/epiral/pinix/issues/9 |
 | 2026-03-21 | Edge Clip 是开发者术语，指“自己实现 Provider 协议直连 Hub 的 Clip”。 | https://github.com/epiral/pinix/issues/9 |
 | 2026-03-21 | 设备抽象推荐分层：`iphone` / `macbook` 做 Edge Clip，`camera` 做普通 Clip 抽象层。 | https://github.com/epiral/pinix/issues/9 |
@@ -33,4 +33,6 @@
 | 2026-03-22 | `@pinixai/browser` 收敛成对 `invoke("browser", ...)` 的轻量封装。 | https://github.com/epiral/pinix/issues/9 |
 | 2026-03-22 | Clip Web UI 必须使用相对静态资源路径和相对 `api/<command>` 路径。 | https://github.com/epiral/pinix/issues/9 |
 | 2026-03-22 | Portal 在 `has_web=true` 时显示 “Open Web UI”，并通过 `/clips/<name>/api/<command>` 做本地代理。 | https://github.com/epiral/pinix/issues/9 |
-| 2026-03-22 | V2 release 的三类核心 binary 确认为：`pinixd`、`pinix-hub`、`pinix`。 | https://github.com/epiral/pinix/issues/9 |
+| 2026-03-22 | 核心 binary 收敛为两个：`pinixd`、`pinix`。 | https://github.com/epiral/pinix/issues/25 |
+| 2026-03-22 | `pinixd --hub-only` 提供纯 Hub + Portal；默认模式继续提供 Hub + Runtime + Portal。 | https://github.com/epiral/pinix/issues/25 |
+| 2026-03-22 | `pinixd --hub <url>` 作为 Runtime Provider 连接外部 Hub，并接收 invoke / manage / heartbeat。 | https://github.com/epiral/pinix/issues/26 |
