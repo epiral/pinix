@@ -35,11 +35,23 @@ CLI / MCP / Portal
 
 ## 快速开始
 
-1. 先安装 `bun`，然后从 [v2.0.0 release](https://github.com/epiral/pinix/releases/tag/v2.0.0) 下载 `pinixd` 和 `pinix`，或从源码编译。
-2. 启动 Pinix：`./pinixd --port 9000`
+1. 运行本地 Clip 时需要先安装 `bun`，然后从 [v2.0.0 release](https://github.com/epiral/pinix/releases/tag/v2.0.0) 下载 `pinixd` 和 `pinix`，或从源码编译。
+2. 以全包模式启动 Pinix：`./pinixd --port 9000`
 3. 安装第一个 Clip：`./pinix --server http://127.0.0.1:9000 add clip-todo`
 4. 调用命令：`./pinix --server http://127.0.0.1:9000 todo add -- --title "写文档"`
 5. 打开 `http://127.0.0.1:9000`，再用 `./pinix mcp --all --server http://127.0.0.1:9000` 暴露 MCP
+
+## pinixd 三种模式
+
+```bash
+./pinixd --port 9000
+./pinixd --port 9000 --hub-only
+./pinixd --port 9001 --hub http://hub:9000
+```
+
+- 默认模式：Hub + Runtime + Portal。
+- `--hub-only`：纯 Hub + Portal，不管理本地 Clip 进程。
+- `--hub`：纯 Runtime。作为 Provider 连接外部 Hub，并把自己管理的 Clips 注册上去。
 
 ## 文档
 

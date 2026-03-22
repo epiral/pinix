@@ -177,7 +177,7 @@ bun run /Users/cp/Developer/epiral/repos/bb-browser/bin/bb-browserd.ts \
 如果你的 Provider 已经能发出注册和心跳，那么最小验证方式是：
 
 ```bash
-./pinix-hub --port 9000
+./pinixd --port 9000 --hub-only
 ```
 
 另一个终端：
