@@ -46,31 +46,39 @@ git clone https://github.com/epiral/pinix.git
 cd pinix
 
 go build -o pinixd ./cmd/pinixd
-go build -o pinix-hub ./cmd/pinix-hub
 go build -o pinix ./cmd/pinix
 ```
 
 ## 2. 启动 `pinixd`
 
-最小启动：
+### 最小启动：全包模式
 
 ```bash
 ./pinixd --port 9000
 ```
 
-带 super token：
+### 带 super token
 
 ```bash
 ./pinixd --port 9000 --super-token dev-secret
 ```
 
+### 其他两种模式
+
+```bash
+./pinixd --port 9000 --hub-only
+./pinixd --port 9001 --hub http://127.0.0.1:9000
+```
+
 常用参数：
 
 ```text
---port         Portal 和 HubService 的 HTTP 端口，默认 9000
+--port         默认模式 / --hub-only 时是 Portal 和 HubService 的 HTTP 端口；--hub 模式下主要用于 provider identity
 --config       配置文件路径，默认 ~/.pinix/config.json
 --bun          Bun binary 路径；不传则自动探测
 --super-token  保护 add/remove
+--hub-only     纯 Hub + Portal
+--hub          连接外部 Hub，运行成纯 Runtime Provider
 ```
 
 启动后，Pinix 会把本地状态写到：
@@ -100,6 +108,8 @@ go build -o pinix ./cmd/pinix
 ./pinix --server http://127.0.0.1:9000 add /absolute/path/to/my-clip
 ./pinix --server http://127.0.0.1:9000 add github:owner/repo
 ```
+
+如果你当前连的是 `pinixd --hub-only`，则需要把 add 请求发到一个可管理的 Runtime Provider。
 
 ## 4. 用 CLI 调用它
 
