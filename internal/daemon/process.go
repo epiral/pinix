@@ -235,6 +235,61 @@ func (m *ProcessManager) invokeOnce(ctx context.Context, proc *clipProcess, comm
 	return collectInvokeResult(ctx, handle)
 }
 
+// InvokeStream invokes a Clip command and calls onChunk for each streaming chunk.
+// Returns the final aggregated result.
+func (m *ProcessManager) InvokeStream(ctx context.Context, name, command string, input json.RawMessage, onChunk func(json.RawMessage)) (json.RawMessage, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	input = normalizeInvokeInput(input)
+
+	proc, err := m.ensureProcess(name)
+	if err != nil {
+		return nil, err
+	}
+
+	handle, err := proc.openInvoke(command, input)
+	if err != nil {
+		return nil, err
+	}
+	defer handle.Close()
+
+	var outputs []json.RawMessage
+	for {
+		event, err := handle.Receive(ctx)
+		if err != nil {
+			return nil, err
+		}
+		switch event.typ {
+		case ipc.MessageTypeResult:
+			if event.err != nil {
+				return nil, event.err
+			}
+			if len(event.output) > 0 {
+				outputs = append(outputs, cloneJSON(event.output))
+			}
+			return aggregateInvokeOutputs(outputs), nil
+		case ipc.MessageTypeError:
+			if event.err == nil {
+				event.err = &ipc.Error{Message: "invoke failed"}
+			}
+			return nil, event.err
+		case ipc.MessageTypeChunk:
+			chunk := cloneJSON(event.output)
+			if len(chunk) > 0 {
+				outputs = append(outputs, chunk)
+				if onChunk != nil {
+					onChunk(chunk)
+				}
+			}
+		case ipc.MessageTypeDone:
+			return aggregateInvokeOutputs(outputs), nil
+		default:
+			return nil, fmt.Errorf("unsupported ipc response type %q", event.typ)
+		}
+	}
+}
+
 func (m *ProcessManager) ensureProcess(name string) (*clipProcess, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
