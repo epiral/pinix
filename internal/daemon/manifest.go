@@ -1,10 +1,11 @@
 // Role:    Manifest enrichment helpers shared by local and provider-backed clips
-// Depends: fmt, os, path/filepath, sort, strings, gopkg.in/yaml.v3
+// Depends: encoding/json, fmt, os, path/filepath, sort, strings, gopkg.in/yaml.v3
 // Exports: (package-internal helpers)
 
 package daemon
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,13 +23,79 @@ type clipYAML struct {
 	Patterns     []string `yaml:"patterns"`
 }
 
+type pinixJSON struct {
+	Name         string                 `json:"name"`
+	Version      string                 `json:"version"`
+	Type         string                 `json:"type,omitempty"`
+	Description  string                 `json:"description,omitempty"`
+	Domain       string                 `json:"domain,omitempty"`
+	Runtime      string                 `json:"runtime,omitempty"`
+	Main         string                 `json:"main,omitempty"`
+	Web          string                 `json:"web,omitempty"`
+	Commands     []pinixJSONCommand     `json:"commands,omitempty"`
+	Dependencies map[string]string      `json:"dependencies,omitempty"`
+	Patterns     []string               `json:"patterns,omitempty"`
+	Extra        map[string]interface{} `json:"-"`
+}
+
+type pinixJSONCommand struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Input       json.RawMessage `json:"input,omitempty"`
+	Output      json.RawMessage `json:"output,omitempty"`
+}
+
+type packageJSON struct {
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Description string `json:"description,omitempty"`
+	Main        string `json:"main,omitempty"`
+	Bin         any    `json:"bin,omitempty"`
+}
+
+type projectMetadata struct {
+	Package      string
+	Version      string
+	Description  string
+	Domain       string
+	Main         string
+	Web          string
+	Dependencies []string
+	Patterns     []string
+	Commands     []CommandInfo
+}
+
 func enrichManifestForClip(clip ClipConfig, manifest *ManifestCache) *ManifestCache {
 	merged := cloneManifest(manifest)
 	if merged == nil {
 		merged = &ManifestCache{}
 	}
 
-	if meta, err := readClipYAMLMetadata(clip.Path); err == nil {
+	if meta, err := loadProjectMetadata(clip); err == nil {
+		if merged.Package == "" {
+			merged.Package = strings.TrimSpace(meta.Package)
+		}
+		if merged.Version == "" {
+			merged.Version = strings.TrimSpace(meta.Version)
+		}
+		if merged.Domain == "" {
+			merged.Domain = strings.TrimSpace(meta.Domain)
+		}
+		if merged.Description == "" {
+			merged.Description = strings.TrimSpace(meta.Description)
+		}
+		if len(merged.Dependencies) == 0 {
+			merged.Dependencies = normalizeStrings(meta.Dependencies)
+		}
+		if len(merged.Patterns) == 0 {
+			merged.Patterns = normalizeStrings(meta.Patterns)
+		}
+		if len(merged.CommandDetails) == 0 {
+			merged.CommandDetails = normalizeCommandDetails(meta.Commands)
+		}
+	}
+
+	if meta, err := readClipYAMLMetadata(clipProjectDir(clip)); err == nil {
 		if merged.Name == "" {
 			merged.Name = strings.TrimSpace(meta.Name)
 		}
@@ -50,7 +117,10 @@ func enrichManifestForClip(clip ClipConfig, manifest *ManifestCache) *ManifestCa
 	}
 
 	if merged.Package == "" {
-		merged.Package = derivePackageName(clip)
+		merged.Package = firstNonEmpty(strings.TrimSpace(clip.Package), derivePackageName(clip))
+	}
+	if merged.Version == "" {
+		merged.Version = strings.TrimSpace(clip.Version)
 	}
 	if merged.Name == "" {
 		merged.Name = strings.TrimSpace(clip.Name)
@@ -59,7 +129,7 @@ func enrichManifestForClip(clip ClipConfig, manifest *ManifestCache) *ManifestCa
 		merged.CommandDetails = synthesizeCommandDetails(merged.Commands)
 	}
 	if len(merged.CommandDetails) == 0 {
-		if names, err := readCommandNames(clip.Path); err == nil {
+		if names, err := readCommandNames(clipProjectDir(clip)); err == nil {
 			merged.CommandDetails = synthesizeCommandDetails(names)
 		}
 	}
@@ -67,10 +137,218 @@ func enrichManifestForClip(clip ClipConfig, manifest *ManifestCache) *ManifestCa
 		merged.Commands = commandNames(merged.CommandDetails)
 	}
 	if !merged.HasWeb {
-		merged.HasWeb = dirExists(filepath.Join(clip.Path, "web"))
+		merged.HasWeb = clipHasWebAssets(clip)
 	}
 
 	return finalizeManifestCache(merged)
+}
+
+func loadProjectMetadata(clip ClipConfig) (*projectMetadata, error) {
+	workdir := clipProjectDir(clip)
+	if strings.TrimSpace(workdir) == "" {
+		return nil, fmt.Errorf("clip path is required")
+	}
+
+	meta := &projectMetadata{}
+	if pinixMeta, err := readPinixJSONMetadata(workdir); err == nil {
+		mergeProjectMetadata(meta, pinixMeta)
+	}
+	if packageMeta, err := readPackageJSONMetadata(workdir); err == nil {
+		mergeProjectMetadata(meta, packageMeta)
+	}
+	if meta.Package == "" && strings.TrimSpace(clip.Package) != "" {
+		meta.Package = strings.TrimSpace(clip.Package)
+	}
+	if meta.Version == "" && strings.TrimSpace(clip.Version) != "" {
+		meta.Version = strings.TrimSpace(clip.Version)
+	}
+	return meta, nil
+}
+
+func mergeProjectMetadata(target, source *projectMetadata) {
+	if target == nil || source == nil {
+		return
+	}
+	if target.Package == "" {
+		target.Package = strings.TrimSpace(source.Package)
+	}
+	if target.Version == "" {
+		target.Version = strings.TrimSpace(source.Version)
+	}
+	if target.Description == "" {
+		target.Description = strings.TrimSpace(source.Description)
+	}
+	if target.Domain == "" {
+		target.Domain = strings.TrimSpace(source.Domain)
+	}
+	if target.Main == "" {
+		target.Main = strings.TrimSpace(source.Main)
+	}
+	if target.Web == "" {
+		target.Web = strings.TrimSpace(source.Web)
+	}
+	if len(target.Dependencies) == 0 {
+		target.Dependencies = normalizeStrings(source.Dependencies)
+	}
+	if len(target.Patterns) == 0 {
+		target.Patterns = normalizeStrings(source.Patterns)
+	}
+	if len(target.Commands) == 0 {
+		target.Commands = normalizeCommandDetails(source.Commands)
+	}
+}
+
+func clipProjectDir(clip ClipConfig) string {
+	base := strings.TrimSpace(clip.Path)
+	if base == "" {
+		return ""
+	}
+	if strings.HasPrefix(strings.TrimSpace(clip.Source), "npm:") {
+		pkg := strings.TrimSpace(clip.Package)
+		if pkg == "" {
+			pkg = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(clip.Source, "npm:"), "registry:"))
+			pkg, _ = splitPackageVersion(pkg)
+		}
+		if pkg != "" {
+			moduleDir := filepath.Join(base, "node_modules", filepath.FromSlash(pkg))
+			if dirExists(moduleDir) {
+				return moduleDir
+			}
+		}
+	}
+	return base
+}
+
+func clipHasWebAssets(clip ClipConfig) bool {
+	workdir := clipProjectDir(clip)
+	meta, _ := loadProjectMetadata(clip)
+	webDir := "web"
+	if meta != nil && strings.TrimSpace(meta.Web) != "" {
+		webDir = strings.TrimSpace(meta.Web)
+	}
+	return dirExists(filepath.Join(workdir, webDir))
+}
+
+func clipWebDir(clip ClipConfig) string {
+	workdir := clipProjectDir(clip)
+	meta, _ := loadProjectMetadata(clip)
+	if meta != nil && strings.TrimSpace(meta.Web) != "" {
+		return filepath.Join(workdir, strings.TrimSpace(meta.Web))
+	}
+	return filepath.Join(workdir, "web")
+}
+
+func clipEntrypointHint(clip ClipConfig) string {
+	workdir := clipProjectDir(clip)
+	meta, _ := loadProjectMetadata(clip)
+	if meta == nil {
+		return ""
+	}
+	if strings.TrimSpace(meta.Main) != "" {
+		return filepath.Join(workdir, strings.TrimSpace(meta.Main))
+	}
+	return ""
+}
+
+func readPinixJSONMetadata(workdir string) (*projectMetadata, error) {
+	data, err := os.ReadFile(filepath.Join(workdir, "pinix.json"))
+	if err != nil {
+		return nil, err
+	}
+	var raw pinixJSON
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	meta := &projectMetadata{
+		Package:      strings.TrimSpace(raw.Name),
+		Version:      strings.TrimSpace(raw.Version),
+		Description:  strings.TrimSpace(raw.Description),
+		Domain:       strings.TrimSpace(raw.Domain),
+		Main:         strings.TrimSpace(raw.Main),
+		Web:          strings.TrimSpace(raw.Web),
+		Dependencies: mapKeys(raw.Dependencies),
+		Patterns:     normalizeStrings(raw.Patterns),
+		Commands:     pinixCommandsToInternal(raw.Commands),
+	}
+	return meta, nil
+}
+
+func readPackageJSONMetadata(workdir string) (*projectMetadata, error) {
+	data, err := os.ReadFile(filepath.Join(workdir, "package.json"))
+	if err != nil {
+		return nil, err
+	}
+	var raw packageJSON
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	meta := &projectMetadata{
+		Package:     strings.TrimSpace(raw.Name),
+		Version:     strings.TrimSpace(raw.Version),
+		Description: strings.TrimSpace(raw.Description),
+		Main:        firstNonEmpty(strings.TrimSpace(raw.Main), packageJSONBin(raw)),
+	}
+	return meta, nil
+}
+
+func packageJSONBin(raw packageJSON) string {
+	switch value := raw.Bin.(type) {
+	case string:
+		return strings.TrimSpace(value)
+	case map[string]any:
+		for _, item := range value {
+			if path, ok := item.(string); ok && strings.TrimSpace(path) != "" {
+				return strings.TrimSpace(path)
+			}
+		}
+	case map[string]string:
+		for _, item := range value {
+			if strings.TrimSpace(item) != "" {
+				return strings.TrimSpace(item)
+			}
+		}
+	}
+	return ""
+}
+
+func pinixCommandsToInternal(commands []pinixJSONCommand) []CommandInfo {
+	result := make([]CommandInfo, 0, len(commands))
+	for _, command := range commands {
+		name := strings.TrimSpace(command.Name)
+		if name == "" {
+			continue
+		}
+		result = append(result, CommandInfo{
+			Name:        name,
+			Description: strings.TrimSpace(command.Description),
+			Input:       rawSchemaString(command.Input),
+			Output:      rawSchemaString(command.Output),
+		})
+	}
+	return normalizeCommandDetails(result)
+}
+
+func rawSchemaString(raw json.RawMessage) string {
+	raw = json.RawMessage(strings.TrimSpace(string(raw)))
+	if len(raw) == 0 {
+		return ""
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return strings.TrimSpace(text)
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+func mapKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		if strings.TrimSpace(key) == "" {
+			continue
+		}
+		keys = append(keys, strings.TrimSpace(key))
+	}
+	return normalizeStrings(keys)
 }
 
 func cloneManifest(manifest *ManifestCache) *ManifestCache {
@@ -219,7 +497,12 @@ func derivePackageName(clip ClipConfig) string {
 	source := strings.TrimSpace(clip.Source)
 	switch {
 	case strings.HasPrefix(source, "npm:"):
-		return strings.TrimSpace(strings.TrimPrefix(source, "npm:"))
+		pkg, _ := splitPackageVersion(strings.TrimSpace(strings.TrimPrefix(source, "npm:")))
+		return strings.TrimSpace(pkg)
+	case strings.HasPrefix(source, "registry:"):
+		if ref, err := parseSource(source); err == nil {
+			return strings.TrimSpace(ref.Package)
+		}
 	case strings.HasPrefix(source, "github:"):
 		repo := strings.TrimSpace(strings.TrimPrefix(source, "github:"))
 		if repo == "" {
