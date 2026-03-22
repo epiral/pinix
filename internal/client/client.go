@@ -170,6 +170,21 @@ func (c *Client) Invoke(ctx context.Context, clipName, command string, input jso
 	return aggregateOutputs(chunks), nil
 }
 
+func (c *Client) OpenInvoke(ctx context.Context, clipName, command string, input json.RawMessage, clipToken, hubToken string) (*connect.ServerStreamForClient[pinixv2.InvokeResponse], error) {
+	if len(input) == 0 {
+		input = json.RawMessage(`{}`)
+	}
+
+	req := connect.NewRequest(&pinixv2.InvokeRequest{
+		ClipName:  strings.TrimSpace(clipName),
+		Command:   strings.TrimSpace(command),
+		Input:     cloneBytes(input),
+		ClipToken: strings.TrimSpace(clipToken),
+	})
+	setAuthHeader(req.Header(), hubToken)
+	return c.hub.Invoke(ctx, req)
+}
+
 func setAuthHeader(header http.Header, token string) {
 	token = strings.TrimSpace(token)
 	if token == "" {

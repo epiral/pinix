@@ -1,5 +1,5 @@
 // Role:    Bun Clip process lifecycle, IPC registration handshake, and Clip invocation router
-// Depends: bufio, context, encoding/json, errors, fmt, io, os, os/exec, path/filepath, sort, strconv, strings, sync, sync/atomic, syscall, time, internal/ipc
+// Depends: bufio, context, encoding/json, errors, fmt, io, os, os/exec, path/filepath, sort, strconv, strings, sync, sync/atomic, syscall, time, connectrpc, internal/client, internal/ipc
 // Exports: ProcessManager, NewProcessManager
 
 package daemon
@@ -22,6 +22,8 @@ import (
 	"syscall"
 	"time"
 
+	connect "connectrpc.com/connect"
+	clientpkg "github.com/epiral/pinix/internal/client"
 	"github.com/epiral/pinix/internal/ipc"
 )
 
@@ -33,8 +35,10 @@ const (
 type ProcessManager struct {
 	registry *Registry
 	bunPath  string
-	httpPort int
+	pinixURL string
 	provider *ProviderManager
+	hub      *clientpkg.Client
+	hubToken string
 
 	mu        sync.Mutex
 	processes map[string]*clipProcess
@@ -80,7 +84,7 @@ type processInvokeHandle struct {
 	closeOnce sync.Once
 }
 
-func NewProcessManager(registry *Registry, bunPath string, httpPort ...int) (*ProcessManager, error) {
+func NewProcessManager(registry *Registry, bunPath string, pinixURL ...string) (*ProcessManager, error) {
 	if registry == nil {
 		return nil, fmt.Errorf("registry is required")
 	}
@@ -92,21 +96,36 @@ func NewProcessManager(registry *Registry, bunPath string, httpPort ...int) (*Pr
 		}
 	}
 
-	port := 9000
-	if len(httpPort) > 0 && httpPort[0] > 0 {
-		port = httpPort[0]
+	url := "http://127.0.0.1:9000"
+	if len(pinixURL) > 0 && strings.TrimSpace(pinixURL[0]) != "" {
+		url = strings.TrimSpace(pinixURL[0])
 	}
 
 	return &ProcessManager{
 		registry:  registry,
 		bunPath:   bunPath,
-		httpPort:  port,
+		pinixURL:  url,
 		processes: make(map[string]*clipProcess),
 	}, nil
 }
 
 func (m *ProcessManager) BunPath() string {
 	return m.bunPath
+}
+
+func (m *ProcessManager) PinixURL() string {
+	if m == nil {
+		return ""
+	}
+	return m.pinixURL
+}
+
+func (m *ProcessManager) SetHubClient(cli *clientpkg.Client, hubToken string) {
+	if m == nil {
+		return
+	}
+	m.hub = cli
+	m.hubToken = strings.TrimSpace(hubToken)
 }
 
 func (m *ProcessManager) StartClip(name string) error {
@@ -256,7 +275,7 @@ func (m *ProcessManager) startLocked(clip ClipConfig) (*clipProcess, error) {
 
 	cmd := exec.Command(m.bunPath, "run", entrypoint, "--ipc")
 	cmd.Dir = clip.Path
-	cmd.Env = append(os.Environ(), fmt.Sprintf("PINIX_URL=http://127.0.0.1:%d", m.httpPort))
+	cmd.Env = append(os.Environ(), fmt.Sprintf("PINIX_URL=%s", m.pinixURL))
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -411,10 +430,13 @@ func (m *ProcessManager) routeClipInvoke(proc *clipProcess, request ipc.Message)
 	if local {
 		return m.routeLocalInvoke(ctx, proc, request)
 	}
-	if m.provider == nil || !m.provider.HasClip(request.Clip) {
-		return proc.sendInvokeError(request.ID, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", request.Clip)})
+	if m.provider != nil && m.provider.HasClip(request.Clip) {
+		return m.routeProviderInvoke(ctx, proc, request)
 	}
-	return m.routeProviderInvoke(ctx, proc, request)
+	if m.hub != nil {
+		return m.routeHubInvoke(ctx, proc, request)
+	}
+	return proc.sendInvokeError(request.ID, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", request.Clip)})
 }
 
 func (m *ProcessManager) routeLocalInvoke(ctx context.Context, caller *clipProcess, request ipc.Message) error {
@@ -501,6 +523,66 @@ func (m *ProcessManager) routeProviderInvoke(ctx context.Context, caller *clipPr
 
 		return caller.send(&ipc.Message{ID: request.ID, Type: ipc.MessageTypeResult, Output: ensureOutput(payload)})
 	}
+}
+
+func (m *ProcessManager) routeHubInvoke(ctx context.Context, caller *clipProcess, request ipc.Message) error {
+	if m.hub == nil {
+		return caller.sendInvokeError(request.ID, daemonError{Code: "internal", Message: "hub client is not configured"})
+	}
+
+	stream, err := m.hub.OpenInvoke(ctx, request.Clip, request.Command, normalizeInvokeInput(request.Input), "", m.hubToken)
+	if err != nil {
+		return caller.sendInvokeError(request.ID, err)
+	}
+	defer stream.Close()
+
+	var (
+		buffered          json.RawMessage
+		bufferedHasOutput bool
+		receivedCount     int
+	)
+
+	for stream.Receive() {
+		msg := stream.Msg()
+		if hubErr := msg.GetError(); hubErr != nil {
+			return caller.send(&ipc.Message{ID: request.ID, Type: ipc.MessageTypeError, Error: strings.TrimSpace(hubErr.GetMessage())})
+		}
+
+		payload := cloneJSON(msg.GetOutput())
+		if receivedCount > 0 && bufferedHasOutput {
+			if err := caller.send(&ipc.Message{ID: request.ID, Type: ipc.MessageTypeChunk, Output: ensureOutput(buffered)}); err != nil {
+				return err
+			}
+		}
+		buffered = payload
+		bufferedHasOutput = len(payload) > 0
+		receivedCount++
+	}
+	if err := stream.Err(); err != nil {
+		if errors.Is(err, io.EOF) {
+			err = nil
+		}
+		if err != nil {
+			var connectErr *connect.Error
+			if errors.As(err, &connectErr) {
+				return caller.sendInvokeError(request.ID, errors.New(strings.TrimSpace(connectErr.Message())))
+			}
+			return caller.sendInvokeError(request.ID, err)
+		}
+	}
+
+	if receivedCount == 0 {
+		return caller.send(&ipc.Message{ID: request.ID, Type: ipc.MessageTypeResult, Output: json.RawMessage(`{}`)})
+	}
+	if receivedCount == 1 {
+		return caller.send(&ipc.Message{ID: request.ID, Type: ipc.MessageTypeResult, Output: ensureOutput(buffered)})
+	}
+	if bufferedHasOutput {
+		if err := caller.send(&ipc.Message{ID: request.ID, Type: ipc.MessageTypeChunk, Output: ensureOutput(buffered)}); err != nil {
+			return err
+		}
+	}
+	return caller.send(&ipc.Message{ID: request.ID, Type: ipc.MessageTypeDone})
 }
 
 func (m *ProcessManager) persistRegisteredManifest(clip ClipConfig, manifest *ManifestCache) error {
