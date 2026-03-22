@@ -229,8 +229,24 @@ func (d *Daemon) handleClipWebInvokeSSE(w http.ResponseWriter, r *http.Request, 
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	output, err := d.process.InvokeStream(r.Context(), clipName, command, input, func(chunk json.RawMessage) {
-		fmt.Fprintf(w, "data: %s\n\n", chunk)
+	_, err := d.process.InvokeStream(r.Context(), clipName, command, input, func(chunk json.RawMessage) {
+		// If chunk is a JSON string (e.g. "\"...\n\""), unwrap it into raw lines
+		// and emit each JSONL line as a separate SSE event
+		raw := bytes.TrimSpace(chunk)
+		if len(raw) > 0 && raw[0] == '"' {
+			var s string
+			if json.Unmarshal(raw, &s) == nil {
+				for _, line := range strings.Split(strings.TrimSpace(s), "\n") {
+					line = strings.TrimSpace(line)
+					if line != "" {
+						fmt.Fprintf(w, "data: %s\n\n", line)
+					}
+				}
+				flusher.Flush()
+				return
+			}
+		}
+		fmt.Fprintf(w, "data: %s\n\n", raw)
 		flusher.Flush()
 	})
 
@@ -241,7 +257,6 @@ func (d *Daemon) handleClipWebInvokeSSE(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	fmt.Fprintf(w, "data: %s\n\n", output)
 	fmt.Fprintf(w, "event: done\ndata: {}\n\n")
 	flusher.Flush()
 }
