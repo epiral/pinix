@@ -42,6 +42,16 @@ func (h *HubService) ProviderStream(ctx context.Context, stream *connect.BidiStr
 	return nil
 }
 
+func (h *HubService) RuntimeStream(ctx context.Context, stream *connect.BidiStream[pinixv2.RuntimeMessage, pinixv2.HubRuntimeMessage]) error {
+	if h.daemon == nil || h.daemon.runtime == nil {
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("runtime manager is not configured"))
+	}
+	if err := h.daemon.runtime.HandleStream(ctx, stream); err != nil {
+		return connectErrorFromErr(err)
+	}
+	return nil
+}
+
 func (h *HubService) ListClips(context.Context, *connect.Request[pinixv2.ListClipsRequest]) (*connect.Response[pinixv2.ListClipsResponse], error) {
 	clips, err := h.listLocalClipInfos()
 	if err != nil {
@@ -57,13 +67,13 @@ func (h *HubService) ListClips(context.Context, *connect.Request[pinixv2.ListCli
 }
 
 func (h *HubService) ListProviders(context.Context, *connect.Request[pinixv2.ListProvidersRequest]) (*connect.Response[pinixv2.ListProvidersResponse], error) {
-	providers := make([]*pinixv2.ProviderInfo, 0, 1)
+	providersByName := make(map[string]*pinixv2.ProviderInfo)
 	if h.daemon != nil && h.daemon.hasLocalRuntime() {
 		clipNames, err := h.localClipNames()
 		if err != nil {
 			return nil, connectErrorFromErr(err)
 		}
-		providers = append(providers, &pinixv2.ProviderInfo{
+		mergeProviderInfo(providersByName, &pinixv2.ProviderInfo{
 			Name:          localProviderName,
 			AcceptsManage: true,
 			Clips:         clipNames,
@@ -71,7 +81,18 @@ func (h *HubService) ListProviders(context.Context, *connect.Request[pinixv2.Lis
 		})
 	}
 	if h.daemon != nil && h.daemon.provider != nil {
-		providers = append(providers, h.daemon.provider.ListProviders()...)
+		for _, provider := range h.daemon.provider.ListProviders() {
+			mergeProviderInfo(providersByName, provider)
+		}
+	}
+	if h.daemon != nil && h.daemon.runtime != nil {
+		for _, provider := range h.daemon.runtime.ListProviders() {
+			mergeProviderInfo(providersByName, provider)
+		}
+	}
+	providers := make([]*pinixv2.ProviderInfo, 0, len(providersByName))
+	for _, provider := range providersByName {
+		providers = append(providers, provider)
 	}
 	sort.Slice(providers, func(i, j int) bool {
 		return providers[i].GetName() < providers[j].GetName()
@@ -204,8 +225,11 @@ func (h *HubService) AddClip(ctx context.Context, req *connect.Request[pinixv2.A
 	}
 
 	requestedAlias := firstNonEmpty(req.Msg.GetRequestedAlias(), req.Msg.GetName())
-	providerName := strings.TrimSpace(req.Msg.GetProvider())
-	if isLocalProvider(providerName) {
+	targetRuntime, local, err := h.selectAddRuntime(strings.TrimSpace(req.Msg.GetProvider()))
+	if err != nil {
+		return nil, connectErrorFromErr(err)
+	}
+	if local {
 		if h.daemon == nil || !h.daemon.hasLocalRuntime() || h.daemon.handler == nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("local runtime is not configured; specify provider to target a connected runtime"))
 		}
@@ -225,20 +249,16 @@ func (h *HubService) AddClip(ctx context.Context, req *connect.Request[pinixv2.A
 		}
 		return connect.NewResponse(&pinixv2.AddClipResponse{Clip: localClipToClipInfo(result.Clip)}), nil
 	}
-	if h.daemon.provider == nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("provider manager is not configured"))
+	if h.daemon == nil || h.daemon.provider == nil || h.daemon.runtime == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("runtime manager is not configured"))
 	}
-	alias, err := h.daemon.provider.ReserveAlias(requestedAlias, req.Msg.GetSource(), providerName)
+	alias, err := h.daemon.provider.ReserveAlias(requestedAlias, req.Msg.GetSource(), targetRuntime)
 	if err != nil {
 		return nil, connectErrorFromErr(err)
 	}
-	defer h.daemon.provider.ReleaseAlias(alias, providerName)
+	defer h.daemon.provider.ReleaseAlias(alias, targetRuntime)
 
-	handle, err := h.daemon.provider.OpenManage(providerName, &pinixv2.ManageCommand{Action: &pinixv2.ManageCommand_Add{Add: &pinixv2.AddClipAction{
-		Source:    req.Msg.GetSource(),
-		Name:      alias,
-		ClipToken: req.Msg.GetClipToken(),
-	}}})
+	handle, err := h.daemon.runtime.OpenInstall(targetRuntime, req.Msg.GetSource(), alias, req.Msg.GetClipToken())
 	if err != nil {
 		return nil, connectErrorFromErr(err)
 	}
@@ -258,7 +278,7 @@ func (h *HubService) AddClip(ctx context.Context, req *connect.Request[pinixv2.A
 		}
 		if event.done {
 			if added == nil {
-				return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("provider %q completed add without clip metadata", providerName))
+				return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("runtime %q completed add without clip metadata", targetRuntime))
 			}
 			return connect.NewResponse(&pinixv2.AddClipResponse{Clip: added}), nil
 		}
@@ -293,27 +313,27 @@ func (h *HubService) RemoveClip(ctx context.Context, req *connect.Request[pinixv
 	if ref == nil {
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("clip %q not found", clipName))
 	}
+	runtimeName := strings.TrimSpace(ref.session.name)
+	if h.daemon.runtime == nil || !h.daemon.runtime.HasRuntime(runtimeName) {
+		return nil, connectErrorFromErr(daemonError{Code: "permission_denied", Message: fmt.Sprintf("provider %q does not accept manage operations", runtimeName)})
+	}
 
-	handle, err := h.daemon.provider.OpenManage(ref.session.name, &pinixv2.ManageCommand{Action: &pinixv2.ManageCommand_Remove{Remove: &pinixv2.RemoveClipAction{ClipName: clipName}}})
+	handle, err := h.daemon.runtime.OpenRemove(runtimeName, clipName)
 	if err != nil {
 		return nil, connectErrorFromErr(err)
 	}
 	defer handle.Close()
 
-	removedName := clipName
 	for {
 		event, err := handle.Receive(ctx)
 		if err != nil {
 			return nil, connectErrorFromErr(err)
 		}
-		if event.removed != "" {
-			removedName = event.removed
-		}
 		if event.err != nil {
 			return nil, connectErrorFromErr(daemonErrorFromResponseError(event.err))
 		}
 		if event.done {
-			return connect.NewResponse(&pinixv2.RemoveClipResponse{ClipName: removedName}), nil
+			return connect.NewResponse(&pinixv2.RemoveClipResponse{ClipName: clipName}), nil
 		}
 	}
 }
@@ -582,18 +602,77 @@ func drainProviderInvokeResponses(stream *connect.BidiStream[pinixv2.InvokeStrea
 	}
 }
 
-func localClipToClipInfo(clip ClipConfig) *pinixv2.ClipInfo {
+func clipToClipInfo(clip ClipConfig, providerName string) *pinixv2.ClipInfo {
 	manifest := enrichManifestForClip(clip, clip.Manifest)
 	return &pinixv2.ClipInfo{
 		Name:           clip.Name,
 		Package:        manifest.Package,
 		Version:        manifest.Version,
-		Provider:       localProviderName,
+		Provider:       strings.TrimSpace(providerName),
 		Domain:         manifest.Domain,
 		Commands:       internalCommandsToProto(manifest.CommandDetails),
 		HasWeb:         manifest.HasWeb,
 		TokenProtected: clip.Token != "",
 		Dependencies:   dependencySlots(manifest.Dependencies),
+	}
+}
+
+func localClipToClipInfo(clip ClipConfig) *pinixv2.ClipInfo {
+	return clipToClipInfo(clip, localProviderName)
+}
+
+func mergeProviderInfo(dst map[string]*pinixv2.ProviderInfo, provider *pinixv2.ProviderInfo) {
+	if dst == nil || provider == nil {
+		return
+	}
+	name := strings.TrimSpace(provider.GetName())
+	if name == "" {
+		return
+	}
+	entry, ok := dst[name]
+	if !ok {
+		entry = &pinixv2.ProviderInfo{Name: name}
+		dst[name] = entry
+	}
+	entry.AcceptsManage = entry.GetAcceptsManage() || provider.GetAcceptsManage()
+	entry.Clips = normalizeStrings(append(entry.GetClips(), provider.GetClips()...))
+	connectedAt := provider.GetConnectedAt()
+	if entry.GetConnectedAt() == 0 || (connectedAt != 0 && connectedAt < entry.GetConnectedAt()) {
+		entry.ConnectedAt = connectedAt
+	}
+}
+
+func (h *HubService) selectAddRuntime(providerName string) (string, bool, error) {
+	providerName = strings.TrimSpace(providerName)
+	if providerName != "" {
+		if isLocalProvider(providerName) {
+			if h.daemon == nil || !h.daemon.hasLocalRuntime() || h.daemon.handler == nil {
+				return "", false, daemonError{Code: "failed_precondition", Message: "local runtime is not configured"}
+			}
+			return localProviderName, true, nil
+		}
+		if h.daemon != nil && h.daemon.runtime != nil && h.daemon.runtime.HasRuntime(providerName) {
+			return providerName, false, nil
+		}
+		if h.daemon != nil && h.daemon.provider != nil && h.daemon.provider.lookupProvider(providerName) != nil {
+			return "", false, daemonError{Code: "permission_denied", Message: fmt.Sprintf("provider %q does not accept manage operations", providerName)}
+		}
+		return "", false, daemonError{Code: "not_found", Message: fmt.Sprintf("runtime %q not found", providerName)}
+	}
+	if h.daemon != nil && h.daemon.hasLocalRuntime() && h.daemon.handler != nil {
+		return localProviderName, true, nil
+	}
+	if h.daemon == nil || h.daemon.runtime == nil {
+		return "", false, daemonError{Code: "failed_precondition", Message: "runtime manager is not configured"}
+	}
+	runtimes := h.daemon.runtime.ListProviders()
+	switch len(runtimes) {
+	case 0:
+		return "", false, daemonError{Code: "failed_precondition", Message: "no runtime is available; specify provider to target a connected runtime"}
+	case 1:
+		return runtimes[0].GetName(), false, nil
+	default:
+		return "", false, daemonError{Code: "invalid_argument", Message: "provider is required when multiple runtimes are connected"}
 	}
 }
 
@@ -688,6 +767,8 @@ func connectCodeFromDaemonCode(code string) connect.Code {
 		return connect.CodeNotFound
 	case "already_exists":
 		return connect.CodeAlreadyExists
+	case "failed_precondition":
+		return connect.CodeFailedPrecondition
 	case "timeout":
 		return connect.CodeDeadlineExceeded
 	case "canceled", "cancelled":
