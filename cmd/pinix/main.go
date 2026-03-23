@@ -29,6 +29,9 @@ func execute() error {
 		"mcp":        {},
 		"remove":     {},
 		"list":       {},
+		"register":   {},
+		"login":      {},
+		"whoami":     {},
 		"search":     {},
 		"publish":    {},
 		"help":       {},
@@ -66,6 +69,9 @@ func newRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newMCPCommand(&serverURL, &hubToken))
 	rootCmd.AddCommand(newRemoveCommand(&serverURL, &hubToken))
 	rootCmd.AddCommand(newListCommand(&serverURL, &hubToken))
+	rootCmd.AddCommand(newRegisterCommand())
+	rootCmd.AddCommand(newLoginCommand())
+	rootCmd.AddCommand(newWhoAmICommand())
 	rootCmd.AddCommand(newSearchCommand())
 	rootCmd.AddCommand(newPublishCommand())
 	return rootCmd

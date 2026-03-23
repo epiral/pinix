@@ -55,10 +55,7 @@ func newSearchCommand() *cobra.Command {
 		Short: "Search Clips in a Pinix Registry",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if strings.TrimSpace(registryURL) == "" {
-				return fmt.Errorf("--registry is required")
-			}
-			reg, err := client.NewRegistry(registryURL)
+			reg, err := requireRegistryClient(registryURL)
 			if err != nil {
 				return err
 			}
@@ -84,7 +81,6 @@ func newSearchCommand() *cobra.Command {
 
 func newPublishCommand() *cobra.Command {
 	var registryURL string
-	var registryToken string
 	var tag string
 
 	cmd := &cobra.Command{
@@ -92,9 +88,6 @@ func newPublishCommand() *cobra.Command {
 		Short: "Publish a local Clip package to a Pinix Registry",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if strings.TrimSpace(registryURL) == "" {
-				return fmt.Errorf("--registry is required")
-			}
 			dir := "."
 			if len(args) == 1 {
 				dir = args[0]
@@ -112,7 +105,11 @@ func newPublishCommand() *cobra.Command {
 				tarball = nil
 			}
 
-			reg, err := client.NewRegistry(registryURL)
+			reg, err := requireRegistryClient(registryURL)
+			if err != nil {
+				return err
+			}
+			registryToken, err := loadRegistryToken(reg.BaseURL())
 			if err != nil {
 				return err
 			}
@@ -125,7 +122,6 @@ func newPublishCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&registryURL, "registry", os.Getenv("PINIX_REGISTRY"), "Pinix Registry base URL")
-	cmd.Flags().StringVar(&registryToken, "registry-token", os.Getenv("PINIX_REGISTRY_TOKEN"), "registry auth token")
 	cmd.Flags().StringVar(&tag, "tag", "", "dist-tag to publish under")
 	return cmd
 }
