@@ -21,6 +21,7 @@ option go_package = "github.com/epiral/pinix/gen/go/pinix/v2;pinixv2";
 service HubService {
   // 所有 Provider（Runtime / Edge Clip）统一协议。
   rpc ProviderStream(stream ProviderMessage) returns (stream HubMessage);
+  rpc RuntimeStream(stream RuntimeMessage) returns (stream HubRuntimeMessage);
 
   rpc ListClips(ListClipsRequest) returns (ListClipsResponse);
   rpc ListProviders(ListProvidersRequest) returns (ListProvidersResponse);
@@ -85,7 +86,6 @@ message ProviderMessage {
     ClipRemoved clip_removed = 3;
     InvokeResult invoke_result = 4;
     Heartbeat ping = 5;
-    ManageResult manage_result = 6;
     GetClipWebResult get_clip_web_result = 7;
   }
 }
@@ -95,15 +95,31 @@ message HubMessage {
     RegisterResponse register_response = 1;
     InvokeCommand invoke_command = 2;
     InvokeInput invoke_input = 3;
-    ManageCommand manage_command = 4;
     Heartbeat pong = 5;
     GetClipWebCommand get_clip_web_command = 6;
   }
 }
 
+message RuntimeMessage {
+  oneof payload {
+    RuntimeRegister register = 1;
+    InstallResult install_result = 2;
+    RemoveResult remove_result = 3;
+    Heartbeat ping = 4;
+  }
+}
+
+message HubRuntimeMessage {
+  oneof payload {
+    RuntimeRegisterResponse register_response = 1;
+    InstallCommand install_command = 2;
+    RemoveCommand remove_command = 3;
+    Heartbeat pong = 4;
+  }
+}
+
 message RegisterRequest {
   string provider_name = 1;
-  bool accepts_manage = 2;
   repeated ClipRegistration clips = 3;
 }
 
@@ -136,11 +152,6 @@ message InvokeResult {
   bool done = 4;
 }
 
-message ManageResult {
-  string request_id = 1;
-  HubError error = 2;
-}
-
 message GetClipWebCommand {
   string request_id = 1;
   string clip_name = 2;
@@ -165,6 +176,19 @@ message RegisterResponse {
   string message = 2;
 }
 
+message RuntimeRegister {
+  string name = 1;
+  string hostname = 2;
+  string os = 3;
+  string arch = 4;
+  repeated string supported_runtimes = 5;
+}
+
+message RuntimeRegisterResponse {
+  bool accepted = 1;
+  string message = 2;
+}
+
 message InvokeCommand {
   string request_id = 1;
   string clip_name = 2;
@@ -179,22 +203,27 @@ message InvokeInput {
   bool done = 3;
 }
 
-message ManageCommand {
+message InstallCommand {
   string request_id = 1;
-  oneof action {
-    AddClipAction add = 2;
-    RemoveClipAction remove = 3;
-  }
+  string source = 2;
+  string alias = 3;
+  string clip_token = 4;
 }
 
-message AddClipAction {
-  string source = 1;
-  string name = 2;
-  string clip_token = 3;
+message InstallResult {
+  string request_id = 1;
+  HubError error = 2;
+  ClipInfo clip = 3;
 }
 
-message RemoveClipAction {
-  string clip_name = 1;
+message RemoveCommand {
+  string request_id = 1;
+  string alias = 2;
+}
+
+message RemoveResult {
+  string request_id = 1;
+  HubError error = 2;
 }
 
 message Heartbeat {
