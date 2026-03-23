@@ -45,7 +45,7 @@ type ManifestCache struct {
 	Commands       []string                  `json:"commands,omitempty"`
 	CommandDetails []CommandInfo             `json:"command_details,omitempty"`
 	HasWeb         bool                      `json:"has_web,omitempty"`
-	Dependencies   map[string]DependencySpec `json:"dependencies,omitempty"`
+	Dependencies   manifestDependencies      `json:"dependencies,omitempty"`
 	Patterns       []string                  `json:"patterns,omitempty"`
 }
 
