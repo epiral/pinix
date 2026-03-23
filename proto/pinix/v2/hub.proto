@@ -108,7 +108,7 @@ message RegisterRequest {
 }
 
 message ClipRegistration {
-  string name = 1;
+  string alias = 1;
   string package = 2;
   string version = 3;
   string domain = 4;
@@ -116,6 +116,7 @@ message ClipRegistration {
   bool has_web = 6;
   repeated string dependencies = 7;
   bool token_protected = 8;
+  string name = 9 [deprecated = true];
 }
 
 message ClipAdded {
@@ -265,6 +266,7 @@ message AddClipRequest {
   string name = 2;
   string provider = 3;
   string clip_token = 4;
+  string requested_alias = 5;
 }
 
 message AddClipResponse {

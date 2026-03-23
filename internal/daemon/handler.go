@@ -65,15 +65,12 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 		return nil, err
 	}
 
-	stagingName := deriveNameFromSource(ref.Source)
-	if explicitName := normalizeName(params.Name); explicitName != "" {
-		stagingName = explicitName
-	}
-	if stagingName == "" {
-		return nil, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("could not derive clip name from %q", ref.Source)}
+	alias := normalizeName(params.RequestedAlias)
+	if alias == "" {
+		return nil, daemonError{Code: "invalid_argument", Message: "alias is required"}
 	}
 
-	stagePath := filepath.Join(h.registry.ClipsDir(), ".staging-"+stagingName)
+	stagePath := filepath.Join(h.registry.ClipsDir(), ".staging-"+alias)
 	_ = os.RemoveAll(stagePath)
 	if err := os.MkdirAll(h.registry.ClipsDir(), 0o755); err != nil {
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("create clips dir: %v", err)}
@@ -91,7 +88,7 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 	ref = installedRef
 
 	manifest, err := h.inspectClip(ctx, ClipConfig{
-		Name:    stagingName,
+		Name:    alias,
 		Package: strings.TrimSpace(ref.Package),
 		Version: strings.TrimSpace(ref.Version),
 		Source:  ref.Source,
@@ -103,26 +100,15 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip manifest: %v", err)}
 	}
 
-	finalName := stagingName
-	if explicitName := normalizeName(params.Name); explicitName != "" {
-		finalName = explicitName
-	} else if manifest != nil && strings.TrimSpace(manifest.Name) != "" {
-		finalName = normalizeName(manifest.Name)
-	}
-	if finalName == "" {
-		cleanup()
-		return nil, daemonError{Code: "invalid_argument", Message: "clip manifest did not provide a usable name"}
-	}
-
-	if _, exists, err := h.registry.GetClip(finalName); err != nil {
+	if _, exists, err := h.registry.GetClip(alias); err != nil {
 		cleanup()
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("check existing clip: %v", err)}
 	} else if exists {
 		cleanup()
-		return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", finalName)}
+		return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", alias)}
 	}
 
-	finalPath := filepath.Join(h.registry.ClipsDir(), finalName)
+	finalPath := filepath.Join(h.registry.ClipsDir(), alias)
 	if err := moveInstalledClip(stagePath, finalPath); err != nil {
 		cleanup()
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("move clip into place: %v", err)}
@@ -130,7 +116,7 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 	cleanup = func() { _ = os.RemoveAll(finalPath) }
 
 	clip := ClipConfig{
-		Name:     finalName,
+		Name:     alias,
 		Package:  firstNonEmpty(strings.TrimSpace(ref.Package), manifestPackage(manifest)),
 		Version:  firstNonEmpty(strings.TrimSpace(ref.Version), manifestVersion(manifest)),
 		Source:   ref.Source,
@@ -139,7 +125,7 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 		Manifest: cloneManifest(manifest),
 	}
 	if clip.Manifest != nil {
-		clip.Manifest.Name = finalName
+		clip.Manifest.Name = alias
 		if clip.Package != "" {
 			clip.Manifest.Package = clip.Package
 		}
@@ -154,13 +140,13 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("save clip config: %v", err)}
 	}
 
-	if err := h.process.StartClip(finalName); err != nil {
-		_, _, _ = h.registry.RemoveClip(finalName)
+	if err := h.process.StartClip(alias); err != nil {
+		_, _, _ = h.registry.RemoveClip(alias)
 		cleanup()
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("start clip: %v", err)}
 	}
 
-	stored, ok, err := h.registry.GetClip(finalName)
+	stored, ok, err := h.registry.GetClip(alias)
 	if err == nil && ok {
 		clip = stored
 	}

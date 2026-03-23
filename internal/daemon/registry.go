@@ -1,6 +1,6 @@
 // Role:    File-locked config registry for Pinix daemon state
 // Depends: encoding/json, fmt, os, path/filepath, sort, strings, syscall
-// Exports: ClipConfig, CommandInfo, ManifestCache, Config, Registry, DefaultRootDir, DefaultConfigPath, DefaultClipsDir, NewRegistry
+// Exports: ClipConfig, CommandInfo, DependencySpec, ManifestCache, Config, Registry, DefaultRootDir, DefaultConfigPath, DefaultClipsDir, NewRegistry
 
 package daemon
 
@@ -31,17 +31,22 @@ type CommandInfo struct {
 	Output      string `json:"output,omitempty"`
 }
 
+type DependencySpec struct {
+	Package string `json:"package,omitempty"`
+	Version string `json:"version,omitempty"`
+}
+
 type ManifestCache struct {
-	Name           string        `json:"name"`
-	Package        string        `json:"package,omitempty"`
-	Version        string        `json:"version,omitempty"`
-	Domain         string        `json:"domain,omitempty"`
-	Description    string        `json:"description,omitempty"`
-	Commands       []string      `json:"commands,omitempty"`
-	CommandDetails []CommandInfo `json:"command_details,omitempty"`
-	HasWeb         bool          `json:"has_web,omitempty"`
-	Dependencies   []string      `json:"dependencies,omitempty"`
-	Patterns       []string      `json:"patterns,omitempty"`
+	Name           string                    `json:"name"`
+	Package        string                    `json:"package,omitempty"`
+	Version        string                    `json:"version,omitempty"`
+	Domain         string                    `json:"domain,omitempty"`
+	Description    string                    `json:"description,omitempty"`
+	Commands       []string                  `json:"commands,omitempty"`
+	CommandDetails []CommandInfo             `json:"command_details,omitempty"`
+	HasWeb         bool                      `json:"has_web,omitempty"`
+	Dependencies   map[string]DependencySpec `json:"dependencies,omitempty"`
+	Patterns       []string                  `json:"patterns,omitempty"`
 }
 
 type Config struct {
