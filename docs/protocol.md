@@ -136,7 +136,7 @@ Pinix V2 把调用分成两类：
 
 ### register
 
-Clip 启动后第一条消息：
+Clip 启动后**必须**发送的第一条消息。在 `register` 之前发送任何其他消息会导致进程被终止。
 
 ```json
 {
@@ -146,16 +146,30 @@ Clip 启动后第一条消息：
     "domain": "productivity",
     "description": "",
     "commands": ["list", "add", "delete"],
-    "dependencies": []
+    "dependencies": [],
+    "package": "clip-todo",
+    "version": "0.2.0"
   }
 }
 ```
+
+| manifest 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `name` | string | 是 | Clip 实例名 |
+| `domain` | string | 是 | 功能领域 |
+| `description` | string | 否 | 描述 |
+| `commands` | string[] | 是 | 支持的命令列表 |
+| `dependencies` | string[] | 否 | 依赖的其他 Clip |
+| `package` | string | 否 | 包名（来自 package.json 或 pinix.json） |
+| `version` | string | 否 | 版本号 |
 
 `pinixd` 收到后会回：
 
 ```json
 {"type":"registered"}
 ```
+
+> **注意**：Clip 不应发送 `registered` 消息，pinixd 收到 Clip 发的 `registered` 会视为协议错误并终止进程。
 
 ### invoke
 

@@ -161,17 +161,21 @@
 
 Request body：multipart 或 JSON，包含 pinix.json + tarball（Clip）或 pinix.json（Edge Clip）。
 
-成功返回 201。包名已被其他用户占用返回 403。
+成功返回 201。包名已被其他用户占用返回 403。版本已存在返回 409。
 
 #### DELETE /packages/:name/:version
 
 撤回特定版本。需认证 + 包所有者。
 
+#### GET /packages/:name/dist-tags
+
+列出包的所有 dist-tag。返回 `{ "latest": "0.2.0", "beta": "0.3.0-beta.1" }`
+
 #### PUT /packages/:name/dist-tags/:tag
 
 设置 dist-tag。如 `PUT /packages/todo/dist-tags/beta` body: `"0.3.0-beta.1"`
 
-#### PUT /packages/:name/deprecate
+#### PUT /packages/:name/deprecate (未实现)
 
 标记废弃。body: `{"version": "0.1.0", "message": "use 0.2.0"}`
 
@@ -191,13 +195,13 @@ Request body：multipart 或 JSON，包含 pinix.json + tarball（Clip）或 pin
 { "username": "epiral", "password": "..." }
 ```
 
-返回 `{ "token": "..." }`
+返回 `{ "token": "...", "username": "..." }`
 
 #### GET /auth/whoami
 
 返回 `{ "username": "epiral" }`
 
-### 组织
+### 组织（未实现）
 
 #### POST /orgs
 
@@ -213,7 +217,7 @@ Request body：multipart 或 JSON，包含 pinix.json + tarball（Clip）或 pin
 
 role: `owner` | `member`
 
-#### PUT /packages/:name/access
+#### PUT /packages/:name/access (未实现)
 
 ```json
 { "access": "public" }
