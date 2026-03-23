@@ -1,5 +1,5 @@
 // Role:    Clip installation helpers for npm, GitHub, registry tarballs, and local source copies
-// Depends: archive/tar, compress/gzip, context, fmt, io, io/fs, os, os/exec, path/filepath, strings, internal/client
+// Depends: archive/tar, bytes, compress/gzip, context, crypto/sha1, encoding/hex, fmt, io, io/fs, os, os/exec, path/filepath, strings, internal/client
 // Exports: (package-internal helpers)
 
 package daemon
@@ -9,6 +9,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/fs"
@@ -102,6 +104,9 @@ func installFromRegistry(ctx context.Context, targetPath string, ref sourceRef, 
 	if err != nil {
 		return "", err
 	}
+	if err := verifyRegistryTarballShasum(ref.Package, resolvedVersion, versionDoc.Dist.Shasum, tarball); err != nil {
+		return "", err
+	}
 	if err := extractTarGz(targetPath, tarball); err != nil {
 		return "", err
 	}
@@ -109,6 +114,19 @@ func installFromRegistry(ctx context.Context, targetPath string, ref sourceRef, 
 		return "", err
 	}
 	return resolvedVersion, nil
+}
+
+func verifyRegistryTarballShasum(pkg, version, expected string, tarball []byte) error {
+	expected = strings.TrimSpace(expected)
+	if expected == "" {
+		return fmt.Errorf("registry package %q version %q does not provide a dist shasum", pkg, version)
+	}
+	sum := sha1.Sum(tarball)
+	actual := hex.EncodeToString(sum[:])
+	if !strings.EqualFold(actual, expected) {
+		return fmt.Errorf("registry tarball shasum mismatch for package %q version %q: expected %s, got %s", pkg, version, expected, actual)
+	}
+	return nil
 }
 
 func installFromGitHub(targetPath, source, bunPath string) error {
