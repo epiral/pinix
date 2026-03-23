@@ -1,6 +1,6 @@
 // Role:    Typed NDJSON message definitions shared by pinixd and Clip processes
 // Depends: encoding/json, errors, fmt, strings
-// Exports: Message, Manifest, Error, ErrClosed, MessageTypeRegister, MessageTypeRegistered, MessageTypeInvoke, MessageTypeResult, MessageTypeError, MessageTypeChunk, MessageTypeDone
+// Exports: Message, Manifest, DependencySpec, Error, ErrClosed, MessageTypeRegister, MessageTypeRegistered, MessageTypeInvoke, MessageTypeResult, MessageTypeError, MessageTypeChunk, MessageTypeDone
 
 package ipc
 
@@ -26,6 +26,7 @@ const (
 type Message struct {
 	ID       string          `json:"id,omitempty"`
 	Type     string          `json:"type"`
+	Alias    string          `json:"alias,omitempty"`
 	Clip     string          `json:"clip,omitempty"`
 	Command  string          `json:"command,omitempty"`
 	Input    json.RawMessage `json:"input,omitempty"`
@@ -35,13 +36,17 @@ type Message struct {
 }
 
 type Manifest struct {
-	Name         string          `json:"name,omitempty"`
-	Package      string          `json:"package,omitempty"`
-	Version      string          `json:"version,omitempty"`
-	Domain       string          `json:"domain,omitempty"`
-	Description  string          `json:"description,omitempty"`
-	Commands     json.RawMessage `json:"commands,omitempty"`
-	Dependencies []string        `json:"dependencies,omitempty"`
+	Package      string                    `json:"package,omitempty"`
+	Version      string                    `json:"version,omitempty"`
+	Domain       string                    `json:"domain,omitempty"`
+	Description  string                    `json:"description,omitempty"`
+	Commands     json.RawMessage           `json:"commands,omitempty"`
+	Dependencies map[string]DependencySpec `json:"dependencies,omitempty"`
+}
+
+type DependencySpec struct {
+	Package string `json:"package,omitempty"`
+	Version string `json:"version,omitempty"`
 }
 
 type Error struct {

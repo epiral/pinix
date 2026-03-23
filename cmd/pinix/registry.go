@@ -293,7 +293,7 @@ func synthesizeRegistryPublishManifest(dir string) (*registryPublishManifest, er
 		Main:         firstNonEmpty(strings.TrimSpace(pkg.Main), packageJSONBin(pkg), defaultMainEntry(dir)),
 		Web:          defaultWebEntry(dir),
 		Commands:     commandMapsFromManifest(inspected),
-		Dependencies: dependencyMap(manifestDependenciesValue(inspected)),
+		Dependencies: manifestDependenciesValue(inspected),
 		Patterns:     manifestPatternsValue(inspected),
 	}
 
@@ -397,8 +397,8 @@ func inspectLocalClip(dir string, pkg localPackageJSON) (*daemonpkg.ManifestCach
 }
 
 func deriveRegistryPackageName(pkg localPackageJSON, manifest *daemonpkg.ManifestCache, dir string) string {
-	if manifest != nil && strings.TrimSpace(manifest.Name) != "" {
-		return strings.TrimSpace(manifest.Name)
+	if manifest != nil && strings.TrimSpace(manifest.Package) != "" {
+		return defaultPackageName(strings.TrimSpace(manifest.Package))
 	}
 	if strings.TrimSpace(pkg.Name) != "" {
 		return defaultPackageName(pkg.Name)
@@ -493,24 +493,6 @@ func maybeJSONValue(raw string) any {
 		}
 	}
 	return raw
-}
-
-func dependencyMap(dependencies []string) map[string]string {
-	if len(dependencies) == 0 {
-		return nil
-	}
-	result := make(map[string]string, len(dependencies))
-	for _, dependency := range dependencies {
-		dependency = strings.TrimSpace(dependency)
-		if dependency == "" {
-			continue
-		}
-		result[dependency] = "*"
-	}
-	if len(result) == 0 {
-		return nil
-	}
-	return result
 }
 
 func buildRegistryTarball(dir string, manifestRaw json.RawMessage) ([]byte, error) {
@@ -658,11 +640,22 @@ func manifestDomainValue(manifest *daemonpkg.ManifestCache) string {
 	return strings.TrimSpace(manifest.Domain)
 }
 
-func manifestDependenciesValue(manifest *daemonpkg.ManifestCache) []string {
+func manifestDependenciesValue(manifest *daemonpkg.ManifestCache) map[string]string {
 	if manifest == nil {
 		return nil
 	}
-	return append([]string(nil), manifest.Dependencies...)
+	result := make(map[string]string, len(manifest.Dependencies))
+	for slot, spec := range manifest.Dependencies {
+		slot = strings.TrimSpace(slot)
+		if slot == "" {
+			continue
+		}
+		result[slot] = firstNonEmpty(strings.TrimSpace(spec.Version), "*")
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func manifestPatternsValue(manifest *daemonpkg.ManifestCache) []string {
