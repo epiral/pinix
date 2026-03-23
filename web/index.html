@@ -5,35 +5,98 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>Pinix Portal</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E⚡%3C/text%3E%3C/svg%3E" type="image/svg+xml">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <div class="shell">
+    <!-- Compact header: one line -->
     <header class="topbar">
-      <div>
-        <p class="eyebrow">Pinix</p>
-        <h1>Pinix Portal</h1>
+      <div class="topbar-left">
+        <span class="logo-icon">P</span>
+        <span class="logo-text">Pinix Portal</span>
       </div>
-      <button id="refreshButton" class="primary" type="button">Refresh</button>
+      <div class="topbar-right">
+        <span id="hubAddress" class="topbar-stat"></span>
+        <span class="topbar-sep"></span>
+        <span id="providerCount" class="topbar-stat">0 providers</span>
+        <span class="topbar-sep"></span>
+        <span id="clipCount" class="topbar-stat">0 clips</span>
+        <span id="connectionBadge" class="connection-badge connected">Connected</span>
+      </div>
     </header>
 
+    <!-- Quick Actions bar -->
+    <div class="quick-actions" id="quickActions">
+      <button type="button" class="qa-btn" data-qa="screenshot">
+        <span class="qa-icon">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5"/></svg>
+        </span>
+        Screenshot
+      </button>
+      <button type="button" class="qa-btn" data-qa="speak-clipboard">
+        <span class="qa-icon">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 6v4l4 3V3L3 6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 5.5a3 3 0 010 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </span>
+        Speak Clipboard
+      </button>
+      <button type="button" class="qa-btn" data-qa="system-info">
+        <span class="qa-icon">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v3h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        System Info
+      </button>
+      <button type="button" class="qa-btn" data-qa="list-windows">
+        <span class="qa-icon">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="2.5" width="13" height="11" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M1.5 5.5h13" stroke="currentColor" stroke-width="1.5"/></svg>
+        </span>
+        List Windows
+      </button>
+    </div>
+
     <main class="layout">
+      <!-- Sidebar -->
       <aside class="sidebar-stack">
+        <!-- Provider panel -->
+        <section class="panel provider-panel" id="providerPanel">
+          <div class="panel-header-compact">
+            <h3>Providers</h3>
+            <button type="button" class="icon-btn" id="refreshProviders" title="Refresh providers" aria-label="Refresh providers">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 8a6 6 0 0111.3-2.8M14 8a6 6 0 01-11.3 2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M13 2v3.2h-3.2M3 14v-3.2h3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <div id="providerList" class="provider-list">
+            <div class="empty-list-sm">No providers</div>
+          </div>
+        </section>
+
+        <!-- Clips panel -->
         <section class="panel sidebar-panel">
-          <div class="panel-header">
-            <h2>Clips</h2>
-            <p id="clipCount" class="panel-meta">0 clips</p>
+          <div class="panel-header-compact">
+            <h3>Clips</h3>
+            <button type="button" class="icon-btn" id="refreshButton" title="Refresh clips" aria-label="Refresh clips">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 8a6 6 0 0111.3-2.8M14 8a6 6 0 01-11.3 2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M13 2v3.2h-3.2M3 14v-3.2h3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <!-- Search bar -->
+          <div class="search-wrap">
+            <svg class="search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <input type="text" id="clipSearch" class="search-input" placeholder="Search clips... (Cmd+K)" autocomplete="off" spellcheck="false">
           </div>
           <div id="clipList" class="clip-list"></div>
         </section>
-
       </aside>
 
+      <!-- Detail panel -->
       <section class="panel detail">
         <div id="detailView" class="empty-state">
-          <h2>Select a clip</h2>
-          <p>Choose a clip from the list to inspect its manifest and run commands.</p>
+          <div class="empty-state-inner">
+            <div class="empty-icon">
+              <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><rect x="8" y="10" width="32" height="28" rx="4" stroke="currentColor" stroke-width="2" opacity="0.3"/><path d="M16 22h16M16 28h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.3"/></svg>
+            </div>
+            <h2>Select a clip</h2>
+            <p>Choose a clip from the list to inspect its manifest and run commands.</p>
+          </div>
         </div>
       </section>
     </main>
