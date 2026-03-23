@@ -1,5 +1,5 @@
 // Role:    Runtime-to-Hub provider bridge for pinixd --hub mode
-// Depends: context, errors, fmt, io, os, strings, sync, time, connectrpc, internal/client, internal/ipc, pinix v2
+// Depends: context, errors, fmt, io, os, runtime, strings, sync, time, connectrpc, internal/client, internal/ipc, pinix v2
 // Exports: Daemon.ConnectHub
 
 package daemon
@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	stdruntime "runtime"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,9 @@ type runtimeHubConnector struct {
 	providerName string
 
 	sendMu sync.Mutex
+
+	providerStreamMu sync.RWMutex
+	providerStream   *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage]
 }
 
 type registerRejectedError struct {
@@ -71,9 +75,38 @@ func (c *runtimeHubConnector) run(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	errCh := make(chan error, 2)
+	go func() {
+		errCh <- c.runProviderLoop(runCtx)
+	}()
+	go func() {
+		errCh <- c.runRuntimeLoop(runCtx)
+	}()
+
+	var firstErr error
+	for i := 0; i < 2; i++ {
+		err := <-errCh
+		if err != nil && firstErr == nil && ctx.Err() == nil {
+			firstErr = err
+			cancel()
+		}
+	}
+	if ctx.Err() != nil {
+		return nil
+	}
+	return firstErr
+}
+
+func (c *runtimeHubConnector) runProviderLoop(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	for {
-		err := c.runSession(ctx)
+		err := c.runProviderSession(ctx)
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -99,7 +132,39 @@ func (c *runtimeHubConnector) run(ctx context.Context) error {
 	}
 }
 
-func (c *runtimeHubConnector) runSession(parent context.Context) error {
+func (c *runtimeHubConnector) runRuntimeLoop(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	for {
+		err := c.runRuntimeSession(ctx)
+		if ctx.Err() != nil {
+			return nil
+		}
+		if err == nil {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(runtimeHubReconnectDelay):
+			}
+			continue
+		}
+
+		var rejected registerRejectedError
+		if errors.As(err, &rejected) {
+			return err
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(runtimeHubReconnectDelay):
+		}
+	}
+}
+
+func (c *runtimeHubConnector) runProviderSession(parent context.Context) error {
 	if parent == nil {
 		parent = context.Background()
 	}
@@ -115,7 +180,7 @@ func (c *runtimeHubConnector) runSession(parent context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := c.send(stream, register); err != nil {
+	if err := c.sendProvider(stream, register); err != nil {
 		return err
 	}
 
@@ -139,6 +204,8 @@ func (c *runtimeHubConnector) runSession(parent context.Context) error {
 				}
 				return registerRejectedError{message: msg}
 			}
+			c.setProviderStream(stream)
+			defer c.clearProviderStream(stream)
 			break
 		}
 	}
@@ -153,7 +220,7 @@ func (c *runtimeHubConnector) runSession(parent context.Context) error {
 			case <-sessionCtx.Done():
 				return
 			case <-ticker.C:
-				if err := c.send(stream, &pinixv2.ProviderMessage{Payload: &pinixv2.ProviderMessage_Ping{Ping: &pinixv2.Heartbeat{SentAtUnixMs: time.Now().UnixMilli()}}}); err != nil {
+				if err := c.sendProvider(stream, &pinixv2.ProviderMessage{Payload: &pinixv2.ProviderMessage_Ping{Ping: &pinixv2.Heartbeat{SentAtUnixMs: time.Now().UnixMilli()}}}); err != nil {
 					return
 				}
 			}
@@ -179,8 +246,6 @@ func (c *runtimeHubConnector) runSession(parent context.Context) error {
 		switch {
 		case message.GetInvokeCommand() != nil:
 			go c.handleInvokeCommand(sessionCtx, stream, message.GetInvokeCommand())
-		case message.GetManageCommand() != nil:
-			go c.handleManageCommand(sessionCtx, stream, message.GetManageCommand())
 		case message.GetPong() != nil:
 			continue
 		default:
@@ -206,9 +271,119 @@ func (c *runtimeHubConnector) registerMessage(ctx context.Context) (*pinixv2.Pro
 	}
 
 	return &pinixv2.ProviderMessage{Payload: &pinixv2.ProviderMessage_Register{Register: &pinixv2.RegisterRequest{
-		ProviderName:  c.providerName,
-		AcceptsManage: true,
-		Clips:         registrations,
+		ProviderName: c.providerName,
+		Clips:        registrations,
+	}}}, nil
+}
+
+func (c *runtimeHubConnector) runRuntimeSession(parent context.Context) error {
+	if parent == nil {
+		parent = context.Background()
+	}
+
+	sessionCtx, cancel := context.WithCancel(parent)
+	defer cancel()
+
+	stream := c.client.RuntimeStream(sessionCtx, "")
+	defer stream.CloseRequest()
+	defer stream.CloseResponse()
+
+	register, err := c.runtimeRegisterMessage(sessionCtx)
+	if err != nil {
+		return err
+	}
+	if err := c.sendRuntime(stream, register); err != nil {
+		return err
+	}
+
+	for {
+		message, err := stream.Receive()
+		if err != nil {
+			if parent.Err() != nil || sessionCtx.Err() != nil {
+				return nil
+			}
+			if errors.Is(err, io.EOF) {
+				return err
+			}
+			return fmt.Errorf("receive runtime register response: %w", err)
+		}
+
+		if response := message.GetRegisterResponse(); response != nil {
+			if !response.GetAccepted() {
+				msg := strings.TrimSpace(response.GetMessage())
+				if msg == "" {
+					msg = "runtime registration rejected"
+				}
+				return registerRejectedError{message: msg}
+			}
+			break
+		}
+	}
+
+	heartbeatDone := make(chan struct{})
+	go func() {
+		defer close(heartbeatDone)
+		ticker := time.NewTicker(runtimeHubHeartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-sessionCtx.Done():
+				return
+			case <-ticker.C:
+				if err := c.sendRuntime(stream, &pinixv2.RuntimeMessage{Payload: &pinixv2.RuntimeMessage_Ping{Ping: &pinixv2.Heartbeat{SentAtUnixMs: time.Now().UnixMilli()}}}); err != nil {
+					return
+				}
+			}
+		}
+	}()
+	defer func() {
+		cancel()
+		<-heartbeatDone
+	}()
+
+	for {
+		message, err := stream.Receive()
+		if err != nil {
+			if parent.Err() != nil || sessionCtx.Err() != nil {
+				return nil
+			}
+			if errors.Is(err, io.EOF) {
+				return err
+			}
+			return fmt.Errorf("receive runtime hub message: %w", err)
+		}
+
+		switch {
+		case message.GetInstallCommand() != nil:
+			go c.handleInstallCommand(sessionCtx, stream, message.GetInstallCommand())
+		case message.GetRemoveCommand() != nil:
+			go c.handleRemoveCommand(stream, message.GetRemoveCommand())
+		case message.GetPong() != nil:
+			continue
+		default:
+			continue
+		}
+	}
+}
+
+func (c *runtimeHubConnector) runtimeRegisterMessage(ctx context.Context) (*pinixv2.RuntimeMessage, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "localhost"
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	return &pinixv2.RuntimeMessage{Payload: &pinixv2.RuntimeMessage_Register{Register: &pinixv2.RuntimeRegister{
+		Name:              c.providerName,
+		Hostname:          strings.TrimSpace(hostname),
+		Os:                stdruntime.GOOS,
+		Arch:              stdruntime.GOARCH,
+		SupportedRuntimes: []string{"bun"},
 	}}}, nil
 }
 
@@ -304,56 +479,62 @@ func (c *runtimeHubConnector) handleInvokeCommand(ctx context.Context, stream *c
 	}
 }
 
-func (c *runtimeHubConnector) handleManageCommand(ctx context.Context, stream *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage], command *pinixv2.ManageCommand) {
+func (c *runtimeHubConnector) handleInstallCommand(ctx context.Context, stream *connect.BidiStreamForClient[pinixv2.RuntimeMessage, pinixv2.HubRuntimeMessage], command *pinixv2.InstallCommand) {
 	requestID := strings.TrimSpace(command.GetRequestId())
 	if requestID == "" {
 		return
 	}
 
-	var err error
-	switch {
-	case command.GetAdd() != nil:
-		err = c.handleManageAdd(ctx, stream, requestID, command.GetAdd())
-	case command.GetRemove() != nil:
-		err = c.handleManageRemove(stream, requestID, command.GetRemove())
-	default:
-		err = daemonError{Code: "invalid_argument", Message: "manage command action is required"}
+	providerStream := c.currentProviderStream()
+	if providerStream == nil {
+		_ = c.sendInstallResult(stream, &pinixv2.InstallResult{RequestId: requestID, Error: responseErrorToHubError(responseErrorFromErr(daemonError{Code: "unavailable", Message: "provider stream is not connected"}))})
+		return
 	}
-	if err != nil {
-		_ = c.sendManageResult(stream, requestID, responseErrorToHubError(responseErrorFromErr(err)))
-	}
-}
 
-func (c *runtimeHubConnector) handleManageAdd(ctx context.Context, stream *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage], requestID string, action *pinixv2.AddClipAction) error {
 	result, err := c.daemon.handler.handleAddTrusted(ctx, AddParams{
-		Source:         action.GetSource(),
-		RequestedAlias: action.GetName(),
-		Token:          action.GetClipToken(),
+		Source:         command.GetSource(),
+		RequestedAlias: command.GetAlias(),
+		Token:          command.GetClipToken(),
 	})
 	if err != nil {
-		return err
+		_ = c.sendInstallResult(stream, &pinixv2.InstallResult{RequestId: requestID, Error: responseErrorToHubError(responseErrorFromErr(err))})
+		return
 	}
-	if err := c.send(stream, &pinixv2.ProviderMessage{Payload: &pinixv2.ProviderMessage_ClipAdded{ClipAdded: &pinixv2.ClipAdded{
+	if err := c.sendProvider(providerStream, &pinixv2.ProviderMessage{Payload: &pinixv2.ProviderMessage_ClipAdded{ClipAdded: &pinixv2.ClipAdded{
 		RequestId: requestID,
 		Clip:      localClipToRegistration(result.Clip),
 	}}}); err != nil {
-		return err
+		_ = c.sendInstallResult(stream, &pinixv2.InstallResult{RequestId: requestID, Error: responseErrorToHubError(responseErrorFromErr(err))})
+		return
 	}
-	return c.sendManageResult(stream, requestID, nil)
+	_ = c.sendInstallResult(stream, &pinixv2.InstallResult{RequestId: requestID, Clip: clipToClipInfo(result.Clip, c.providerName)})
 }
 
-func (c *runtimeHubConnector) handleManageRemove(stream *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage], requestID string, action *pinixv2.RemoveClipAction) error {
-	result, err := c.daemon.handler.handleRemoveTrusted(RemoveParams{Name: action.GetClipName()})
-	if err != nil {
-		return err
+func (c *runtimeHubConnector) handleRemoveCommand(stream *connect.BidiStreamForClient[pinixv2.RuntimeMessage, pinixv2.HubRuntimeMessage], command *pinixv2.RemoveCommand) {
+	requestID := strings.TrimSpace(command.GetRequestId())
+	if requestID == "" {
+		return
 	}
-	if err := c.send(stream, &pinixv2.ProviderMessage{Payload: &pinixv2.ProviderMessage_ClipRemoved{ClipRemoved: &pinixv2.ClipRemoved{
+
+	providerStream := c.currentProviderStream()
+	if providerStream == nil {
+		_ = c.sendRemoveResult(stream, &pinixv2.RemoveResult{RequestId: requestID, Error: responseErrorToHubError(responseErrorFromErr(daemonError{Code: "unavailable", Message: "provider stream is not connected"}))})
+		return
+	}
+
+	result, err := c.daemon.handler.handleRemoveTrusted(RemoveParams{Name: command.GetAlias()})
+	if err != nil {
+		_ = c.sendRemoveResult(stream, &pinixv2.RemoveResult{RequestId: requestID, Error: responseErrorToHubError(responseErrorFromErr(err))})
+		return
+	}
+	if err := c.sendProvider(providerStream, &pinixv2.ProviderMessage{Payload: &pinixv2.ProviderMessage_ClipRemoved{ClipRemoved: &pinixv2.ClipRemoved{
 		RequestId: requestID,
 		Name:      result.Name,
 	}}}); err != nil {
-		return err
+		_ = c.sendRemoveResult(stream, &pinixv2.RemoveResult{RequestId: requestID, Error: responseErrorToHubError(responseErrorFromErr(err))})
+		return
 	}
-	return c.sendManageResult(stream, requestID, nil)
+	_ = c.sendRemoveResult(stream, &pinixv2.RemoveResult{RequestId: requestID})
 }
 
 func (c *runtimeHubConnector) sendInvokeError(stream *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage], requestID string, err error) {
@@ -361,23 +542,53 @@ func (c *runtimeHubConnector) sendInvokeError(stream *connect.BidiStreamForClien
 }
 
 func (c *runtimeHubConnector) sendInvokeResult(stream *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage], result *pinixv2.InvokeResult) error {
-	return c.send(stream, &pinixv2.ProviderMessage{Payload: &pinixv2.ProviderMessage_InvokeResult{InvokeResult: result}})
+	return c.sendProvider(stream, &pinixv2.ProviderMessage{Payload: &pinixv2.ProviderMessage_InvokeResult{InvokeResult: result}})
 }
 
-func (c *runtimeHubConnector) sendManageResult(stream *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage], requestID string, hubErr *pinixv2.HubError) error {
-	return c.send(stream, &pinixv2.ProviderMessage{Payload: &pinixv2.ProviderMessage_ManageResult{ManageResult: &pinixv2.ManageResult{
-		RequestId: requestID,
-		Error:     hubErr,
-	}}})
+func (c *runtimeHubConnector) sendInstallResult(stream *connect.BidiStreamForClient[pinixv2.RuntimeMessage, pinixv2.HubRuntimeMessage], result *pinixv2.InstallResult) error {
+	return c.sendRuntime(stream, &pinixv2.RuntimeMessage{Payload: &pinixv2.RuntimeMessage_InstallResult{InstallResult: result}})
 }
 
-func (c *runtimeHubConnector) send(stream *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage], message *pinixv2.ProviderMessage) error {
+func (c *runtimeHubConnector) sendRemoveResult(stream *connect.BidiStreamForClient[pinixv2.RuntimeMessage, pinixv2.HubRuntimeMessage], result *pinixv2.RemoveResult) error {
+	return c.sendRuntime(stream, &pinixv2.RuntimeMessage{Payload: &pinixv2.RuntimeMessage_RemoveResult{RemoveResult: result}})
+}
+
+func (c *runtimeHubConnector) sendProvider(stream *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage], message *pinixv2.ProviderMessage) error {
 	if stream == nil {
 		return fmt.Errorf("provider stream is required")
 	}
 	c.sendMu.Lock()
 	defer c.sendMu.Unlock()
 	return stream.Send(message)
+}
+
+func (c *runtimeHubConnector) sendRuntime(stream *connect.BidiStreamForClient[pinixv2.RuntimeMessage, pinixv2.HubRuntimeMessage], message *pinixv2.RuntimeMessage) error {
+	if stream == nil {
+		return fmt.Errorf("runtime stream is required")
+	}
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	return stream.Send(message)
+}
+
+func (c *runtimeHubConnector) setProviderStream(stream *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage]) {
+	c.providerStreamMu.Lock()
+	defer c.providerStreamMu.Unlock()
+	c.providerStream = stream
+}
+
+func (c *runtimeHubConnector) clearProviderStream(stream *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage]) {
+	c.providerStreamMu.Lock()
+	defer c.providerStreamMu.Unlock()
+	if c.providerStream == stream {
+		c.providerStream = nil
+	}
+}
+
+func (c *runtimeHubConnector) currentProviderStream() *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage] {
+	c.providerStreamMu.RLock()
+	defer c.providerStreamMu.RUnlock()
+	return c.providerStream
 }
 
 func runtimeProviderName(port int) string {

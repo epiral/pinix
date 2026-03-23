@@ -77,6 +77,12 @@ func (c *Client) ProviderStream(ctx context.Context, hubToken string) *connect.B
 	return stream
 }
 
+func (c *Client) RuntimeStream(ctx context.Context, hubToken string) *connect.BidiStreamForClient[pinixv2.RuntimeMessage, pinixv2.HubRuntimeMessage] {
+	stream := c.hub.RuntimeStream(ctx)
+	setAuthHeader(stream.RequestHeader(), hubToken)
+	return stream
+}
+
 func (c *Client) ListClips(ctx context.Context, hubToken string) ([]*pinixv2.ClipInfo, error) {
 	req := connect.NewRequest(&pinixv2.ListClipsRequest{})
 	setAuthHeader(req.Header(), hubToken)

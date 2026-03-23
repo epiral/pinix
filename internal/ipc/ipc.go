@@ -41,7 +41,49 @@ type Manifest struct {
 	Domain       string                    `json:"domain,omitempty"`
 	Description  string                    `json:"description,omitempty"`
 	Commands     json.RawMessage           `json:"commands,omitempty"`
-	Dependencies map[string]DependencySpec `json:"dependencies,omitempty"`
+	Dependencies flexDependencies          `json:"dependencies,omitempty"`
+}
+
+// flexDependencies handles three wire formats for backward compatibility:
+//   - map[string]DependencySpec  (new slot format)
+//   - map[string]string          (old semver map)
+//   - []string                   (legacy string array)
+type flexDependencies map[string]DependencySpec
+
+func (d *flexDependencies) UnmarshalJSON(data []byte) error {
+	// Try new slot format first
+	var specMap map[string]DependencySpec
+	if err := json.Unmarshal(data, &specMap); err == nil {
+		*d = flexDependencies(specMap)
+		return nil
+	}
+
+	// Try old semver map: {"browser": "^1.0.0"}
+	var stringMap map[string]string
+	if err := json.Unmarshal(data, &stringMap); err == nil {
+		result := make(flexDependencies, len(stringMap))
+		for name, version := range stringMap {
+			result[name] = DependencySpec{Package: name, Version: version}
+		}
+		*d = result
+		return nil
+	}
+
+	// Try legacy string array: ["browser"]
+	var list []string
+	if err := json.Unmarshal(data, &list); err == nil {
+		result := make(flexDependencies, len(list))
+		for _, name := range list {
+			name = strings.TrimSpace(name)
+			if name != "" {
+				result[name] = DependencySpec{Package: name}
+			}
+		}
+		*d = result
+		return nil
+	}
+
+	return fmt.Errorf("dependencies: unsupported format")
 }
 
 type DependencySpec struct {

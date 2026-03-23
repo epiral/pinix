@@ -17,6 +17,7 @@ type Daemon struct {
 	registry *Registry
 	process  *ProcessManager
 	provider *ProviderManager
+	runtime  *RuntimeManager
 	handler  *Handler
 
 	mu         sync.Mutex
@@ -36,6 +37,7 @@ func NewDaemon(registry *Registry, process *ProcessManager) (*Daemon, error) {
 		registry: registry,
 		process:  process,
 		provider: NewProviderManager(registry),
+		runtime:  NewRuntimeManager(),
 	}
 	d.process.provider = d.provider
 	d.provider.registry = registry
@@ -51,6 +53,7 @@ func NewHubDaemon(registry *Registry) (*Daemon, error) {
 	d := &Daemon{
 		registry: registry,
 		provider: NewProviderManager(nil),
+		runtime:  NewRuntimeManager(),
 	}
 	return d, nil
 }
@@ -118,6 +121,11 @@ func (d *Daemon) Close() error {
 	}
 	if d.provider != nil {
 		if err := d.provider.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if d.runtime != nil {
+		if err := d.runtime.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
