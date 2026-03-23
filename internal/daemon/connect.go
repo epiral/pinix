@@ -203,15 +203,22 @@ func (h *HubService) AddClip(ctx context.Context, req *connect.Request[pinixv2.A
 		return nil, connectErrorFromErr(err)
 	}
 
+	requestedAlias := firstNonEmpty(req.Msg.GetRequestedAlias(), req.Msg.GetName())
 	providerName := strings.TrimSpace(req.Msg.GetProvider())
 	if isLocalProvider(providerName) {
 		if h.daemon == nil || !h.daemon.hasLocalRuntime() || h.daemon.handler == nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("local runtime is not configured; specify provider to target a connected runtime"))
 		}
+		alias, err := h.daemon.provider.ReserveAlias(requestedAlias, req.Msg.GetSource(), localProviderName)
+		if err != nil {
+			return nil, connectErrorFromErr(err)
+		}
+		defer h.daemon.provider.ReleaseAlias(alias, localProviderName)
+
 		result, err := h.daemon.handler.handleAdd(ctx, authToken, AddParams{
-			Source: req.Msg.GetSource(),
-			Name:   req.Msg.GetName(),
-			Token:  req.Msg.GetClipToken(),
+			Source:         req.Msg.GetSource(),
+			RequestedAlias: alias,
+			Token:          req.Msg.GetClipToken(),
 		})
 		if err != nil {
 			return nil, connectErrorFromErr(err)
@@ -221,10 +228,15 @@ func (h *HubService) AddClip(ctx context.Context, req *connect.Request[pinixv2.A
 	if h.daemon.provider == nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("provider manager is not configured"))
 	}
+	alias, err := h.daemon.provider.ReserveAlias(requestedAlias, req.Msg.GetSource(), providerName)
+	if err != nil {
+		return nil, connectErrorFromErr(err)
+	}
+	defer h.daemon.provider.ReleaseAlias(alias, providerName)
 
 	handle, err := h.daemon.provider.OpenManage(providerName, &pinixv2.ManageCommand{Action: &pinixv2.ManageCommand_Add{Add: &pinixv2.AddClipAction{
 		Source:    req.Msg.GetSource(),
-		Name:      req.Msg.GetName(),
+		Name:      alias,
 		ClipToken: req.Msg.GetClipToken(),
 	}}})
 	if err != nil {
@@ -581,7 +593,7 @@ func localClipToClipInfo(clip ClipConfig) *pinixv2.ClipInfo {
 		Commands:       internalCommandsToProto(manifest.CommandDetails),
 		HasWeb:         manifest.HasWeb,
 		TokenProtected: clip.Token != "",
-		Dependencies:   append([]string(nil), manifest.Dependencies...),
+		Dependencies:   dependencySlots(manifest.Dependencies),
 	}
 }
 
@@ -597,7 +609,7 @@ func manifestToProto(manifest *ManifestCache) *pinixv2.ClipManifest {
 		Domain:       manifest.Domain,
 		Description:  manifest.Description,
 		Commands:     internalCommandsToProto(manifest.CommandDetails),
-		Dependencies: append([]string(nil), manifest.Dependencies...),
+		Dependencies: dependencySlots(manifest.Dependencies),
 		HasWeb:       manifest.HasWeb,
 		Patterns:     append([]string(nil), manifest.Patterns...),
 	}

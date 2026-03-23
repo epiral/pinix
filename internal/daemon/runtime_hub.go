@@ -326,9 +326,9 @@ func (c *runtimeHubConnector) handleManageCommand(ctx context.Context, stream *c
 
 func (c *runtimeHubConnector) handleManageAdd(ctx context.Context, stream *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage], requestID string, action *pinixv2.AddClipAction) error {
 	result, err := c.daemon.handler.handleAddTrusted(ctx, AddParams{
-		Source: action.GetSource(),
-		Name:   action.GetName(),
-		Token:  action.GetClipToken(),
+		Source:         action.GetSource(),
+		RequestedAlias: action.GetName(),
+		Token:          action.GetClipToken(),
 	})
 	if err != nil {
 		return err
@@ -420,13 +420,13 @@ func sanitizeRuntimeProviderComponent(value string) string {
 func localClipToRegistration(clip ClipConfig) *pinixv2.ClipRegistration {
 	manifest := enrichManifestForClip(clip, clip.Manifest)
 	return &pinixv2.ClipRegistration{
-		Name:           clip.Name,
+		Alias:          clip.Name,
 		Package:        manifest.Package,
 		Version:        manifest.Version,
 		Domain:         manifest.Domain,
 		Commands:       internalCommandsToProto(manifest.CommandDetails),
 		HasWeb:         manifest.HasWeb,
 		TokenProtected: clip.Token != "",
-		Dependencies:   append([]string(nil), manifest.Dependencies...),
+		Dependencies:   dependencySlots(manifest.Dependencies),
 	}
 }

@@ -107,12 +107,14 @@ func (c *Client) GetManifest(ctx context.Context, clipName, hubToken string) (*p
 	return resp.Msg.GetManifest(), nil
 }
 
-func (c *Client) Add(ctx context.Context, source, name, provider, clipToken, hubToken string) (*pinixv2.ClipInfo, error) {
+func (c *Client) Add(ctx context.Context, source, requestedAlias, provider, clipToken, hubToken string) (*pinixv2.ClipInfo, error) {
+	requestedAlias = strings.TrimSpace(requestedAlias)
 	req := connect.NewRequest(&pinixv2.AddClipRequest{
-		Source:    strings.TrimSpace(source),
-		Name:      strings.TrimSpace(name),
-		Provider:  strings.TrimSpace(provider),
-		ClipToken: strings.TrimSpace(clipToken),
+		Source:         strings.TrimSpace(source),
+		Name:           requestedAlias,
+		Provider:       strings.TrimSpace(provider),
+		ClipToken:      strings.TrimSpace(clipToken),
+		RequestedAlias: requestedAlias,
 	})
 	setAuthHeader(req.Header(), hubToken)
 	resp, err := c.hub.AddClip(ctx, req)

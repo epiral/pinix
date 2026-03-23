@@ -32,6 +32,9 @@ func execute() error {
 		"register":   {},
 		"login":      {},
 		"whoami":     {},
+		"bind":       {},
+		"unbind":     {},
+		"bindings":   {},
 		"search":     {},
 		"publish":    {},
 		"help":       {},
@@ -72,6 +75,9 @@ func newRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newRegisterCommand())
 	rootCmd.AddCommand(newLoginCommand())
 	rootCmd.AddCommand(newWhoAmICommand())
+	rootCmd.AddCommand(newBindCommand(&serverURL, &hubToken))
+	rootCmd.AddCommand(newUnbindCommand())
+	rootCmd.AddCommand(newBindingsCommand())
 	rootCmd.AddCommand(newSearchCommand())
 	rootCmd.AddCommand(newPublishCommand())
 	return rootCmd
@@ -79,7 +85,8 @@ func newRootCommand() *cobra.Command {
 
 func newAddCommand(serverURL, hubToken *string) *cobra.Command {
 	var clipToken string
-	var name string
+	var alias string
+	var legacyName string
 	var provider string
 	var registryURL string
 	cmd := &cobra.Command{
@@ -95,7 +102,7 @@ func newAddCommand(serverURL, hubToken *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			clip, err := cli.Add(cmd.Context(), source, name, provider, clipToken, *hubToken)
+			clip, err := cli.Add(cmd.Context(), source, firstNonEmpty(alias, legacyName), provider, clipToken, *hubToken)
 			if err != nil {
 				return err
 			}
@@ -104,9 +111,11 @@ func newAddCommand(serverURL, hubToken *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&clipToken, "token", "", "clip token required for invoking this Clip")
-	cmd.Flags().StringVar(&name, "name", "", "explicit clip instance name")
+	cmd.Flags().StringVar(&alias, "alias", "", "explicit clip alias")
+	cmd.Flags().StringVar(&legacyName, "name", "", "deprecated: explicit clip alias")
 	cmd.Flags().StringVar(&provider, "provider", "", "target provider for add/remove operations")
 	cmd.Flags().StringVar(&registryURL, "registry", os.Getenv("PINIX_REGISTRY"), "install Clip from a Pinix Registry instead of npm")
+	_ = cmd.Flags().MarkDeprecated("name", "use --alias")
 	return cmd
 }
 

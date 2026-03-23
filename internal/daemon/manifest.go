@@ -1,10 +1,11 @@
 // Role:    Manifest enrichment helpers shared by local and provider-backed clips
-// Depends: encoding/json, fmt, os, path/filepath, sort, strings, gopkg.in/yaml.v3
+// Depends: bytes, encoding/json, fmt, os, path/filepath, sort, strings, gopkg.in/yaml.v3
 // Exports: (package-internal helpers)
 
 package daemon
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -16,11 +17,11 @@ import (
 )
 
 type clipYAML struct {
-	Name         string   `yaml:"name"`
-	Version      string   `yaml:"version"`
-	Description  string   `yaml:"description"`
-	Dependencies []string `yaml:"dependencies"`
-	Patterns     []string `yaml:"patterns"`
+	Name         string               `yaml:"name"`
+	Version      string               `yaml:"version"`
+	Description  string               `yaml:"description"`
+	Dependencies manifestDependencies `yaml:"dependencies"`
+	Patterns     []string             `yaml:"patterns"`
 }
 
 type pinixJSON struct {
@@ -33,7 +34,7 @@ type pinixJSON struct {
 	Main         string                 `json:"main,omitempty"`
 	Web          string                 `json:"web,omitempty"`
 	Commands     []pinixJSONCommand     `json:"commands,omitempty"`
-	Dependencies map[string]string      `json:"dependencies,omitempty"`
+	Dependencies manifestDependencies   `json:"dependencies,omitempty"`
 	Patterns     []string               `json:"patterns,omitempty"`
 	Extra        map[string]interface{} `json:"-"`
 }
@@ -60,9 +61,47 @@ type projectMetadata struct {
 	Domain       string
 	Main         string
 	Web          string
-	Dependencies []string
+	Dependencies map[string]DependencySpec
 	Patterns     []string
 	Commands     []CommandInfo
+}
+
+type manifestDependencies map[string]DependencySpec
+
+func (d *manifestDependencies) UnmarshalJSON(data []byte) error {
+	parsed, err := parseDependencyPayload(data)
+	if err != nil {
+		return err
+	}
+	*d = manifestDependencies(parsed)
+	return nil
+}
+
+func (d *manifestDependencies) UnmarshalYAML(value *yaml.Node) error {
+	if value == nil || value.Kind == 0 || value.Tag == "!!null" {
+		*d = nil
+		return nil
+	}
+
+	var specMap map[string]DependencySpec
+	if err := value.Decode(&specMap); err == nil {
+		*d = manifestDependencies(normalizeDependencySpecs(specMap))
+		return nil
+	}
+
+	var stringMap map[string]string
+	if err := value.Decode(&stringMap); err == nil {
+		*d = manifestDependencies(dependencySpecsFromVersionMap(stringMap))
+		return nil
+	}
+
+	var list []string
+	if err := value.Decode(&list); err == nil {
+		*d = manifestDependencies(dependencySpecsFromStrings(list))
+		return nil
+	}
+
+	return fmt.Errorf("parse dependencies")
 }
 
 func enrichManifestForClip(clip ClipConfig, manifest *ManifestCache) *ManifestCache {
@@ -85,7 +124,7 @@ func enrichManifestForClip(clip ClipConfig, manifest *ManifestCache) *ManifestCa
 			merged.Description = strings.TrimSpace(meta.Description)
 		}
 		if len(merged.Dependencies) == 0 {
-			merged.Dependencies = normalizeStrings(meta.Dependencies)
+			merged.Dependencies = cloneDependencySpecs(meta.Dependencies)
 		}
 		if len(merged.Patterns) == 0 {
 			merged.Patterns = normalizeStrings(meta.Patterns)
@@ -96,9 +135,6 @@ func enrichManifestForClip(clip ClipConfig, manifest *ManifestCache) *ManifestCa
 	}
 
 	if meta, err := readClipYAMLMetadata(clipProjectDir(clip)); err == nil {
-		if merged.Name == "" {
-			merged.Name = strings.TrimSpace(meta.Name)
-		}
 		if merged.Package == "" {
 			merged.Package = strings.TrimSpace(meta.Name)
 		}
@@ -109,7 +145,7 @@ func enrichManifestForClip(clip ClipConfig, manifest *ManifestCache) *ManifestCa
 			merged.Description = strings.TrimSpace(meta.Description)
 		}
 		if len(merged.Dependencies) == 0 {
-			merged.Dependencies = normalizeStrings(meta.Dependencies)
+			merged.Dependencies = cloneDependencySpecs(map[string]DependencySpec(meta.Dependencies))
 		}
 		if len(merged.Patterns) == 0 {
 			merged.Patterns = normalizeStrings(meta.Patterns)
@@ -188,7 +224,7 @@ func mergeProjectMetadata(target, source *projectMetadata) {
 		target.Web = strings.TrimSpace(source.Web)
 	}
 	if len(target.Dependencies) == 0 {
-		target.Dependencies = normalizeStrings(source.Dependencies)
+		target.Dependencies = cloneDependencySpecs(source.Dependencies)
 	}
 	if len(target.Patterns) == 0 {
 		target.Patterns = normalizeStrings(source.Patterns)
@@ -266,7 +302,7 @@ func readPinixJSONMetadata(workdir string) (*projectMetadata, error) {
 		Domain:       strings.TrimSpace(raw.Domain),
 		Main:         strings.TrimSpace(raw.Main),
 		Web:          strings.TrimSpace(raw.Web),
-		Dependencies: mapKeys(raw.Dependencies),
+		Dependencies: normalizeDependencySpecs(map[string]DependencySpec(raw.Dependencies)),
 		Patterns:     normalizeStrings(raw.Patterns),
 		Commands:     pinixCommandsToInternal(raw.Commands),
 	}
@@ -340,15 +376,108 @@ func rawSchemaString(raw json.RawMessage) string {
 	return strings.TrimSpace(string(raw))
 }
 
-func mapKeys(values map[string]string) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		if strings.TrimSpace(key) == "" {
+func parseDependencyPayload(data []byte) (map[string]DependencySpec, error) {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
+		return nil, nil
+	}
+
+	var specMap map[string]DependencySpec
+	if err := json.Unmarshal(data, &specMap); err == nil {
+		return normalizeDependencySpecs(specMap), nil
+	}
+
+	var stringMap map[string]string
+	if err := json.Unmarshal(data, &stringMap); err == nil {
+		return dependencySpecsFromVersionMap(stringMap), nil
+	}
+
+	var list []string
+	if err := json.Unmarshal(data, &list); err == nil {
+		return dependencySpecsFromStrings(list), nil
+	}
+
+	return nil, fmt.Errorf("parse dependencies")
+}
+
+func normalizeDependencySpecs(values map[string]DependencySpec) map[string]DependencySpec {
+	if len(values) == 0 {
+		return nil
+	}
+	cleaned := make(map[string]DependencySpec, len(values))
+	for name, spec := range values {
+		name = strings.TrimSpace(name)
+		if name == "" {
 			continue
 		}
-		keys = append(keys, strings.TrimSpace(key))
+		dependency := DependencySpec{
+			Package: strings.TrimSpace(spec.Package),
+			Version: strings.TrimSpace(spec.Version),
+		}
+		if dependency.Package == "" {
+			dependency.Package = name
+		}
+		cleaned[name] = dependency
 	}
-	return normalizeStrings(keys)
+	if len(cleaned) == 0 {
+		return nil
+	}
+	return cleaned
+}
+
+func cloneDependencySpecs(values map[string]DependencySpec) map[string]DependencySpec {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]DependencySpec, len(values))
+	for name, spec := range normalizeDependencySpecs(values) {
+		cloned[name] = spec
+	}
+	if len(cloned) == 0 {
+		return nil
+	}
+	return cloned
+}
+
+func dependencySpecsFromStrings(values []string) map[string]DependencySpec {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make(map[string]DependencySpec, len(values))
+	for _, value := range normalizeStrings(values) {
+		result[value] = DependencySpec{Package: value}
+	}
+	return normalizeDependencySpecs(result)
+}
+
+func dependencySpecsFromVersionMap(values map[string]string) map[string]DependencySpec {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make(map[string]DependencySpec, len(values))
+	for name, version := range values {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		result[name] = DependencySpec{Package: name, Version: strings.TrimSpace(version)}
+	}
+	return normalizeDependencySpecs(result)
+}
+
+func dependencySlots(values map[string]DependencySpec) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	slots := make([]string, 0, len(values))
+	for name := range values {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		slots = append(slots, name)
+	}
+	return normalizeStrings(slots)
 }
 
 func cloneManifest(manifest *ManifestCache) *ManifestCache {
@@ -364,7 +493,7 @@ func cloneManifest(manifest *ManifestCache) *ManifestCache {
 		Commands:       append([]string(nil), manifest.Commands...),
 		CommandDetails: append([]CommandInfo(nil), manifest.CommandDetails...),
 		HasWeb:         manifest.HasWeb,
-		Dependencies:   append([]string(nil), manifest.Dependencies...),
+		Dependencies:   cloneDependencySpecs(manifest.Dependencies),
 		Patterns:       append([]string(nil), manifest.Patterns...),
 	}
 	return cloned
@@ -379,7 +508,7 @@ func finalizeManifestCache(manifest *ManifestCache) *ManifestCache {
 	manifest.Version = strings.TrimSpace(manifest.Version)
 	manifest.Domain = strings.TrimSpace(manifest.Domain)
 	manifest.Description = strings.TrimSpace(manifest.Description)
-	manifest.Dependencies = normalizeStrings(manifest.Dependencies)
+	manifest.Dependencies = normalizeDependencySpecs(manifest.Dependencies)
 	manifest.Patterns = normalizeStrings(manifest.Patterns)
 	manifest.CommandDetails = normalizeCommandDetails(manifest.CommandDetails)
 	if len(manifest.CommandDetails) == 0 && len(manifest.Commands) > 0 {
@@ -516,9 +645,6 @@ func derivePackageName(clip ClipConfig) string {
 	}
 	if clip.Manifest != nil && strings.TrimSpace(clip.Manifest.Package) != "" {
 		return strings.TrimSpace(clip.Manifest.Package)
-	}
-	if clip.Manifest != nil && strings.TrimSpace(clip.Manifest.Name) != "" {
-		return strings.TrimSpace(clip.Manifest.Name)
 	}
 	return strings.TrimSpace(clip.Name)
 }

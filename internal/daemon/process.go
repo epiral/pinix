@@ -441,7 +441,7 @@ func (m *ProcessManager) handleRegister(proc *clipProcess, message *ipc.Message)
 	if err := m.persistRegisteredManifest(proc.clip, manifest); err != nil {
 		return err
 	}
-	if err := proc.send(&ipc.Message{Type: ipc.MessageTypeRegistered}); err != nil {
+	if err := proc.send(&ipc.Message{Type: ipc.MessageTypeRegistered, Alias: proc.clip.Name}); err != nil {
 		return err
 	}
 	proc.signalReady()
@@ -1060,19 +1060,37 @@ func registeredManifestForClip(clip ClipConfig, manifest *ipc.Manifest) (*Manife
 	}
 
 	registered := &ManifestCache{
-		Name:         strings.TrimSpace(manifest.Name),
+		Name:         strings.TrimSpace(clip.Name),
 		Package:      firstNonEmpty(strings.TrimSpace(manifest.Package), strings.TrimSpace(clip.Package)),
 		Version:      firstNonEmpty(strings.TrimSpace(manifest.Version), strings.TrimSpace(clip.Version)),
 		Domain:       strings.TrimSpace(manifest.Domain),
 		Description:  strings.TrimSpace(manifest.Description),
 		Commands:     normalizeCommands(extractCommandsJSON(manifest.Commands)),
-		Dependencies: normalizeStrings(manifest.Dependencies),
+		Dependencies: ipcDependencySpecsToInternal(manifest.Dependencies),
 	}
 	registered = enrichManifestForClip(clip, registered)
 	if registered == nil || strings.TrimSpace(registered.Name) == "" {
-		return nil, fmt.Errorf("register manifest name is required")
+		return nil, fmt.Errorf("register alias is required")
 	}
 	return registered, nil
+}
+
+func ipcDependencySpecsToInternal(values map[string]ipc.DependencySpec) map[string]DependencySpec {
+	if len(values) == 0 {
+		return nil
+	}
+	converted := make(map[string]DependencySpec, len(values))
+	for slot, spec := range values {
+		slot = strings.TrimSpace(slot)
+		if slot == "" {
+			continue
+		}
+		converted[slot] = DependencySpec{
+			Package: strings.TrimSpace(spec.Package),
+			Version: strings.TrimSpace(spec.Version),
+		}
+	}
+	return normalizeDependencySpecs(converted)
 }
 
 func cloneJSON(data json.RawMessage) json.RawMessage {

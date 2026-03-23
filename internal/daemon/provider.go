@@ -1,11 +1,13 @@
 // Role:    Connect-RPC provider session registry and invocation router for provider-backed Clips
-// Depends: context, errors, fmt, io, sort, strings, sync, sync/atomic, time, pinix v2
+// Depends: context, crypto/rand, encoding/hex, errors, fmt, io, sort, strings, sync, sync/atomic, time, pinix v2
 // Exports: ProviderManager, ProviderInvokeHandle, ProviderManageHandle, ProviderClipWebHandle, NewProviderManager
 
 package daemon
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -33,7 +35,12 @@ type ProviderManager struct {
 	mu        sync.RWMutex
 	providers map[string]*providerSession
 	clips     map[string]*providerClipRef
+	reserved  map[string]aliasReservation
 	nextID    atomic.Uint64
+}
+
+type aliasReservation struct {
+	owner string
 }
 
 type ProviderInvokeHandle struct {
@@ -120,7 +127,96 @@ func NewProviderManager(registry *Registry) *ProviderManager {
 		registry:  registry,
 		providers: make(map[string]*providerSession),
 		clips:     make(map[string]*providerClipRef),
+		reserved:  make(map[string]aliasReservation),
 	}
+}
+
+func (m *ProviderManager) ReserveAlias(requestedAlias, source, owner string) (string, error) {
+	if m == nil {
+		return "", daemonError{Code: "internal", Message: "provider manager is not configured"}
+	}
+	owner = strings.TrimSpace(owner)
+	if owner == "" {
+		owner = localProviderName
+	}
+
+	if alias := normalizeName(requestedAlias); alias != "" {
+		if err := m.reserveAlias(alias, owner); err != nil {
+			return "", err
+		}
+		return alias, nil
+	}
+
+	base := aliasBaseFromSource(source)
+	for attempts := 0; attempts < 256; attempts++ {
+		suffix, err := randomAliasSuffix()
+		if err != nil {
+			return "", daemonError{Code: "internal", Message: fmt.Sprintf("generate alias suffix: %v", err)}
+		}
+		alias := normalizeName(base + "-" + suffix)
+		if alias == "" {
+			continue
+		}
+		if err := m.reserveAlias(alias, owner); err == nil {
+			return alias, nil
+		} else if !isDaemonCode(err, "already_exists") {
+			return "", err
+		}
+	}
+
+	return "", daemonError{Code: "internal", Message: fmt.Sprintf("allocate alias for source %q", source)}
+}
+
+func (m *ProviderManager) ReleaseAlias(alias, owner string) {
+	if m == nil {
+		return
+	}
+	alias = normalizeName(alias)
+	owner = strings.TrimSpace(owner)
+	if alias == "" {
+		return
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	reservation, ok := m.reserved[alias]
+	if !ok {
+		return
+	}
+	if owner != "" && reservation.owner != owner {
+		return
+	}
+	delete(m.reserved, alias)
+}
+
+func (m *ProviderManager) reserveAlias(alias, owner string) error {
+	alias = normalizeName(alias)
+	owner = strings.TrimSpace(owner)
+	if alias == "" {
+		return daemonError{Code: "invalid_argument", Message: "alias is required"}
+	}
+	if owner == "" {
+		owner = localProviderName
+	}
+
+	if exists, err := m.localClipExists(alias); err != nil {
+		return err
+	} else if exists {
+		return daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", alias)}
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.clips[alias]; exists {
+		return daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", alias)}
+	}
+	if reservation, exists := m.reserved[alias]; exists && reservation.owner != owner {
+		return daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", alias)}
+	}
+	m.reserved[alias] = aliasReservation{owner: owner}
+	return nil
 }
 
 func (m *ProviderManager) HandleStream(ctx context.Context, stream providerStream) error {
@@ -382,15 +478,16 @@ func (m *ProviderManager) registerSession(register *pinixv2.RegisterRequest, str
 		if err != nil {
 			return nil, err
 		}
-		if _, exists := clips[clip.registration.GetName()]; exists {
-			return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already registered in request", clip.registration.GetName())}
+		alias := clip.registration.GetAlias()
+		if _, exists := clips[alias]; exists {
+			return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already registered in request", alias)}
 		}
-		if exists, err := m.localClipExists(clip.registration.GetName()); err != nil {
+		if exists, err := m.localClipExists(alias); err != nil {
 			return nil, err
 		} else if exists {
-			return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", clip.registration.GetName())}
+			return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", alias)}
 		}
-		clips[clip.registration.GetName()] = clip
+		clips[alias] = clip
 	}
 
 	session := &providerSession{
@@ -415,12 +512,16 @@ func (m *ProviderManager) registerSession(register *pinixv2.RegisterRequest, str
 		if _, exists := m.clips[name]; exists {
 			return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", name)}
 		}
+		if reservation, exists := m.reserved[name]; exists && reservation.owner != providerName {
+			return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", name)}
+		}
 	}
 
 	m.providers[providerName] = session
 	for name, clip := range clips {
 		session.clips[name] = clip
 		m.clips[name] = &providerClipRef{session: session, clip: clip}
+		delete(m.reserved, name)
 	}
 	return session, nil
 }
@@ -455,6 +556,11 @@ func (m *ProviderManager) unregisterSession(session *providerSession) {
 			delete(m.clips, name)
 		}
 	}
+	for alias, reservation := range m.reserved {
+		if reservation.owner == session.name {
+			delete(m.reserved, alias)
+		}
+	}
 }
 
 func (m *ProviderManager) addClipToSession(session *providerSession, registration *pinixv2.ClipRegistration) (*pinixv2.ClipInfo, error) {
@@ -462,22 +568,27 @@ func (m *ProviderManager) addClipToSession(session *providerSession, registratio
 	if err != nil {
 		return nil, err
 	}
-	if exists, err := m.localClipExists(clip.registration.GetName()); err != nil {
+	alias := clip.registration.GetAlias()
+	if exists, err := m.localClipExists(alias); err != nil {
 		return nil, err
 	} else if exists {
-		return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", clip.registration.GetName())}
+		return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", alias)}
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	ref, exists := m.clips[clip.registration.GetName()]
+	ref, exists := m.clips[alias]
 	if exists && ref.session != session {
-		return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", clip.registration.GetName())}
+		return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", alias)}
+	}
+	if reservation, exists := m.reserved[alias]; exists && reservation.owner != session.name {
+		return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", alias)}
 	}
 
-	session.clips[clip.registration.GetName()] = clip
-	m.clips[clip.registration.GetName()] = &providerClipRef{session: session, clip: clip}
+	session.clips[alias] = clip
+	m.clips[alias] = &providerClipRef{session: session, clip: clip}
+	delete(m.reserved, alias)
 	return providerClipToClipInfo(session.name, clip.registration), nil
 }
 
@@ -905,13 +1016,14 @@ func sanitizeProviderClip(registration *pinixv2.ClipRegistration) (*providerClip
 	if registration == nil {
 		return nil, daemonError{Code: "invalid_argument", Message: "clip registration is required"}
 	}
-	name := strings.TrimSpace(registration.GetName())
-	if name == "" {
-		return nil, daemonError{Code: "invalid_argument", Message: "clip registration name is required"}
+	alias := normalizeName(firstNonEmpty(registration.GetAlias(), registration.GetName()))
+	if alias == "" {
+		return nil, daemonError{Code: "invalid_argument", Message: "clip registration alias is required"}
 	}
 
 	sanitized := &pinixv2.ClipRegistration{
-		Name:           name,
+		Alias:          alias,
+		Name:           alias,
 		Package:        strings.TrimSpace(registration.GetPackage()),
 		Version:        strings.TrimSpace(registration.GetVersion()),
 		Domain:         strings.TrimSpace(registration.GetDomain()),
@@ -942,7 +1054,7 @@ func providerClipToClipInfo(providerName string, registration *pinixv2.ClipRegis
 		return &pinixv2.ClipInfo{Provider: strings.TrimSpace(providerName)}
 	}
 	return &pinixv2.ClipInfo{
-		Name:           strings.TrimSpace(registration.GetName()),
+		Name:           normalizeName(registration.GetAlias()),
 		Package:        strings.TrimSpace(registration.GetPackage()),
 		Version:        strings.TrimSpace(registration.GetVersion()),
 		Provider:       strings.TrimSpace(providerName),
@@ -959,16 +1071,53 @@ func providerClipToManifest(registration *pinixv2.ClipRegistration) *ManifestCac
 		return nil
 	}
 	manifest := &ManifestCache{
-		Name:           strings.TrimSpace(registration.GetName()),
+		Name:           normalizeName(registration.GetAlias()),
 		Package:        strings.TrimSpace(registration.GetPackage()),
 		Version:        strings.TrimSpace(registration.GetVersion()),
 		Domain:         strings.TrimSpace(registration.GetDomain()),
 		Commands:       commandNames(protoCommandsToInternal(registration.GetCommands())),
 		CommandDetails: protoCommandsToInternal(registration.GetCommands()),
 		HasWeb:         registration.GetHasWeb(),
-		Dependencies:   normalizeStrings(registration.GetDependencies()),
+		Dependencies:   dependencySpecsFromStrings(registration.GetDependencies()),
 	}
 	return finalizeManifestCache(manifest)
+}
+
+func aliasBaseFromSource(source string) string {
+	ref, err := parseSource(source)
+	if err == nil {
+		switch ref.Kind {
+		case sourceTypeNPM, sourceTypeRegistry:
+			if alias := normalizeName(ref.Package); alias != "" {
+				return alias
+			}
+		case sourceTypeGitHub:
+			repo := strings.TrimSpace(strings.TrimPrefix(ref.Source, "github:"))
+			repo = strings.TrimSuffix(repo, ".git")
+			if idx := strings.Index(repo, "#"); idx >= 0 {
+				repo = repo[:idx]
+			}
+			if alias := normalizeName(repo); alias != "" {
+				return alias
+			}
+		case sourceTypeLocal:
+			if alias := normalizeName(ref.Source); alias != "" {
+				return alias
+			}
+		}
+	}
+	if alias := normalizeName(source); alias != "" {
+		return alias
+	}
+	return "clip"
+}
+
+func randomAliasSuffix() (string, error) {
+	buf := make([]byte, 2)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
 }
 
 func protoCommandsToInternal(commands []*pinixv2.CommandInfo) []CommandInfo {

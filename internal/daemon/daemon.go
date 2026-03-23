@@ -38,6 +38,7 @@ func NewDaemon(registry *Registry, process *ProcessManager) (*Daemon, error) {
 		provider: NewProviderManager(registry),
 	}
 	d.process.provider = d.provider
+	d.provider.registry = registry
 	d.handler = NewHandler(registry, process)
 	return d, nil
 }

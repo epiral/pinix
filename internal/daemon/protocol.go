@@ -24,9 +24,9 @@ func (e *ResponseError) Error() string {
 }
 
 type AddParams struct {
-	Source string `json:"source"`
-	Name   string `json:"name,omitempty"`
-	Token  string `json:"token,omitempty"`
+	Source         string `json:"source"`
+	RequestedAlias string `json:"requested_alias,omitempty"`
+	Token          string `json:"token,omitempty"`
 }
 
 type RemoveParams struct {
