@@ -1065,9 +1065,10 @@ func registeredManifestForClip(clip ClipConfig, manifest *ipc.Manifest) (*Manife
 		Version:      firstNonEmpty(strings.TrimSpace(manifest.Version), strings.TrimSpace(clip.Version)),
 		Domain:       strings.TrimSpace(manifest.Domain),
 		Description:  strings.TrimSpace(manifest.Description),
-		Commands:     normalizeCommands(extractCommandsJSON(manifest.Commands)),
-		Dependencies: ipcDependencySpecsToInternal(manifest.Dependencies),
+		CommandDetails: parseIPCCommands(manifest.Commands),
+		Dependencies:   ipcDependencySpecsToInternal(manifest.Dependencies),
 	}
+	registered.Commands = commandNames(registered.CommandDetails)
 	registered = enrichManifestForClip(clip, registered)
 	if registered == nil || strings.TrimSpace(registered.Name) == "" {
 		return nil, fmt.Errorf("register alias is required")
@@ -1127,6 +1128,16 @@ func invokeErrorMessage(err error) string {
 		return strings.TrimSpace(respErr.Message)
 	}
 	return strings.TrimSpace(err.Error())
+}
+
+func parseIPCCommands(data []byte) []CommandInfo {
+	var commands []CommandInfo
+	if err := json.Unmarshal(data, &commands); err == nil {
+		return normalizeCommandDetails(commands)
+	}
+	// Fallback: extract names only
+	names := extractCommandsJSON(data)
+	return synthesizeCommandDetails(names)
 }
 
 func extractCommandsJSON(data []byte) []string {
