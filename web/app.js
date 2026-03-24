@@ -22,221 +22,6 @@ const STREAM_HEADERS = {
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
-// ─── Smart form definitions ───
-// Maps command names to form types for non-JSON input
-const SMART_FORMS = {
-  // ── Audio ──
-  speak: {
-    fields: [
-      { name: "text", label: "Text", inputType: "textarea", placeholder: "Enter text to speak..." },
-      { name: "voice", label: "Voice", inputType: "select", options: ["Tingting", "Meijia", "Sinji", "Samantha", "Alex", "Daniel", "Karen", "Victoria"] },
-    ],
-    buildInput: (v) => { const r = { text: v.text || "" }; if (v.voice) r.voice = v.voice; return r; },
-  },
-  setVolume: {
-    fields: [{ name: "level", label: "Volume (0-100)", inputType: "number", placeholder: "50" }],
-    buildInput: (v) => ({ level: parseInt(v.level) || 50 }),
-  },
-  // ── Search / Query ──
-  search: {
-    fields: [{ name: "query", label: "Query", inputType: "text", placeholder: "Search query..." }],
-    buildInput: (v) => ({ query: v.query || "" }),
-  },
-  searchContacts: {
-    fields: [{ name: "query", label: "Name", inputType: "text", placeholder: "Contact name..." }],
-    buildInput: (v) => ({ query: v.query || "" }),
-  },
-  note: {
-    fields: [{ name: "id", label: "Note ID", inputType: "text", placeholder: "Note ID or URL..." }],
-    buildInput: (v) => ({ id: v.id || "" }),
-  },
-  // ── Shell ──
-  exec: {
-    fields: [
-      { name: "command", label: "Command", inputType: "text", placeholder: "e.g. ls -la /tmp" },
-      { name: "cwd", label: "Working Directory", inputType: "text", placeholder: "(optional) /path/to/dir" },
-    ],
-    buildInput: (v) => { const r = { command: v.command || "" }; if (v.cwd) r.cwd = v.cwd; return r; },
-  },
-  execScript: {
-    fields: [
-      { name: "language", label: "Language", inputType: "select", options: ["python3", "bash", "node", "swift", "ruby"] },
-      { name: "code", label: "Code", inputType: "textarea", placeholder: "print('hello world')" },
-    ],
-    buildInput: (v) => ({ language: v.language || "python3", code: v.code || "" }),
-  },
-  // ── Apps ──
-  launch: {
-    fields: [{ name: "app", label: "App Name", inputType: "text", placeholder: "e.g. Safari, Finder, iTerm" }],
-    buildInput: (v) => ({ app: v.app || "" }),
-  },
-  quit: {
-    fields: [{ name: "app", label: "App Name", inputType: "text", placeholder: "App to quit" }],
-    buildInput: (v) => ({ app: v.app || "" }),
-  },
-  focus: {
-    fields: [{ name: "app", label: "App Name", inputType: "text", placeholder: "App to focus" }],
-    buildInput: (v) => ({ app: v.app || "" }),
-  },
-  // ── Notifications ──
-  notify: {
-    fields: [
-      { name: "title", label: "Title", inputType: "text", placeholder: "Notification title" },
-      { name: "body", label: "Body", inputType: "text", placeholder: "Notification body" },
-    ],
-    buildInput: (v) => ({ title: v.title || "", body: v.body || "" }),
-  },
-  alert: {
-    fields: [
-      { name: "title", label: "Title", inputType: "text", placeholder: "Alert title" },
-      { name: "message", label: "Message", inputType: "text", placeholder: "Alert message" },
-    ],
-    buildInput: (v) => ({ title: v.title || "", message: v.message || "" }),
-  },
-  prompt: {
-    fields: [
-      { name: "title", label: "Title", inputType: "text", placeholder: "Prompt title" },
-      { name: "message", label: "Message", inputType: "text", placeholder: "Prompt message" },
-      { name: "defaultAnswer", label: "Default Answer", inputType: "text", placeholder: "(optional)" },
-    ],
-    buildInput: (v) => { const r = { title: v.title || "", message: v.message || "" }; if (v.defaultAnswer) r.defaultAnswer = v.defaultAnswer; return r; },
-  },
-  // ── Clipboard ──
-  write: {
-    fields: [{ name: "content", label: "Content", inputType: "textarea", placeholder: "Text to copy to clipboard" }],
-    buildInput: (v) => ({ content: v.content || "" }),
-  },
-  // ── Filesystem ──
-  getMetadata: {
-    fields: [{ name: "path", label: "File Path", inputType: "text", placeholder: "/path/to/file" }],
-    buildInput: (v) => ({ path: v.path || "" }),
-  },
-  preview: {
-    fields: [{ name: "path", label: "File Path", inputType: "text", placeholder: "/path/to/file" }],
-    buildInput: (v) => ({ path: v.path || "" }),
-  },
-  convertDoc: {
-    fields: [
-      { name: "path", label: "File Path", inputType: "text", placeholder: "/path/to/document" },
-      { name: "format", label: "Format", inputType: "select", options: ["html", "txt", "rtf", "docx"] },
-    ],
-    buildInput: (v) => ({ path: v.path || "", format: v.format || "html" }),
-  },
-  // ── Input ──
-  click: {
-    fields: [
-      { name: "x", label: "X", inputType: "number", placeholder: "500" },
-      { name: "y", label: "Y", inputType: "number", placeholder: "300" },
-    ],
-    buildInput: (v) => ({ x: parseFloat(v.x) || 0, y: parseFloat(v.y) || 0 }),
-  },
-  typeText: {
-    fields: [{ name: "text", label: "Text", inputType: "text", placeholder: "Text to type..." }],
-    buildInput: (v) => ({ text: v.text || "" }),
-  },
-  pressKey: {
-    fields: [
-      { name: "key", label: "Key", inputType: "text", placeholder: "e.g. c" },
-      { name: "modifiers", label: "Modifiers", inputType: "text", placeholder: "e.g. command,shift (comma separated)" },
-    ],
-    buildInput: (v) => { const r = { key: v.key || "" }; if (v.modifiers) r.modifiers = v.modifiers.split(",").map(m => m.trim()); return r; },
-  },
-  // ── Windows ──
-  move: {
-    fields: [
-      { name: "app", label: "App Name", inputType: "text", placeholder: "App name" },
-      { name: "x", label: "X", inputType: "number", placeholder: "0" },
-      { name: "y", label: "Y", inputType: "number", placeholder: "0" },
-    ],
-    buildInput: (v) => ({ app: v.app || "", x: parseInt(v.x) || 0, y: parseInt(v.y) || 0 }),
-  },
-  resize: {
-    fields: [
-      { name: "app", label: "App Name", inputType: "text", placeholder: "App name" },
-      { name: "width", label: "Width", inputType: "number", placeholder: "800" },
-      { name: "height", label: "Height", inputType: "number", placeholder: "600" },
-    ],
-    buildInput: (v) => ({ app: v.app || "", width: parseInt(v.width) || 800, height: parseInt(v.height) || 600 }),
-  },
-  // ── ML ──
-  detectLanguage: {
-    fields: [{ name: "text", label: "Text", inputType: "textarea", placeholder: "Enter text to detect language..." }],
-    buildInput: (v) => ({ text: v.text || "" }),
-  },
-  sentiment: {
-    fields: [{ name: "text", label: "Text", inputType: "textarea", placeholder: "Enter text for sentiment analysis..." }],
-    buildInput: (v) => ({ text: v.text || "" }),
-  },
-  // ── Shortcuts ──
-  run: {
-    fields: [{ name: "name", label: "Shortcut Name", inputType: "text", placeholder: "e.g. 车门上锁" }],
-    buildInput: (v) => ({ name: v.name || "" }),
-  },
-  // ── PIM ──
-  getEvents: {
-    fields: [
-      { name: "from", label: "From Date", inputType: "date", placeholder: "" },
-      { name: "to", label: "To Date", inputType: "date", placeholder: "" },
-    ],
-    buildInput: (v) => ({ from: v.from || "", to: v.to || "" }),
-  },
-  // ── Todo ──
-  add: {
-    fields: [{ name: "title", label: "Title", inputType: "text", placeholder: "Todo item title..." }],
-    buildInput: (v) => ({ title: v.title || "" }),
-  },
-  delete: {
-    fields: [{ name: "id", label: "ID", inputType: "text", placeholder: "Item ID to delete" }],
-    buildInput: (v) => ({ id: v.id || "" }),
-  },
-  // ── Twitter ──
-  getProfile: {
-    fields: [{ name: "username", label: "Username", inputType: "text", placeholder: "@username" }],
-    buildInput: (v) => ({ username: v.username || "" }),
-  },
-  getTweet: {
-    fields: [{ name: "id", label: "Tweet ID", inputType: "text", placeholder: "Tweet ID or URL" }],
-    buildInput: (v) => ({ id: v.id || "" }),
-  },
-  // ── Agent ──
-  send: {
-    fields: [
-      { name: "topic", label: "Topic", inputType: "text", placeholder: "Topic name or ID" },
-      { name: "message", label: "Message", inputType: "textarea", placeholder: "Your message..." },
-    ],
-    buildInput: (v) => ({ topic: v.topic || "", message: v.message || "" }),
-  },
-  "create-topic": {
-    fields: [{ name: "name", label: "Topic Name", inputType: "text", placeholder: "New topic name" }],
-    buildInput: (v) => ({ name: v.name || "" }),
-  },
-  "get-topic": {
-    fields: [{ name: "topic", label: "Topic", inputType: "text", placeholder: "Topic name or ID" }],
-    buildInput: (v) => ({ topic: v.topic || "" }),
-  },
-  "get-run": {
-    fields: [{ name: "runId", label: "Run ID", inputType: "text", placeholder: "Run ID" }],
-    buildInput: (v) => ({ runId: v.runId || "" }),
-  },
-  "cancel-run": {
-    fields: [{ name: "runId", label: "Run ID", inputType: "text", placeholder: "Run ID to cancel" }],
-    buildInput: (v) => ({ runId: v.runId || "" }),
-  },
-};
-
-// Commands that require no input — just a Run button
-const NO_INPUT_COMMANDS = new Set([
-  "screenshot", "list", "listCalendars", "battery", "info",
-  "listWindows", "listApps", "getClipboard", "getBrightness",
-  "getVolume", "listDisplays", "listTabs", "frontmostApp",
-  "getFrontmost", "activeWindow", "listReminders", "listNotes",
-  "screenshotAll", "listContacts", "currentTrack", "systemInfo",
-  "health", "ping", "status", "read", "listTypes",
-  "getCursorPosition", "uptime", "diskUsage", "processes",
-  "interfaces", "wifiInfo", "speedTest", "bluetoothDevices",
-  "list-topics", "event-check", "ocr",
-]);
-
 // ─── Application state ───
 
 const state = {
@@ -247,7 +32,7 @@ const state = {
   detailError: null,
   expandedCommand: null,
   inputs: {},          // JSON textarea fallback inputs
-  smartInputs: {},     // smart form field values
+  smartInputs: {},     // schema form field values
   runningCommand: null,
   lastResult: null,
   searchQuery: "",
@@ -605,47 +390,289 @@ async function loadManifest(name, options = {}) {
   renderDetail();
 }
 
-// ─── Smart form input handling ───
+// ─── Schema form input handling ───
 
 function getSmartInputKey(clipName, commandName, fieldName) {
   return `${clipName}:${commandName}:${fieldName}`;
 }
 
 function getSmartInputValue(clipName, commandName, fieldName) {
-  return state.smartInputs[getSmartInputKey(clipName, commandName, fieldName)] || "";
+  const key = getSmartInputKey(clipName, commandName, fieldName);
+  return key in state.smartInputs ? state.smartInputs[key] : "";
 }
 
 function setSmartInputValue(clipName, commandName, fieldName, value) {
   state.smartInputs[getSmartInputKey(clipName, commandName, fieldName)] = value;
 }
 
-function buildSmartInput(clipName, commandName) {
-  const form = SMART_FORMS[commandName];
-  if (!form) return null;
+function hasSmartInputValue(clipName, commandName, fieldName) {
+  return getSmartInputKey(clipName, commandName, fieldName) in state.smartInputs;
+}
 
-  const values = {};
-  for (const field of form.fields) {
-    values[field.name] = getSmartInputValue(clipName, commandName, field.name);
+function parseCommandSchema(schemaStr) {
+  if (typeof schemaStr !== "string") return null;
+  const trimmed = schemaStr.trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    return parsed;
+  } catch {
+    return null;
   }
-  return form.buildInput(values);
+}
+
+function isSchemaEmpty(schema) {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return true;
+  if (!schema.properties || typeof schema.properties !== "object" || Array.isArray(schema.properties)) return true;
+  return Object.keys(schema.properties).length === 0;
+}
+
+function getSchemaProperties(schema) {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return [];
+  if (!schema.properties || typeof schema.properties !== "object" || Array.isArray(schema.properties)) return [];
+  return Object.entries(schema.properties);
+}
+
+function getSchemaRequiredSet(schema) {
+  return new Set(Array.isArray(schema?.required) ? schema.required.map(String) : []);
+}
+
+function humanizeFieldName(value) {
+  return String(value || "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getSchemaFieldKind(fieldSchema) {
+  const schema = fieldSchema && typeof fieldSchema === "object" && !Array.isArray(fieldSchema) ? fieldSchema : {};
+  const types = Array.isArray(schema.type)
+    ? schema.type.filter((value) => typeof value === "string" && value !== "null")
+    : typeof schema.type === "string" && schema.type !== "null"
+      ? [schema.type]
+      : [];
+
+  if ((types.length === 0 || types.includes("string"))
+    && Array.isArray(schema.enum)
+    && schema.enum.every((value) => typeof value === "string")) {
+    return "enum";
+  }
+  if (types.includes("string")) {
+    return schema.format === "date" ? "date" : "string";
+  }
+  if (types.includes("number")) return "number";
+  if (types.includes("integer")) return "integer";
+  if (types.includes("boolean")) return "boolean";
+  return "json";
+}
+
+function getCommandSchemaState(commandObj) {
+  const schemaStr = typeof commandObj === "object" ? String(commandObj?.input || "").trim() : "";
+  const schema = parseCommandSchema(schemaStr);
+
+  if (!schema) {
+    return { kind: "fallback", schema: null, schemaStr };
+  }
+  if (isSchemaEmpty(schema)) {
+    return { kind: "empty", schema, schemaStr };
+  }
+  return { kind: "schema", schema, schemaStr };
+}
+
+function renderSchemaForm(clipName, commandName, schemaStr) {
+  const schema = parseCommandSchema(schemaStr);
+  if (!schema || isSchemaEmpty(schema)) return "";
+
+  const required = getSchemaRequiredSet(schema);
+  const fieldsHTML = getSchemaProperties(schema).map(([fieldName, fieldSchema]) => {
+    const normalized = fieldSchema && typeof fieldSchema === "object" && !Array.isArray(fieldSchema) ? fieldSchema : {};
+    const kind = getSchemaFieldKind(normalized);
+    const value = getSmartInputValue(clipName, commandName, fieldName);
+    const label = String(normalized.title || humanizeFieldName(fieldName)).trim() || fieldName;
+    const labelText = `${label}${required.has(fieldName) ? " *" : ""}`;
+    const placeholder = String(normalized.description || "").trim();
+    const inputId = `schema-${encodeURIComponent(clipName)}-${encodeURIComponent(commandName)}-${encodeURIComponent(fieldName)}`;
+    const smartField = `${commandName}:${fieldName}`;
+
+    if (kind === "enum") {
+      const currentValue = value === "" ? "" : String(value);
+      const options = [
+        `<option value=""${currentValue === "" ? " selected" : ""}>${escapeHTML(placeholder || "Select an option")}</option>`,
+      ];
+      for (const option of normalized.enum) {
+        const optionValue = String(option);
+        options.push(`<option value="${escapeHTML(optionValue)}"${optionValue === currentValue ? " selected" : ""}>${escapeHTML(optionValue)}</option>`);
+      }
+      return `
+        <div class="form-field">
+          <label class="form-label" for="${escapeHTML(inputId)}">${escapeHTML(labelText)}</label>
+          <select id="${escapeHTML(inputId)}" class="form-select" data-smart-field="${escapeHTML(smartField)}">${options.join("")}</select>
+        </div>
+      `;
+    }
+
+    if (kind === "boolean") {
+      return `
+        <div class="form-field">
+          <label class="form-label" for="${escapeHTML(inputId)}">${escapeHTML(labelText)}</label>
+          <input
+            id="${escapeHTML(inputId)}"
+            type="checkbox"
+            class="form-input"
+            data-smart-field="${escapeHTML(smartField)}"
+            ${value === true ? "checked" : ""}
+            ${placeholder ? `title="${escapeHTML(placeholder)}"` : ""}
+            style="width:16px;height:16px;max-width:none;padding:0;accent-color:var(--c-accent)"
+          >
+        </div>
+      `;
+    }
+
+    if (kind === "json") {
+      const textValue = value === "" ? "" : String(value);
+      return `
+        <div class="form-field">
+          <label class="form-label" for="${escapeHTML(inputId)}">${escapeHTML(labelText)}</label>
+          <textarea
+            id="${escapeHTML(inputId)}"
+            class="form-textarea"
+            data-smart-field="${escapeHTML(smartField)}"
+            placeholder="${escapeHTML(placeholder)}"
+            spellcheck="false"
+          >${escapeHTML(textValue)}</textarea>
+        </div>
+      `;
+    }
+
+    const inputType = kind === "date"
+      ? "date"
+      : kind === "number" || kind === "integer"
+        ? "number"
+        : "text";
+    const textValue = value === "" ? "" : String(value);
+    const stepAttr = kind === "integer" ? ' step="1"' : kind === "number" ? ' step="any"' : "";
+
+    return `
+      <div class="form-field">
+        <label class="form-label" for="${escapeHTML(inputId)}">${escapeHTML(labelText)}</label>
+        <input
+          id="${escapeHTML(inputId)}"
+          type="${inputType}"
+          class="form-input"
+          data-smart-field="${escapeHTML(smartField)}"
+          value="${escapeHTML(textValue)}"
+          placeholder="${escapeHTML(placeholder)}"${stepAttr}
+        >
+      </div>
+    `;
+  }).join("");
+
+  return fieldsHTML ? `<div class="form-row">${fieldsHTML}</div>` : "";
+}
+
+function buildSchemaInput(clipName, commandName, schema) {
+  if (!schema || isSchemaEmpty(schema)) return {};
+
+  const input = {};
+  const required = getSchemaRequiredSet(schema);
+
+  for (const [fieldName, fieldSchema] of getSchemaProperties(schema)) {
+    const normalized = fieldSchema && typeof fieldSchema === "object" && !Array.isArray(fieldSchema) ? fieldSchema : {};
+    const kind = getSchemaFieldKind(normalized);
+    const hasValue = hasSmartInputValue(clipName, commandName, fieldName);
+    const rawValue = getSmartInputValue(clipName, commandName, fieldName);
+
+    if (kind === "boolean") {
+      if (hasValue || required.has(fieldName)) {
+        input[fieldName] = Boolean(rawValue);
+      }
+      continue;
+    }
+
+    const stringValue = rawValue === "" ? "" : String(rawValue);
+    if (kind === "string" || kind === "enum" || kind === "date") {
+      if (stringValue === "" && !required.has(fieldName)) continue;
+      input[fieldName] = stringValue;
+      continue;
+    }
+
+    const trimmedValue = stringValue.trim();
+    if (!trimmedValue && !required.has(fieldName)) continue;
+
+    if (kind === "integer") {
+      const parsed = parseInt(trimmedValue, 10);
+      if (Number.isNaN(parsed)) {
+        throw new Error(`Invalid integer for \"${fieldName}\"`);
+      }
+      input[fieldName] = parsed;
+      continue;
+    }
+
+    if (kind === "number") {
+      const parsed = parseFloat(trimmedValue);
+      if (Number.isNaN(parsed)) {
+        throw new Error(`Invalid number for \"${fieldName}\"`);
+      }
+      input[fieldName] = parsed;
+      continue;
+    }
+
+    if (!trimmedValue) {
+      throw new Error(`Invalid JSON for \"${fieldName}\"`);
+    }
+    try {
+      input[fieldName] = JSON.parse(trimmedValue);
+    } catch (error) {
+      throw new Error(`Invalid JSON for \"${fieldName}\": ${error.message || error}`);
+    }
+  }
+
+  return input;
+}
+
+function resolveCommandInfo(clip, commandObj) {
+  if (commandObj && typeof commandObj === "object") return commandObj;
+  return getClipCommands(clip).find((cmd) => (typeof cmd === "string" ? cmd : cmd.name) === commandObj) || {
+    name: String(commandObj || "").trim(),
+    description: "",
+    input: "",
+    output: "",
+  };
 }
 
 // ─── Command invocation ───
 
-async function invokeCommand(commandName) {
+async function invokeCommand(commandObj) {
   const clip = getSelectedClip();
   if (!clip) return;
 
+  const resolvedCommand = resolveCommandInfo(clip, commandObj);
+  const commandName = typeof resolvedCommand === "string" ? resolvedCommand : resolvedCommand.name;
+  const schemaState = getCommandSchemaState(resolvedCommand);
+
   let input;
 
-  // Try smart form first
-  const formDef = SMART_FORMS[commandName];
-  if (formDef) {
-    input = buildSmartInput(clip.name, commandName);
-  } else if (NO_INPUT_COMMANDS.has(commandName)) {
+  if (schemaState.kind === "schema") {
+    try {
+      input = buildSchemaInput(clip.name, commandName, schemaState.schema);
+    } catch (error) {
+      state.lastResult = {
+        ok: false,
+        clip: clip.name,
+        command: commandName,
+        meta: "Invalid form input",
+        payload: { error: String(error.message || error) },
+      };
+      renderDetail();
+      return;
+    }
+  } else if (schemaState.kind === "empty") {
     input = {};
   } else {
-    // JSON textarea fallback
     const inputText = getCommandInput(clip.name, commandName).trim();
     try {
       input = inputText ? JSON.parse(inputText) : {};
@@ -925,55 +952,23 @@ function renderCommandCard(clip, commandObj) {
         </span>
         <span class="command-arrow">${expanded ? "&#9662;" : "&#9656;"}</span>
       </button>
-      ${expanded ? renderCommandBody(clip, commandName, commandDescription, running) : ""}
+      ${expanded ? renderCommandBody(clip, commandObj, commandDescription, running) : ""}
     </article>
   `;
 }
 
-function renderCommandBody(clip, commandName, description, running) {
-  const formDef = SMART_FORMS[commandName];
-  const isNoInput = NO_INPUT_COMMANDS.has(commandName);
+function renderCommandBody(clip, commandObj, description, running) {
+  const resolvedCommand = resolveCommandInfo(clip, commandObj);
+  const commandName = typeof resolvedCommand === "string" ? resolvedCommand : resolvedCommand.name;
+  const schemaState = getCommandSchemaState(resolvedCommand);
 
   let formHTML = "";
 
-  if (formDef) {
-    // Smart form
-    const fieldsHTML = formDef.fields.map((field) => {
-      const value = getSmartInputValue(clip.name, commandName, field.name);
-      if (field.inputType === "select") {
-        const optionsHTML = field.options.map((opt) =>
-          `<option value="${escapeHTML(opt)}"${opt === value ? " selected" : ""}>${opt || "(default)"}</option>`
-        ).join("");
-        return `
-          <div class="form-field">
-            <label class="form-label">${escapeHTML(field.label)}</label>
-            <select class="form-select" data-smart-field="${escapeHTML(commandName)}:${escapeHTML(field.name)}">${optionsHTML}</select>
-          </div>
-        `;
-      }
-      if (field.inputType === "textarea") {
-        return `
-          <div class="form-field">
-            <label class="form-label">${escapeHTML(field.label)}</label>
-            <textarea class="form-textarea form-smart-textarea" data-smart-field="${escapeHTML(commandName)}:${escapeHTML(field.name)}" placeholder="${escapeHTML(field.placeholder || "")}">${escapeHTML(value)}</textarea>
-          </div>
-        `;
-      }
-      const inputType = field.inputType === "number" ? "number" : field.inputType === "date" ? "date" : "text";
-      return `
-        <div class="form-field">
-          <label class="form-label">${escapeHTML(field.label)}</label>
-          <input type="${inputType}" class="form-input" data-smart-field="${escapeHTML(commandName)}:${escapeHTML(field.name)}" value="${escapeHTML(value)}" placeholder="${escapeHTML(field.placeholder || "")}">
-        </div>
-      `;
-    }).join("");
-
-    formHTML = `<div class="form-row">${fieldsHTML}</div>`;
-  } else if (isNoInput) {
-    // No input needed
+  if (schemaState.kind === "schema") {
+    formHTML = renderSchemaForm(clip.name, commandName, schemaState.schemaStr);
+  } else if (schemaState.kind === "empty") {
     formHTML = '<p class="command-help-text">This command requires no input.</p>';
   } else {
-    // JSON textarea fallback
     let inputValue = getCommandInput(clip.name, commandName);
     if (!inputValue) {
       inputValue = "{}";
@@ -1024,28 +1019,26 @@ function bindCommandEvents(clip, commands) {
 
     const runBtn = document.querySelector(`[data-command-run="${cssEscape(commandName)}"]`);
     if (runBtn) {
-      runBtn.addEventListener("click", () => void invokeCommand(commandName));
+      runBtn.addEventListener("click", () => void invokeCommand(commandObj));
     }
 
-    // Bind smart form inputs
     const smartFields = document.querySelectorAll(`[data-smart-field^="${cssEscape(commandName)}:"]`);
     for (const field of smartFields) {
       const [, fieldName] = field.dataset.smartField.split(":");
-      field.addEventListener("input", (e) => {
-        setSmartInputValue(clip.name, commandName, fieldName, e.target.value);
-      });
-      field.addEventListener("change", (e) => {
-        setSmartInputValue(clip.name, commandName, fieldName, e.target.value);
-      });
-      // Enter key runs command
-      if (field.tagName === "INPUT") {
+      const syncFieldValue = (event) => {
+        const target = event.target;
+        const value = target.type === "checkbox" ? target.checked : target.value;
+        setSmartInputValue(clip.name, commandName, fieldName, value);
+      };
+      field.addEventListener("input", syncFieldValue);
+      field.addEventListener("change", syncFieldValue);
+      if (field.tagName === "INPUT" && field.type !== "checkbox") {
         field.addEventListener("keydown", (e) => {
-          if (e.key === "Enter") void invokeCommand(commandName);
+          if (e.key === "Enter") void invokeCommand(commandObj);
         });
       }
     }
 
-    // Bind JSON textarea
     const textarea = document.querySelector(`textarea[data-command-input="${cssEscape(commandName)}"]`);
     if (textarea) {
       textarea.addEventListener("input", (e) => {
