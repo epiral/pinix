@@ -282,6 +282,8 @@ func (c *runtimeHubConnector) runProviderSession(parent context.Context) error {
 		switch {
 		case message.GetInvokeCommand() != nil:
 			go c.handleInvokeCommand(sessionCtx, stream, message.GetInvokeCommand())
+		case message.GetGetClipWebCommand() != nil:
+			go c.handleGetClipWebCommand(stream, message.GetGetClipWebCommand())
 		case message.GetPong() != nil:
 			continue
 		default:
@@ -513,6 +515,52 @@ func (c *runtimeHubConnector) handleInvokeCommand(ctx context.Context, stream *c
 			return
 		}
 	}
+}
+
+func (c *runtimeHubConnector) handleGetClipWebCommand(stream *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage], command *pinixv2.GetClipWebCommand) {
+	requestID := strings.TrimSpace(command.GetRequestId())
+	if requestID == "" {
+		return
+	}
+
+	clipName := strings.TrimSpace(command.GetClipName())
+	if clipName == "" {
+		_ = c.sendClipWebResult(stream, &pinixv2.GetClipWebResult{RequestId: requestID, Error: &pinixv2.HubError{Code: "invalid_argument", Message: "clip_name is required"}})
+		return
+	}
+
+	clip, ok, err := c.daemon.registry.GetClip(clipName)
+	if err != nil {
+		_ = c.sendClipWebResult(stream, &pinixv2.GetClipWebResult{RequestId: requestID, Error: &pinixv2.HubError{Code: "internal", Message: fmt.Sprintf("load clip %q: %v", clipName, err)}})
+		return
+	}
+	if !ok {
+		_ = c.sendClipWebResult(stream, &pinixv2.GetClipWebResult{RequestId: requestID, Error: &pinixv2.HubError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", clipName)}})
+		return
+	}
+
+	result, err := readClipWebFile(clipWebDir(clip), command.GetPath(), clipWebReadOptions{
+		Offset:      command.GetOffset(),
+		Length:      command.GetLength(),
+		IfNoneMatch: command.GetIfNoneMatch(),
+	})
+	if err != nil {
+		_ = c.sendClipWebResult(stream, &pinixv2.GetClipWebResult{RequestId: requestID, Error: invokeErrorToHubError(err)})
+		return
+	}
+
+	_ = c.sendClipWebResult(stream, &pinixv2.GetClipWebResult{
+		RequestId:   requestID,
+		Content:     cloneBytes(result.Content),
+		ContentType: result.ContentType,
+		Etag:        result.ETag,
+		TotalSize:   result.TotalSize,
+		NotModified: result.NotModified,
+	})
+}
+
+func (c *runtimeHubConnector) sendClipWebResult(stream *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage], result *pinixv2.GetClipWebResult) error {
+	return c.sendProvider(stream, &pinixv2.ProviderMessage{Payload: &pinixv2.ProviderMessage_GetClipWebResult{GetClipWebResult: result}})
 }
 
 func (c *runtimeHubConnector) handleInstallCommand(ctx context.Context, stream *connect.BidiStreamForClient[pinixv2.RuntimeMessage, pinixv2.HubRuntimeMessage], command *pinixv2.InstallCommand) {
