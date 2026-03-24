@@ -945,9 +945,23 @@ func providerClipToManifest(registration *pinixv2.ClipRegistration) *ManifestCac
 		Commands:       commandNames(protoCommandsToInternal(registration.GetCommands())),
 		CommandDetails: protoCommandsToInternal(registration.GetCommands()),
 		HasWeb:         registration.GetHasWeb(),
-		Dependencies:   dependencySpecsFromStrings(registration.GetDependencies()),
+		Dependencies:   dependencySlotsToSpecs(registration.GetDependencies()),
 	}
 	return finalizeManifestCache(manifest)
+}
+
+func dependencySlotsToSpecs(slots []string) map[string]DependencySpec {
+	if len(slots) == 0 {
+		return nil
+	}
+	result := make(map[string]DependencySpec, len(slots))
+	for _, slot := range slots {
+		slot = strings.TrimSpace(slot)
+		if slot != "" {
+			result[slot] = DependencySpec{Package: slot}
+		}
+	}
+	return normalizeDependencySpecs(result)
 }
 
 func aliasBaseFromSource(source string) string {
