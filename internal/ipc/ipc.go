@@ -36,12 +36,14 @@ type Message struct {
 }
 
 type Manifest struct {
-	Package      string                    `json:"package,omitempty"`
-	Version      string                    `json:"version,omitempty"`
-	Domain       string                    `json:"domain,omitempty"`
-	Description  string                    `json:"description,omitempty"`
-	Commands     json.RawMessage           `json:"commands,omitempty"`
-	Dependencies Dependencies              `json:"dependencies,omitempty"`
+	Package      string                         `json:"package,omitempty"`
+	Version      string                         `json:"version,omitempty"`
+	Domain       string                         `json:"domain,omitempty"`
+	Description  string                         `json:"description,omitempty"`
+	Commands     json.RawMessage                `json:"commands,omitempty"`
+	Dependencies Dependencies                   `json:"dependencies,omitempty"`
+	Patterns     []string                       `json:"patterns,omitempty"`
+	Entities     map[string]json.RawMessage     `json:"entities,omitempty"`
 }
 
 type Dependencies map[string]DependencySpec

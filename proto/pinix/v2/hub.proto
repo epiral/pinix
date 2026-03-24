@@ -78,6 +78,7 @@ message ClipManifest {
   repeated string dependencies = 7;
   bool has_web = 8;
   repeated string patterns = 9;
+  map<string, string> entities = 10;
 }
 
 // 当前连入的 Provider（在列表里 = 在线）。

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -710,7 +711,19 @@ func manifestToProto(manifest *ManifestCache) *pinixv2.ClipManifest {
 		Dependencies: dependencySlots(manifest.Dependencies),
 		HasWeb:       manifest.HasWeb,
 		Patterns:     append([]string(nil), manifest.Patterns...),
+		Entities:     entitiesToProto(manifest.Entities),
 	}
+}
+
+func entitiesToProto(entities map[string]json.RawMessage) map[string]string {
+	if len(entities) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(entities))
+	for name, schema := range entities {
+		result[name] = string(schema)
+	}
+	return result
 }
 
 func responseErrorToHubError(err *ResponseError) *pinixv2.HubError {
