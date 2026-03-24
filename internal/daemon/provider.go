@@ -515,18 +515,23 @@ func (m *ProviderManager) addClipToSession(session *providerSession, registratio
 		return nil, err
 	}
 	alias := clip.registration.GetAlias()
-	if exists, err := m.localClipExists(alias); err != nil {
-		return nil, err
-	} else if exists && !isLocalProvider(session.name) {
-		return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", alias)}
-	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	ref, exists := m.clips[alias]
-	if exists && ref.session != session {
+	// Allow re-registration by the same session (manifest update)
+	ref, existsInProvider := m.clips[alias]
+	if existsInProvider && ref.session != session {
 		return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", alias)}
+	}
+
+	// Block if clip exists in local registry and this is not a local/same-session provider
+	if !existsInProvider {
+		if exists, err := m.localClipExists(alias); err != nil {
+			return nil, err
+		} else if exists && !isLocalProvider(session.name) {
+			return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", alias)}
+		}
 	}
 	if reservation, exists := m.reserved[alias]; exists && reservation.owner != session.name {
 		return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", alias)}
@@ -892,6 +897,8 @@ func sanitizeProviderClip(registration *pinixv2.ClipRegistration) (*providerClip
 		HasWeb:         registration.GetHasWeb(),
 		Dependencies:   normalizeStrings(registration.GetDependencies()),
 		TokenProtected: registration.GetTokenProtected(),
+		Patterns:       normalizeStrings(registration.GetPatterns()),
+		Entities:       registration.GetEntities(),
 	}
 	return &providerClip{registration: sanitized}, nil
 }
