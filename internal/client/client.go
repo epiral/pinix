@@ -1,6 +1,6 @@
 // Role:    Connect-RPC HubService client used by pinix CLI and mock providers
-// Depends: context, crypto/tls, encoding/json, errors, fmt, io, net, net/http, strings, connectrpc, pinix v2, pinixv2connect, http2
-// Exports: Client, HubError, DefaultServerURL, New
+// Depends: context, crypto/tls, encoding/json, errors, fmt, io, net, net/http, strings, connectrpc, pinix v2, pinixv2connect, http2, pidfile
+// Exports: Client, HubError, FallbackServerURL, DefaultServerURL, New
 
 package client
 
@@ -18,10 +18,20 @@ import (
 	connect "connectrpc.com/connect"
 	pinixv2 "github.com/epiral/pinix/gen/go/pinix/v2"
 	"github.com/epiral/pinix/gen/go/pinix/v2/pinixv2connect"
+	"github.com/epiral/pinix/internal/pidfile"
 	"golang.org/x/net/http2"
 )
 
-const DefaultServerURL = "http://127.0.0.1:9000"
+const FallbackServerURL = "http://127.0.0.1:9000"
+
+// DefaultServerURL returns the Hub URL, auto-discovering from PID file if available.
+func DefaultServerURL() string {
+	pf, err := pidfile.ReadPIDFile()
+	if err == nil && pf != nil {
+		return pf.HubURL
+	}
+	return FallbackServerURL
+}
 
 type Client struct {
 	baseURL string
@@ -46,7 +56,7 @@ func (e *HubError) Error() string {
 func New(serverURL string) (*Client, error) {
 	serverURL = strings.TrimSpace(serverURL)
 	if serverURL == "" {
-		serverURL = DefaultServerURL
+		serverURL = DefaultServerURL()
 	}
 
 	transport := &http2.Transport{

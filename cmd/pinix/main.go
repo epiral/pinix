@@ -102,7 +102,7 @@ func executeInvoke(globals, rest []string) error {
 // parseGlobalFlags extracts --server, --auth-token, and --clip-token values
 // from the globals slice produced by splitGlobalArgs.
 func parseGlobalFlags(globals []string) (serverURL, hubToken, clipToken string) {
-	serverURL = client.DefaultServerURL
+	serverURL = client.DefaultServerURL()
 	hubToken = os.Getenv("PINIX_TOKEN")
 	for i := 0; i < len(globals); i++ {
 		switch globals[i] {
@@ -136,7 +136,7 @@ func newRootCommand() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	rootCmd.PersistentFlags().StringVar(&serverURL, "server", client.DefaultServerURL, "pinixd HubService base URL")
+	rootCmd.PersistentFlags().StringVar(&serverURL, "server", client.DefaultServerURL(), "pinixd HubService base URL")
 	rootCmd.PersistentFlags().StringVar(&hubToken, "auth-token", os.Getenv("PINIX_TOKEN"), "hub auth token for protected add/remove operations")
 
 	rootCmd.AddCommand(newAddCommand(&serverURL, &hubToken))
@@ -276,7 +276,7 @@ func newInvokeCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&serverURL, "server", client.DefaultServerURL, "pinixd HubService base URL")
+	cmd.Flags().StringVar(&serverURL, "server", client.DefaultServerURL(), "pinixd HubService base URL")
 	cmd.Flags().StringVar(&hubToken, "auth-token", os.Getenv("PINIX_TOKEN"), "hub auth token")
 	cmd.Flags().StringVar(&clipToken, "clip-token", "", "clip token for protected invoke operations")
 	return cmd
