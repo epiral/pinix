@@ -32,6 +32,21 @@ const (
 	clipRegisterTimeout = 10 * time.Second
 )
 
+// ClipProcessStatus represents the process state of a Runtime-managed Clip.
+type ClipProcessStatus int
+
+const (
+	ClipProcessSleeping ClipProcessStatus = iota // not running, will cold-start on next invoke
+	ClipProcessRunning                           // process alive
+	ClipProcessError                             // last exit was a crash
+)
+
+type clipStatusEntry struct {
+	status  ClipProcessStatus
+	message string
+	since   time.Time
+}
+
 type ProcessManager struct {
 	registry *Registry
 	bunPath  string
@@ -42,6 +57,9 @@ type ProcessManager struct {
 
 	mu        sync.Mutex
 	processes map[string]*clipProcess
+
+	statusMu sync.RWMutex
+	statuses map[string]clipStatusEntry
 }
 
 type clipProcess struct {
@@ -106,7 +124,24 @@ func NewProcessManager(registry *Registry, bunPath string, pinixURL ...string) (
 		bunPath:   bunPath,
 		pinixURL:  url,
 		processes: make(map[string]*clipProcess),
+		statuses:  make(map[string]clipStatusEntry),
 	}, nil
+}
+
+func (m *ProcessManager) setClipStatus(name string, status ClipProcessStatus, message string) {
+	m.statusMu.Lock()
+	m.statuses[name] = clipStatusEntry{status: status, message: message, since: time.Now()}
+	m.statusMu.Unlock()
+}
+
+func (m *ProcessManager) ClipStatus(name string) (ClipProcessStatus, string) {
+	m.statusMu.RLock()
+	entry, ok := m.statuses[name]
+	m.statusMu.RUnlock()
+	if !ok {
+		return ClipProcessSleeping, ""
+	}
+	return entry.status, entry.message
 }
 
 func (m *ProcessManager) BunPath() string {
@@ -365,6 +400,7 @@ func (m *ProcessManager) startLocked(clip ClipConfig) (*clipProcess, error) {
 
 	select {
 	case <-proc.ready:
+		m.setClipStatus(clip.Name, ClipProcessRunning, "")
 		return proc, nil
 	case <-proc.done:
 		return nil, proc.errValue()
@@ -670,7 +706,12 @@ func (m *ProcessManager) persistRegisteredManifest(clip ClipConfig, manifest *Ma
 func (m *ProcessManager) waitLoop(proc *clipProcess) {
 	err := proc.cmd.Wait()
 	if err != nil {
-		err = fmt.Errorf("clip process exited: %w", err)
+		// Non-zero exit code: crash
+		err = fmt.Errorf("clip process crashed: %w", err)
+		m.setClipStatus(proc.clip.Name, ClipProcessError, err.Error())
+	} else {
+		// Exit code 0: voluntary exit (idle timeout)
+		m.setClipStatus(proc.clip.Name, ClipProcessSleeping, "")
 	}
 	proc.finish(err)
 	m.removeIfSame(proc.clip.Name, proc)

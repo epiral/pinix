@@ -81,7 +81,9 @@ type providerSession struct {
 }
 
 type providerClip struct {
-	registration *pinixv2.ClipRegistration
+	registration  *pinixv2.ClipRegistration
+	status        pinixv2.ClipStatus
+	statusMessage string
 }
 
 type providerClipRef struct {
@@ -276,7 +278,7 @@ func (m *ProviderManager) ListClipInfos() []*pinixv2.ClipInfo {
 	m.mu.RLock()
 	clips := make([]*pinixv2.ClipInfo, 0, len(m.clips))
 	for _, ref := range m.clips {
-		clips = append(clips, providerClipToClipInfo(ref.session.name, ref.clip.registration))
+		clips = append(clips, providerClipToClipInfo(ref.session.name, ref.clip))
 	}
 	m.mu.RUnlock()
 
@@ -532,7 +534,7 @@ func (m *ProviderManager) addClipToSession(session *providerSession, registratio
 	session.clips[alias] = clip
 	m.clips[alias] = &providerClipRef{session: session, clip: clip}
 	delete(m.reserved, alias)
-	return providerClipToClipInfo(session.name, clip.registration), nil
+	return providerClipToClipInfo(session.name, clip), nil
 }
 
 func (m *ProviderManager) removeClipFromSession(session *providerSession, name string) {
@@ -637,6 +639,8 @@ func (s *providerSession) readLoop() error {
 				s.closeWithError(err)
 				return err
 			}
+		case *pinixv2.ProviderMessage_ClipStatusChanged:
+			s.handleClipStatusChanged(payload.ClipStatusChanged)
 		case *pinixv2.ProviderMessage_Register:
 			err := daemonError{Code: "invalid_argument", Message: "register message is only allowed once"}
 			s.closeWithError(err)
@@ -653,6 +657,23 @@ func (s *providerSession) handleClipAdded(message *pinixv2.ClipAdded) error {
 	}
 	_, err := s.manager.addClipToSession(s, message.GetClip())
 	return err
+}
+
+func (s *providerSession) handleClipStatusChanged(message *pinixv2.ClipStatusChanged) {
+	if message == nil {
+		return
+	}
+	name := strings.TrimSpace(message.GetName())
+	if name == "" {
+		return
+	}
+
+	s.manager.mu.Lock()
+	defer s.manager.mu.Unlock()
+	if ref, ok := s.manager.clips[name]; ok && ref.session == s {
+		ref.clip.status = message.GetStatus()
+		ref.clip.statusMessage = strings.TrimSpace(message.GetMessage())
+	}
 }
 
 func (s *providerSession) handleClipRemoved(message *pinixv2.ClipRemoved) {
@@ -888,9 +909,14 @@ func providerClipSupports(registration *pinixv2.ClipRegistration, command string
 	return false
 }
 
-func providerClipToClipInfo(providerName string, registration *pinixv2.ClipRegistration) *pinixv2.ClipInfo {
-	if registration == nil {
+func providerClipToClipInfo(providerName string, clip *providerClip) *pinixv2.ClipInfo {
+	if clip == nil || clip.registration == nil {
 		return &pinixv2.ClipInfo{Provider: strings.TrimSpace(providerName)}
+	}
+	registration := clip.registration
+	status := clip.status
+	if status == pinixv2.ClipStatus_CLIP_STATUS_UNSPECIFIED {
+		status = pinixv2.ClipStatus_CLIP_STATUS_RUNNING
 	}
 	return &pinixv2.ClipInfo{
 		Name:           normalizeName(registration.GetAlias()),
@@ -902,6 +928,8 @@ func providerClipToClipInfo(providerName string, registration *pinixv2.ClipRegis
 		HasWeb:         registration.GetHasWeb(),
 		TokenProtected: registration.GetTokenProtected(),
 		Dependencies:   normalizeStrings(registration.GetDependencies()),
+		Status:         status,
+		StatusMessage:  clip.statusMessage,
 	}
 }
 
