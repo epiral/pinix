@@ -150,6 +150,8 @@ message ClipRegistration {
   repeated string dependencies = 7;
   bool token_protected = 8;
   string name = 9 [deprecated = true];
+  repeated string patterns = 10;
+  map<string, string> entities = 11;
 }
 
 message ClipAdded {

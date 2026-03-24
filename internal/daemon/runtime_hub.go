@@ -667,5 +667,7 @@ func localClipToRegistration(clip ClipConfig) *pinixv2.ClipRegistration {
 		HasWeb:         manifest.HasWeb,
 		TokenProtected: clip.Token != "",
 		Dependencies:   dependencySlots(manifest.Dependencies),
+		Patterns:       append([]string(nil), manifest.Patterns...),
+		Entities:       entitiesToProto(manifest.Entities),
 	}
 }

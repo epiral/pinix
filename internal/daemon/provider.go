@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -946,8 +947,27 @@ func providerClipToManifest(registration *pinixv2.ClipRegistration) *ManifestCac
 		CommandDetails: protoCommandsToInternal(registration.GetCommands()),
 		HasWeb:         registration.GetHasWeb(),
 		Dependencies:   dependencySlotsToSpecs(registration.GetDependencies()),
+		Patterns:       normalizeStrings(registration.GetPatterns()),
+		Entities:       protoEntitiesToInternal(registration.GetEntities()),
 	}
 	return finalizeManifestCache(manifest)
+}
+
+func protoEntitiesToInternal(entities map[string]string) map[string]json.RawMessage {
+	if len(entities) == 0 {
+		return nil
+	}
+	result := make(map[string]json.RawMessage, len(entities))
+	for name, schema := range entities {
+		name = strings.TrimSpace(name)
+		if name != "" && len(schema) > 0 {
+			result[name] = json.RawMessage(schema)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func dependencySlotsToSpecs(slots []string) map[string]DependencySpec {
