@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/epiral/pinix/internal/daemon"
+	"github.com/epiral/pinix/internal/pidfile"
 )
 
 func main() {
@@ -54,6 +55,16 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// PID file: prevent duplicate pinixd, enable CLI auto-discovery
+	if err := pidfile.CheckExistingPIDFile(port); err != nil {
+		exitErr(err)
+	}
+	pidCleanup, err := pidfile.WritePIDFile(port)
+	if err != nil {
+		exitErr(fmt.Errorf("write pid file: %w", err))
+	}
+	defer pidCleanup()
 
 	// Mode 1: Hub only (no local runtime)
 	if hubOnly {
