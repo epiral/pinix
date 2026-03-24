@@ -64,7 +64,7 @@ my-clip/                    ← Git 仓库
 
 ```
 <name>-<version>.clip       ← zip 文件
-├── clip.yaml               ← 必须：包元信息
+├── package.json            ← 必须：name, version
 ├── commands/               ← 可选：脚本命令（每个文件 = 一个命令）
 ├── bin                     ← 可选：编译型单二进制
 ├── lib/                    ← 可选：依赖与共享代码
@@ -73,25 +73,9 @@ my-clip/                    ← Git 仓库
 └── seed/                   ← 可选：初始数据模板
 ```
 
-### 2.2 clip.yaml
+### 2.2 Manifest
 
-**仅包元信息。不声明命令列表。**
-
-```yaml
-name: clip-registry
-version: 1.0.0
-description: Discover and manage clips across servers
-```
-
-字段：
-
-| 字段 | 必须 | 说明 |
-|------|------|------|
-| name | ✅ | 包名，全局唯一标识 |
-| version | ✅ | SemVer 版本号 |
-| description | 可选 | 一句话描述 |
-
-为什么不在 clip.yaml 里列命令？**拒绝双重维护。** 命令的权威来源是文件系统和二进制自省（见 §4）。
+Manifest 不再使用独立的 manifest 文件。`name` 和 `version` 来自 `package.json`；`domain`、`commands`、`dependencies`、`patterns` 等字段由 SDK 代码在运行时通过 IPC register 上报。命令的权威来源是代码自省，不是配置文件。
 
 ### 2.3 命令的两种形态
 
@@ -182,7 +166,7 @@ Package 解压后的运行目录。**程序与数据分离。**
 
 ```
 <clips-dir>/<instance-name>/
-├── clip.yaml               ← 来自 Package（只读）
+├── package.json            ← 来自 Package（只读）
 ├── commands/               ← 来自 Package（只读）
 ├── bin                     ← 来自 Package（只读）
 ├── lib/                    ← 来自 Package（只读）
@@ -196,7 +180,7 @@ Package 解压后的运行目录。**程序与数据分离。**
 | 规则 | 说明 |
 |------|------|
 | `data/` 只属于 Instance | Package 里没有 `data/`，永远不会 |
-| `upgrade` 不碰 `data/` | 只替换 clip.yaml + commands/ + bin + lib/ + web/ |
+| `upgrade` 不碰 `data/` | 只替换 package.json + commands/ + bin + lib/ + web/ |
 | `install` 从 `seed/` 初始化 `data/` | seed/ 是模板，data/ 是实例 |
 | 同一 Package 可多实例 | 通过 `--name` 区分 |
 
@@ -305,7 +289,7 @@ pinix clip uninstall <name>                  # 删除 instance（提示是否保
 ### install 流程
 
 ```
-1. 读取 clip.yaml → 确定 name, version
+1. 读取 package.json → 确定 name, version
 2. 解压到 <clips-dir>/<name>/
 3. 删除 seed/ 目录（如果有）→ 将内容拷贝到 data/
 4. 注册到 config.yaml（id, name, workdir）
@@ -314,8 +298,8 @@ pinix clip uninstall <name>                  # 删除 instance（提示是否保
 ### upgrade 流程
 
 ```
-1. 读取 clip.yaml → 匹配已有 instance
-2. 替换 clip.yaml, commands/, bin, lib/, web/ → 不碰 data/
+1. 读取 package.json → 匹配已有 instance
+2. 替换 package.json, commands/, bin, lib/, web/ → 不碰 data/
 3. 更新 config.yaml version 信息
 ```
 
@@ -337,14 +321,14 @@ pinix clip uninstall <name>                  # 删除 instance（提示是否保
 | 包含 data/ | ❌ | ❌（只有 seed/） | ✅ |
 | 包含 lib/ | 开发依赖（如 node_modules） | 打包后的运行时依赖 | 和 Package 一致 |
 | 命令来源 | 源码 | 构建产物 | 和 Package 一致 |
-| clip.yaml | 不需要 | 必须（仅元信息） | 来自 Package |
+| package.json | 必须（name, version） | 必须 | 来自 Package |
 | 谁关心 | 开发者 | 分发/传输 | Pinix Server |
 
 ### Package 标准目录总览
 
 | 目录/文件 | 角色 | Server 感知？ | 升级时 |
 |-----------|------|--------------|--------|
-| `clip.yaml` | 包元信息 | 读 name/version/desc | 替换 |
+| `package.json` | 包元信息 | 读 name/version/desc | 替换 |
 | `commands/` | 脚本命令入口 | 扫描文件名 | 替换 |
 | `bin` | 编译命令入口 | 调 `--commands` | 替换 |
 | `lib/` | 依赖与共享代码 | **不管** | 替换 |
