@@ -348,7 +348,13 @@ func (h *HubService) listLocalClipInfos() ([]*pinixv2.ClipInfo, error) {
 	}
 	result := make([]*pinixv2.ClipInfo, 0, len(clips))
 	for _, clip := range clips {
-		result = append(result, localClipToClipInfo(clip))
+		info := localClipToClipInfo(clip)
+		if h.daemon.process != nil {
+			status, msg := h.daemon.process.ClipStatus(clip.Name)
+			info.Status = clipProcessStatusToProto(status)
+			info.StatusMessage = msg
+		}
+		result = append(result, info)
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].GetName() < result[j].GetName()
@@ -619,6 +625,19 @@ func clipToClipInfo(clip ClipConfig, providerName string) *pinixv2.ClipInfo {
 
 func localClipToClipInfo(clip ClipConfig) *pinixv2.ClipInfo {
 	return clipToClipInfo(clip, localProviderName)
+}
+
+func clipProcessStatusToProto(status ClipProcessStatus) pinixv2.ClipStatus {
+	switch status {
+	case ClipProcessRunning:
+		return pinixv2.ClipStatus_CLIP_STATUS_RUNNING
+	case ClipProcessSleeping:
+		return pinixv2.ClipStatus_CLIP_STATUS_SLEEPING
+	case ClipProcessError:
+		return pinixv2.ClipStatus_CLIP_STATUS_ERROR
+	default:
+		return pinixv2.ClipStatus_CLIP_STATUS_UNSPECIFIED
+	}
 }
 
 func mergeProviderInfo(dst map[string]*pinixv2.ProviderInfo, provider *pinixv2.ProviderInfo) {
