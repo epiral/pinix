@@ -5,9 +5,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -37,6 +39,7 @@ func execute() error {
 		"bindings":   {},
 		"search":     {},
 		"publish":    {},
+		"info":       {},
 		"help":       {},
 		"completion": {},
 	}
@@ -44,15 +47,83 @@ func execute() error {
 	globals, rest := splitGlobalArgs(os.Args[1:])
 	if len(rest) > 0 {
 		if _, ok := known[rest[0]]; !ok {
-			cmd := newInvokeCommand()
-			cmd.SetArgs(append(globals, rest...))
-			return cmd.Execute()
+			return executeInvoke(globals, rest)
 		}
 	}
 
 	cmd := newRootCommand()
 	cmd.SetArgs(os.Args[1:])
 	return cmd.Execute()
+}
+
+// executeInvoke bypasses cobra to avoid flag interception. Global flags
+// (--server, --auth-token, --clip-token) are already extracted by
+// splitGlobalArgs; everything in rest belongs to the clip command.
+func executeInvoke(globals, rest []string) error {
+	if len(rest) < 2 {
+		return fmt.Errorf("usage: pinix [flags] <clip> <command> [--key value ...]")
+	}
+
+	serverURL, hubToken, clipToken := parseGlobalFlags(globals)
+
+	clipName := rest[0]
+	command := rest[1]
+	invokeArgs := rest[2:]
+
+	input, err := parseInvokeInput(invokeArgs)
+	if err != nil {
+		return err
+	}
+
+	cli, err := client.New(serverURL)
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	result, err := cli.Invoke(ctx, clipName, command, input, clipToken, hubToken)
+	if err != nil {
+		return err
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	if result[0] == '"' {
+		var value string
+		if err := json.Unmarshal(result, &value); err == nil {
+			fmt.Println(value)
+			return nil
+		}
+	}
+	fmt.Println(string(result))
+	return nil
+}
+
+// parseGlobalFlags extracts --server, --auth-token, and --clip-token values
+// from the globals slice produced by splitGlobalArgs.
+func parseGlobalFlags(globals []string) (serverURL, hubToken, clipToken string) {
+	serverURL = client.DefaultServerURL
+	hubToken = os.Getenv("PINIX_TOKEN")
+	for i := 0; i < len(globals); i++ {
+		switch globals[i] {
+		case "--server":
+			if i+1 < len(globals) {
+				serverURL = globals[i+1]
+				i++
+			}
+		case "--auth-token":
+			if i+1 < len(globals) {
+				hubToken = globals[i+1]
+				i++
+			}
+		case "--clip-token":
+			if i+1 < len(globals) {
+				clipToken = globals[i+1]
+				i++
+			}
+		}
+	}
+	return
 }
 
 func newRootCommand() *cobra.Command {
@@ -80,6 +151,7 @@ func newRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newBindingsCommand())
 	rootCmd.AddCommand(newSearchCommand())
 	rootCmd.AddCommand(newPublishCommand())
+	rootCmd.AddCommand(newInfoCommand(&serverURL, &hubToken))
 	return rootCmd
 }
 
@@ -208,6 +280,169 @@ func newInvokeCommand() *cobra.Command {
 	cmd.Flags().StringVar(&hubToken, "auth-token", os.Getenv("PINIX_TOKEN"), "hub auth token")
 	cmd.Flags().StringVar(&clipToken, "clip-token", "", "clip token for protected invoke operations")
 	return cmd
+}
+
+func newInfoCommand(serverURL, hubToken *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "info <clip>",
+		Short: "Display Clip information and available commands",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clipName := strings.TrimSpace(args[0])
+			cli, err := client.New(*serverURL)
+			if err != nil {
+				return err
+			}
+			manifest, err := cli.GetManifest(cmd.Context(), clipName, *hubToken)
+			if err != nil {
+				return fmt.Errorf("get manifest for %q: %w", clipName, err)
+			}
+			printManifest(clipName, manifest)
+			return nil
+		},
+	}
+}
+
+func printManifest(clipName string, m *pinixv2.ClipManifest) {
+	// Header: alias (package@version)
+	header := clipName
+	pkg := strings.TrimSpace(m.GetPackage())
+	ver := strings.TrimSpace(m.GetVersion())
+	if pkg != "" {
+		pkgVer := pkg
+		if ver != "" {
+			pkgVer += "@" + ver
+		}
+		header += " (" + pkgVer + ")"
+	}
+	fmt.Println(header)
+
+	if domain := strings.TrimSpace(m.GetDomain()); domain != "" {
+		fmt.Printf("  Domain: %s\n", domain)
+	}
+	if desc := strings.TrimSpace(m.GetDescription()); desc != "" {
+		fmt.Printf("  Description: %s\n", desc)
+	}
+
+	commands := m.GetCommands()
+	if len(commands) == 0 {
+		return
+	}
+
+	// Sort commands by name
+	sorted := make([]*pinixv2.CommandInfo, len(commands))
+	copy(sorted, commands)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].GetName() < sorted[j].GetName()
+	})
+
+	// Compute max command name width for alignment
+	maxCmdLen := 0
+	for _, c := range sorted {
+		if n := len(c.GetName()); n > maxCmdLen {
+			maxCmdLen = n
+		}
+	}
+
+	fmt.Println()
+	fmt.Println("  Commands:")
+	for _, c := range sorted {
+		name := c.GetName()
+		desc := strings.TrimSpace(c.GetDescription())
+		fmt.Printf("    %-*s   %s\n", maxCmdLen, name, desc)
+
+		// Parse input schema to show parameters
+		params := parseSchemaProperties(c.GetInput())
+		if len(params) == 0 {
+			continue
+		}
+
+		// Compute max param display width for alignment
+		maxParamLen := 0
+		for _, p := range params {
+			display := "--" + p.name + " " + p.typ
+			if p.required {
+				display += " (required)"
+			}
+			if len(display) > maxParamLen {
+				maxParamLen = len(display)
+			}
+		}
+
+		for _, p := range params {
+			display := "--" + p.name + " " + p.typ
+			if p.required {
+				display += " (required)"
+			}
+			if p.description != "" {
+				fmt.Printf("      %-*s    %s\n", maxParamLen, display, p.description)
+			} else {
+				fmt.Printf("      %s\n", display)
+			}
+		}
+	}
+}
+
+type schemaProperty struct {
+	name        string
+	typ         string
+	description string
+	required    bool
+}
+
+func parseSchemaProperties(raw string) []schemaProperty {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+
+	var schema map[string]any
+	if err := json.Unmarshal([]byte(raw), &schema); err != nil {
+		return nil
+	}
+
+	propsRaw, ok := schema["properties"]
+	if !ok {
+		return nil
+	}
+	props, ok := propsRaw.(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	// Collect required field names
+	requiredSet := make(map[string]bool)
+	if reqRaw, ok := schema["required"]; ok {
+		if reqList, ok := reqRaw.([]any); ok {
+			for _, r := range reqList {
+				if s, ok := r.(string); ok {
+					requiredSet[s] = true
+				}
+			}
+		}
+	}
+
+	result := make([]schemaProperty, 0, len(props))
+	for name, v := range props {
+		p := schemaProperty{name: name, required: requiredSet[name]}
+		if fields, ok := v.(map[string]any); ok {
+			if t, ok := fields["type"].(string); ok {
+				p.typ = t
+			}
+			if d, ok := fields["description"].(string); ok {
+				p.description = d
+			}
+		}
+		result = append(result, p)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		// Required fields first, then alphabetical
+		if result[i].required != result[j].required {
+			return result[i].required
+		}
+		return result[i].name < result[j].name
+	})
+	return result
 }
 
 func clipCommandNames(clip *pinixv2.ClipInfo) []string {
