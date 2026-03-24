@@ -1112,13 +1112,15 @@ func registeredManifestForClip(clip ClipConfig, manifest *ipc.Manifest) (*Manife
 	}
 
 	registered := &ManifestCache{
-		Name:         strings.TrimSpace(clip.Name),
-		Package:      firstNonEmpty(strings.TrimSpace(manifest.Package), strings.TrimSpace(clip.Package)),
-		Version:      firstNonEmpty(strings.TrimSpace(manifest.Version), strings.TrimSpace(clip.Version)),
-		Domain:       strings.TrimSpace(manifest.Domain),
-		Description:  strings.TrimSpace(manifest.Description),
+		Name:           strings.TrimSpace(clip.Name),
+		Package:        firstNonEmpty(strings.TrimSpace(manifest.Package), strings.TrimSpace(clip.Package)),
+		Version:        firstNonEmpty(strings.TrimSpace(manifest.Version), strings.TrimSpace(clip.Version)),
+		Domain:         strings.TrimSpace(manifest.Domain),
+		Description:    strings.TrimSpace(manifest.Description),
 		CommandDetails: parseIPCCommands(manifest.Commands),
 		Dependencies:   ipcDependencySpecsToInternal(manifest.Dependencies),
+		Patterns:       normalizeStrings(manifest.Patterns),
+		Entities:       manifest.Entities,
 	}
 	registered.Commands = commandNames(registered.CommandDetails)
 	registered = enrichManifestForClip(clip, registered)

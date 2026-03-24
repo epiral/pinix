@@ -37,16 +37,17 @@ type DependencySpec struct {
 }
 
 type ManifestCache struct {
-	Name           string                    `json:"name"`
-	Package        string                    `json:"package,omitempty"`
-	Version        string                    `json:"version,omitempty"`
-	Domain         string                    `json:"domain,omitempty"`
-	Description    string                    `json:"description,omitempty"`
-	Commands       []string                  `json:"commands,omitempty"`
-	CommandDetails []CommandInfo             `json:"command_details,omitempty"`
-	HasWeb         bool                      `json:"has_web,omitempty"`
-	Dependencies   manifestDependencies      `json:"dependencies,omitempty"`
-	Patterns       []string                  `json:"patterns,omitempty"`
+	Name           string                         `json:"name"`
+	Package        string                         `json:"package,omitempty"`
+	Version        string                         `json:"version,omitempty"`
+	Domain         string                         `json:"domain,omitempty"`
+	Description    string                         `json:"description,omitempty"`
+	Commands       []string                       `json:"commands,omitempty"`
+	CommandDetails []CommandInfo                  `json:"command_details,omitempty"`
+	HasWeb         bool                           `json:"has_web,omitempty"`
+	Dependencies   manifestDependencies           `json:"dependencies,omitempty"`
+	Patterns       []string                       `json:"patterns,omitempty"`
+	Entities       map[string]json.RawMessage     `json:"entities,omitempty"`
 }
 
 type Config struct {

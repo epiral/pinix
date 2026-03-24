@@ -445,6 +445,18 @@ func cloneManifest(manifest *ManifestCache) *ManifestCache {
 		HasWeb:         manifest.HasWeb,
 		Dependencies:   cloneDependencySpecs(manifest.Dependencies),
 		Patterns:       append([]string(nil), manifest.Patterns...),
+		Entities:       cloneEntities(manifest.Entities),
+	}
+	return cloned
+}
+
+func cloneEntities(entities map[string]json.RawMessage) map[string]json.RawMessage {
+	if len(entities) == 0 {
+		return nil
+	}
+	cloned := make(map[string]json.RawMessage, len(entities))
+	for name, schema := range entities {
+		cloned[name] = append(json.RawMessage(nil), schema...)
 	}
 	return cloned
 }
