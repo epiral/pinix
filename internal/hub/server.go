@@ -46,7 +46,6 @@ func Run(addr string, store *config.Store, mgr *sandbox.Manager) error {
 
 	interceptor := auth.NewInterceptor(store)
 	sched := scheduler.New(mgr, store)
-	worker.RegisterExistingSchedules(store, sched)
 	sched.Start()
 	defer sched.Stop()
 

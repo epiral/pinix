@@ -508,7 +508,11 @@ func shouldSkipTarPath(rel string, entry fs.DirEntry) bool {
 		return false
 	}
 	top := strings.Split(rel, string(os.PathSeparator))[0]
-	return top == ".git" || top == "node_modules"
+	if top == ".git" || top == "node_modules" {
+		return true
+	}
+	base := filepath.Base(rel)
+	return base == "pinix.json" || base == "clip.yaml"
 }
 
 func addTarEntry(writer *tar.Writer, rootDir, rel, path string, entry fs.DirEntry) error {
