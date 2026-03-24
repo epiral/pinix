@@ -174,14 +174,6 @@ func (d *Daemon) redirectClipWebRoot(w http.ResponseWriter, r *http.Request, cli
 }
 
 func (d *Daemon) handleClipWebInvoke(w http.ResponseWriter, r *http.Request, clipName, command string) {
-	if _, found, err := d.registry.GetClip(clipName); err != nil {
-		writeJSONError(w, daemonError{Code: "internal", Message: fmt.Sprintf("load clip %q: %v", clipName, err)})
-		return
-	} else if !found {
-		http.NotFound(w, r)
-		return
-	}
-
 	input, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeJSONError(w, daemonError{Code: "internal", Message: fmt.Sprintf("read invoke body: %v", err)})
@@ -196,11 +188,6 @@ func (d *Daemon) handleClipWebInvoke(w http.ResponseWriter, r *http.Request, cli
 		return
 	}
 
-	if d.process == nil {
-		writeJSONError(w, daemonError{Code: "internal", Message: "process manager is not configured"})
-		return
-	}
-
 	// Check if client wants SSE streaming
 	accept := r.Header.Get("Accept")
 	if strings.Contains(accept, "text/event-stream") {
@@ -208,7 +195,8 @@ func (d *Daemon) handleClipWebInvoke(w http.ResponseWriter, r *http.Request, cli
 		return
 	}
 
-	output, err := d.process.Invoke(r.Context(), clipName, command, json.RawMessage(input))
+	hub := NewHubService(d)
+	output, err := hub.invokeCollect(r.Context(), clipName, command, input)
 	if err != nil {
 		writeJSONError(w, err)
 		return
@@ -229,7 +217,8 @@ func (d *Daemon) handleClipWebInvokeSSE(w http.ResponseWriter, r *http.Request, 
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	_, err := d.process.InvokeStream(r.Context(), clipName, command, input, func(chunk json.RawMessage) {
+	hub := NewHubService(d)
+	err := hub.invokeWithCallback(r.Context(), clipName, command, input, func(chunk json.RawMessage) {
 		// If chunk is a JSON string (e.g. "\"...\n\""), unwrap it into raw lines
 		// and emit each JSONL line as a separate SSE event
 		raw := bytes.TrimSpace(chunk)
