@@ -58,9 +58,10 @@ type ProcessManager struct {
 	mu        sync.Mutex
 	processes map[string]*clipProcess
 
-	statusMu       sync.RWMutex
-	statuses       map[string]clipStatusEntry
-	onStatusChange func(name string, status ClipProcessStatus, message string)
+	statusMu         sync.RWMutex
+	statuses         map[string]clipStatusEntry
+	onStatusChange   func(name string, status ClipProcessStatus, message string)
+	onManifestUpdate func(clip ClipConfig)
 }
 
 type clipProcess struct {
@@ -132,6 +133,12 @@ func NewProcessManager(registry *Registry, bunPath string, pinixURL ...string) (
 func (m *ProcessManager) SetOnStatusChange(fn func(name string, status ClipProcessStatus, message string)) {
 	m.statusMu.Lock()
 	m.onStatusChange = fn
+	m.statusMu.Unlock()
+}
+
+func (m *ProcessManager) SetOnManifestUpdate(fn func(clip ClipConfig)) {
+	m.statusMu.Lock()
+	m.onManifestUpdate = fn
 	m.statusMu.Unlock()
 }
 
@@ -710,6 +717,12 @@ func (m *ProcessManager) persistRegisteredManifest(clip ClipConfig, manifest *Ma
 	stored.Manifest = finalizeManifestCache(updated)
 	if err := m.registry.PutClip(stored); err != nil {
 		return fmt.Errorf("save clip %s manifest: %w", clip.Name, err)
+	}
+	m.statusMu.RLock()
+	fn := m.onManifestUpdate
+	m.statusMu.RUnlock()
+	if fn != nil {
+		fn(stored)
 	}
 	return nil
 }
