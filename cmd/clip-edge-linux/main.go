@@ -95,9 +95,8 @@ func runProvider(parent context.Context, hubURL, providerName string) error {
 	if err := sendMessage(stream, &pinixv2.ProviderMessage{
 		Payload: &pinixv2.ProviderMessage_Register{
 			Register: &pinixv2.RegisterRequest{
-				ProviderName:  providerName,
-				AcceptsManage: false,
-				Clips:         clips,
+				ProviderName: providerName,
+				Clips:        clips,
 			},
 		},
 	}); err != nil {
