@@ -15,12 +15,19 @@ import (
 // Handler is a function that handles a clip command and returns JSON output.
 type Handler func(input json.RawMessage) (json.RawMessage, error)
 
+// clipCommand describes a single command with its handler and JSON Schema metadata.
+type clipCommand struct {
+	name    string
+	handler Handler
+	input   string // JSON Schema string for Portal auto-form generation
+}
+
 // clipDef defines a clip and its commands.
 type clipDef struct {
 	alias    string
 	pkg      string
 	domain   string
-	commands map[string]Handler
+	commands []clipCommand
 }
 
 var clips []clipDef
@@ -31,86 +38,86 @@ func init() {
 			alias:  "linux-shell",
 			pkg:    "clip-edge-linux",
 			domain: "system",
-			commands: map[string]Handler{
-				"exec":       shellExec,
-				"execScript": shellExecScript,
+			commands: []clipCommand{
+				{name: "exec", handler: shellExec, input: `{"type":"object","properties":{"command":{"type":"string","description":"Shell command"},"cwd":{"type":"string","description":"Working directory"},"timeout":{"type":"number","description":"Timeout seconds"}},"required":["command"]}`},
+				{name: "execScript", handler: shellExecScript, input: `{"type":"object","properties":{"language":{"type":"string","enum":["python","node","bash","ruby","go"],"description":"Language"},"code":{"type":"string","description":"Script code"}},"required":["language","code"]}`},
 			},
 		},
 		{
 			alias:  "linux-docker",
 			pkg:    "clip-edge-linux",
 			domain: "devops",
-			commands: map[string]Handler{
-				"ps":     dockerPS,
-				"images": dockerImages,
-				"logs":   dockerLogs,
-				"run":    dockerRun,
-				"stop":   dockerStop,
-				"start":  dockerStart,
+			commands: []clipCommand{
+				{name: "ps", handler: dockerPS, input: `{}`},
+				{name: "images", handler: dockerImages, input: `{}`},
+				{name: "logs", handler: dockerLogs, input: `{"type":"object","properties":{"container":{"type":"string","description":"Container name/ID"},"tail":{"type":"number","description":"Number of lines"}},"required":["container"]}`},
+				{name: "run", handler: dockerRun, input: `{"type":"object","properties":{"image":{"type":"string","description":"Docker image"},"name":{"type":"string","description":"Container name"},"ports":{"type":"string","description":"Port mapping (e.g. 8080:80)"},"env":{"type":"object","description":"Environment variables"}},"required":["image"]}`},
+				{name: "stop", handler: dockerStop, input: `{"type":"object","properties":{"container":{"type":"string","description":"Container name/ID"}},"required":["container"]}`},
+				{name: "start", handler: dockerStart, input: `{"type":"object","properties":{"container":{"type":"string","description":"Container name/ID"}},"required":["container"]}`},
 			},
 		},
 		{
 			alias:  "linux-filesystem",
 			pkg:    "clip-edge-linux",
 			domain: "system",
-			commands: map[string]Handler{
-				"search": fsSearch,
-				"read":   fsRead,
-				"write":  fsWrite,
-				"list":   fsList,
-				"df":     fsDf,
+			commands: []clipCommand{
+				{name: "search", handler: fsSearch, input: `{"type":"object","properties":{"pattern":{"type":"string","description":"File name pattern"},"directory":{"type":"string","description":"Search directory"}},"required":["pattern"]}`},
+				{name: "read", handler: fsRead, input: `{"type":"object","properties":{"path":{"type":"string","description":"File path"}},"required":["path"]}`},
+				{name: "write", handler: fsWrite, input: `{"type":"object","properties":{"path":{"type":"string","description":"File path"},"content":{"type":"string","description":"File content"}},"required":["path","content"]}`},
+				{name: "list", handler: fsList, input: `{"type":"object","properties":{"path":{"type":"string","description":"Directory path"}},"required":["path"]}`},
+				{name: "df", handler: fsDf, input: `{}`},
 			},
 		},
 		{
 			alias:  "linux-system",
 			pkg:    "clip-edge-linux",
 			domain: "system",
-			commands: map[string]Handler{
-				"info":      sysInfo,
-				"cpu":       sysCPU,
-				"memory":    sysMemory,
-				"processes": sysProcesses,
+			commands: []clipCommand{
+				{name: "info", handler: sysInfo, input: `{}`},
+				{name: "cpu", handler: sysCPU, input: `{}`},
+				{name: "memory", handler: sysMemory, input: `{}`},
+				{name: "processes", handler: sysProcesses, input: `{}`},
 			},
 		},
 		{
 			alias:  "linux-network",
 			pkg:    "clip-edge-linux",
 			domain: "network",
-			commands: map[string]Handler{
-				"interfaces":  netInterfaces,
-				"connections": netConnections,
-				"ping":        netPing,
-				"curl":        netCurl,
+			commands: []clipCommand{
+				{name: "interfaces", handler: netInterfaces, input: `{}`},
+				{name: "connections", handler: netConnections, input: `{}`},
+				{name: "ping", handler: netPing, input: `{"type":"object","properties":{"host":{"type":"string","description":"Host to ping"},"count":{"type":"number","description":"Ping count"}},"required":["host"]}`},
+				{name: "curl", handler: netCurl, input: `{"type":"object","properties":{"url":{"type":"string","description":"URL"},"method":{"type":"string","enum":["GET","POST","PUT","DELETE"],"description":"HTTP method"},"headers":{"type":"object","description":"HTTP headers"},"body":{"type":"string","description":"Request body"}},"required":["url"]}`},
 			},
 		},
 		{
 			alias:  "linux-process",
 			pkg:    "clip-edge-linux",
 			domain: "system",
-			commands: map[string]Handler{
-				"list":            procList,
-				"kill":            procKill,
-				"systemd.status":  procSystemdStatus,
-				"systemd.restart": procSystemdRestart,
+			commands: []clipCommand{
+				{name: "list", handler: procList, input: `{}`},
+				{name: "kill", handler: procKill, input: `{"type":"object","properties":{"pid":{"type":"number","description":"Process ID"},"signal":{"type":"string","description":"Signal (e.g. TERM, KILL, HUP)"}},"required":["pid"]}`},
+				{name: "systemd.status", handler: procSystemdStatus, input: `{"type":"object","properties":{"service":{"type":"string","description":"Service name"}},"required":["service"]}`},
+				{name: "systemd.restart", handler: procSystemdRestart, input: `{"type":"object","properties":{"service":{"type":"string","description":"Service name"}},"required":["service"]}`},
 			},
 		},
 		{
 			alias:  "linux-package",
 			pkg:    "clip-edge-linux",
 			domain: "system",
-			commands: map[string]Handler{
-				"list":    pkgList,
-				"install": pkgInstall,
-				"search":  pkgSearch,
+			commands: []clipCommand{
+				{name: "list", handler: pkgList, input: `{}`},
+				{name: "install", handler: pkgInstall, input: `{"type":"object","properties":{"package":{"type":"string","description":"Package name"}},"required":["package"]}`},
+				{name: "search", handler: pkgSearch, input: `{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}`},
 			},
 		},
 		{
 			alias:  "linux-cron",
 			pkg:    "clip-edge-linux",
 			domain: "system",
-			commands: map[string]Handler{
-				"list": cronList,
-				"add":  cronAdd,
+			commands: []clipCommand{
+				{name: "list", handler: cronList, input: `{}`},
+				{name: "add", handler: cronAdd, input: `{"type":"object","properties":{"schedule":{"type":"string","description":"Cron schedule (e.g. */5 * * * *)"},"command":{"type":"string","description":"Command to run"}},"required":["schedule","command"]}`},
 			},
 		},
 	}
@@ -121,8 +128,11 @@ func ClipRegistrations() []*pinixv2.ClipRegistration {
 	result := make([]*pinixv2.ClipRegistration, 0, len(clips))
 	for _, clip := range clips {
 		commands := make([]*pinixv2.CommandInfo, 0, len(clip.commands))
-		for name := range clip.commands {
-			commands = append(commands, &pinixv2.CommandInfo{Name: name})
+		for _, cmd := range clip.commands {
+			commands = append(commands, &pinixv2.CommandInfo{
+				Name:  cmd.name,
+				Input: cmd.input,
+			})
 		}
 		result = append(result, &pinixv2.ClipRegistration{
 			Alias:    clip.alias,
@@ -144,26 +154,28 @@ func RouteCommand(clipName, command string, input []byte) ([]byte, error) {
 		if clip.alias != clipName {
 			continue
 		}
-		handler, ok := clip.commands[command]
-		if !ok {
-			return nil, fmt.Errorf("clip %q does not support command %q", clipName, command)
-		}
+		for _, cmd := range clip.commands {
+			if cmd.name != command {
+				continue
+			}
 
-		var rawInput json.RawMessage
-		if len(input) > 0 {
-			rawInput = json.RawMessage(input)
-		} else {
-			rawInput = json.RawMessage(`{}`)
-		}
+			var rawInput json.RawMessage
+			if len(input) > 0 {
+				rawInput = json.RawMessage(input)
+			} else {
+				rawInput = json.RawMessage(`{}`)
+			}
 
-		output, err := handler(rawInput)
-		if err != nil {
-			return nil, err
+			output, err := cmd.handler(rawInput)
+			if err != nil {
+				return nil, err
+			}
+			if len(output) == 0 {
+				return []byte(`{}`), nil
+			}
+			return output, nil
 		}
-		if len(output) == 0 {
-			return []byte(`{}`), nil
-		}
-		return output, nil
+		return nil, fmt.Errorf("clip %q does not support command %q", clipName, command)
 	}
 
 	return nil, fmt.Errorf("clip %q not found", clipName)
