@@ -125,7 +125,7 @@ func ClipRegistrations() []*pinixv2.ClipRegistration {
 			commands = append(commands, &pinixv2.CommandInfo{Name: name})
 		}
 		result = append(result, &pinixv2.ClipRegistration{
-			Name:     clip.alias,
+			Alias:    clip.alias,
 			Package:  clip.pkg,
 			Domain:   clip.domain,
 			Version:  "0.1.0",
