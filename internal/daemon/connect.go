@@ -418,6 +418,133 @@ func isDaemonCode(err error, code string) bool {
 	return false
 }
 
+// invokeCollect routes an invoke through the Hub (local Runtime or Provider)
+// and collects all output chunks into a single aggregated JSON result.
+// Used by handleClipWebInvoke for non-streaming HTTP responses.
+func (h *HubService) invokeCollect(ctx context.Context, clipName, command string, input []byte) (json.RawMessage, error) {
+	clipName = strings.TrimSpace(clipName)
+	command = strings.TrimSpace(command)
+	if clipName == "" {
+		return nil, daemonError{Code: "invalid_argument", Message: "clip_name is required"}
+	}
+	if command == "" {
+		return nil, daemonError{Code: "invalid_argument", Message: "command is required"}
+	}
+
+	if h.daemon != nil && h.daemon.hasLocalRuntime() {
+		clip, ok, err := h.daemon.registry.GetClip(clipName)
+		if err != nil {
+			return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)}
+		}
+		if ok {
+			return h.invokeLocalClipCollect(ctx, clip, command, input)
+		}
+	}
+	if h.daemon.provider == nil || !h.daemon.provider.HasClip(clipName) {
+		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", clipName)}
+	}
+	return h.invokeProviderClipCollect(ctx, clipName, command, input)
+}
+
+func (h *HubService) invokeLocalClipCollect(ctx context.Context, clip ClipConfig, command string, input []byte) (json.RawMessage, error) {
+	if h.daemon == nil || h.daemon.process == nil {
+		return nil, daemonError{Code: "failed_precondition", Message: "local runtime is not configured"}
+	}
+	output, err := h.daemon.process.Invoke(ctx, clip.Name, command, input)
+	if err != nil {
+		return nil, err
+	}
+	if len(output) == 0 {
+		output = []byte(`{}`)
+	}
+	return output, nil
+}
+
+func (h *HubService) invokeProviderClipCollect(ctx context.Context, clipName, command string, input []byte) (json.RawMessage, error) {
+	handle, err := h.daemon.provider.OpenInvoke(clipName, command, input, "")
+	if err != nil {
+		return nil, err
+	}
+	defer handle.Close()
+
+	var chunks []json.RawMessage
+	for {
+		chunk, err := handle.Receive(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if chunk.err != nil {
+			return nil, daemonErrorFromResponseError(chunk.err)
+		}
+		if len(chunk.output) > 0 {
+			chunks = append(chunks, cloneBytes(chunk.output))
+		}
+		if chunk.done {
+			return aggregateInvokeOutputs(chunks), nil
+		}
+	}
+}
+
+// invokeWithCallback routes an invoke through the Hub (local Runtime or Provider)
+// and calls onChunk for each streaming output chunk.
+// Used by handleClipWebInvokeSSE for SSE streaming.
+func (h *HubService) invokeWithCallback(ctx context.Context, clipName, command string, input []byte, onChunk func(json.RawMessage)) error {
+	clipName = strings.TrimSpace(clipName)
+	command = strings.TrimSpace(command)
+	if clipName == "" {
+		return daemonError{Code: "invalid_argument", Message: "clip_name is required"}
+	}
+	if command == "" {
+		return daemonError{Code: "invalid_argument", Message: "command is required"}
+	}
+
+	if h.daemon != nil && h.daemon.hasLocalRuntime() {
+		clip, ok, err := h.daemon.registry.GetClip(clipName)
+		if err != nil {
+			return daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)}
+		}
+		if ok {
+			return h.invokeLocalClipCallback(ctx, clip, command, input, onChunk)
+		}
+	}
+	if h.daemon.provider == nil || !h.daemon.provider.HasClip(clipName) {
+		return daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", clipName)}
+	}
+	return h.invokeProviderClipCallback(ctx, clipName, command, input, onChunk)
+}
+
+func (h *HubService) invokeLocalClipCallback(ctx context.Context, clip ClipConfig, command string, input []byte, onChunk func(json.RawMessage)) error {
+	if h.daemon == nil || h.daemon.process == nil {
+		return daemonError{Code: "failed_precondition", Message: "local runtime is not configured"}
+	}
+	_, err := h.daemon.process.InvokeStream(ctx, clip.Name, command, input, onChunk)
+	return err
+}
+
+func (h *HubService) invokeProviderClipCallback(ctx context.Context, clipName, command string, input []byte, onChunk func(json.RawMessage)) error {
+	handle, err := h.daemon.provider.OpenInvoke(clipName, command, input, "")
+	if err != nil {
+		return err
+	}
+	defer handle.Close()
+
+	for {
+		chunk, err := handle.Receive(ctx)
+		if err != nil {
+			return err
+		}
+		if chunk.err != nil {
+			return daemonErrorFromResponseError(chunk.err)
+		}
+		if len(chunk.output) > 0 && onChunk != nil {
+			onChunk(cloneBytes(chunk.output))
+		}
+		if chunk.done {
+			return nil
+		}
+	}
+}
+
 func (h *HubService) invokeLocalClip(ctx context.Context, clip ClipConfig, command string, input []byte, clipToken string, stream *connect.ServerStream[pinixv2.InvokeResponse]) error {
 	if h.daemon == nil || h.daemon.process == nil {
 		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("local runtime is not configured"))
