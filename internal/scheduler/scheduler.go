@@ -19,7 +19,7 @@ import (
 
 const execTimeout = 300 * time.Second
 
-// ScheduleEntry describes one clip.yaml schedule item.
+// ScheduleEntry describes a scheduled command execution for a clip.
 type ScheduleEntry struct {
 	Command string `yaml:"command"`
 	Cron    string `yaml:"cron"`

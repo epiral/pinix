@@ -97,7 +97,7 @@ func newPublishCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			tarball, err := buildRegistryTarball(dir, manifestRaw)
+			tarball, err := buildRegistryTarball(dir)
 			if err != nil {
 				return err
 			}
@@ -244,20 +244,6 @@ func loadRegistryPublishManifest(dir string) (json.RawMessage, *registryPublishM
 	synthesized, synthErr := synthesizeRegistryPublishManifest(absDir)
 	manifest := synthesized
 
-	pinixPath := filepath.Join(absDir, "pinix.json")
-	if data, err := os.ReadFile(pinixPath); err == nil {
-		var existing registryPublishManifest
-		if err := json.Unmarshal(data, &existing); err != nil {
-			return nil, nil, fmt.Errorf("parse %s: %w", pinixPath, err)
-		}
-		if manifest == nil {
-			manifest = &registryPublishManifest{}
-		}
-		mergeRegistryPublishManifest(manifest, &existing)
-	} else if !os.IsNotExist(err) {
-		return nil, nil, fmt.Errorf("read %s: %w", pinixPath, err)
-	}
-
 	if manifest == nil {
 		if synthErr != nil {
 			return nil, nil, synthErr
@@ -345,29 +331,6 @@ func finalizeRegistryPublishManifest(manifest *registryPublishManifest, dir stri
 		manifest.Web = defaultWebEntry(dir)
 	}
 	return nil
-}
-
-func mergeRegistryPublishManifest(base, override *registryPublishManifest) {
-	if base == nil || override == nil {
-		return
-	}
-	base.Name = firstNonEmpty(override.Name, base.Name)
-	base.Version = firstNonEmpty(override.Version, base.Version)
-	base.Type = firstNonEmpty(override.Type, base.Type)
-	base.Description = firstNonEmpty(override.Description, base.Description)
-	base.Domain = firstNonEmpty(override.Domain, base.Domain)
-	base.Runtime = firstNonEmpty(override.Runtime, base.Runtime)
-	base.Main = firstNonEmpty(override.Main, base.Main)
-	base.Web = firstNonEmpty(override.Web, base.Web)
-	if len(override.Commands) > 0 {
-		base.Commands = override.Commands
-	}
-	if len(override.Dependencies) > 0 {
-		base.Dependencies = override.Dependencies
-	}
-	if len(override.Patterns) > 0 {
-		base.Patterns = override.Patterns
-	}
 }
 
 func readLocalPackageJSON(dir string) (localPackageJSON, error) {
@@ -495,7 +458,7 @@ func maybeJSONValue(raw string) any {
 	return raw
 }
 
-func buildRegistryTarball(dir string, manifestRaw json.RawMessage) ([]byte, error) {
+func buildRegistryTarball(dir string) ([]byte, error) {
 	absDir, err := filepath.Abs(strings.TrimSpace(dir))
 	if err != nil {
 		return nil, fmt.Errorf("resolve package path: %w", err)
@@ -529,11 +492,6 @@ func buildRegistryTarball(dir string, manifestRaw json.RawMessage) ([]byte, erro
 		gzipWriter.Close()
 		return nil, fmt.Errorf("pack registry tarball: %w", err)
 	}
-	if err := addTarOverlay(tarWriter, "package/pinix.json", manifestRaw, 0o644); err != nil {
-		tarWriter.Close()
-		gzipWriter.Close()
-		return nil, err
-	}
 	if err := tarWriter.Close(); err != nil {
 		gzipWriter.Close()
 		return nil, fmt.Errorf("close tar writer: %w", err)
@@ -550,10 +508,7 @@ func shouldSkipTarPath(rel string, entry fs.DirEntry) bool {
 		return false
 	}
 	top := strings.Split(rel, string(os.PathSeparator))[0]
-	if top == ".git" || top == "node_modules" {
-		return true
-	}
-	return filepath.Base(rel) == "pinix.json"
+	return top == ".git" || top == "node_modules"
 }
 
 func addTarEntry(writer *tar.Writer, rootDir, rel, path string, entry fs.DirEntry) error {
@@ -601,22 +556,6 @@ func addTarEntry(writer *tar.Writer, rootDir, rel, path string, entry fs.DirEntr
 	defer file.Close()
 	_, err = io.Copy(writer, file)
 	return err
-}
-
-func addTarOverlay(writer *tar.Writer, name string, data []byte, mode int64) error {
-	header := &tar.Header{
-		Name:     strings.TrimSpace(name),
-		Mode:     mode,
-		Size:     int64(len(data)),
-		Typeflag: tar.TypeReg,
-	}
-	if err := writer.WriteHeader(header); err != nil {
-		return fmt.Errorf("write tar overlay header: %w", err)
-	}
-	if _, err := writer.Write(data); err != nil {
-		return fmt.Errorf("write tar overlay body: %w", err)
-	}
-	return nil
 }
 
 func manifestVersionValue(manifest *daemonpkg.ManifestCache) string {
