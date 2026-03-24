@@ -206,6 +206,34 @@ func (c *runtimeHubConnector) runProviderSession(parent context.Context) error {
 			}
 			c.setProviderStream(stream)
 			defer c.clearProviderStream(stream)
+
+			// Wire up process status → ProviderStream notification
+			if c.daemon.process != nil {
+				c.daemon.process.SetOnStatusChange(func(name string, status ClipProcessStatus, message string) {
+					_ = c.sendProvider(stream, &pinixv2.ProviderMessage{Payload: &pinixv2.ProviderMessage_ClipStatusChanged{
+						ClipStatusChanged: &pinixv2.ClipStatusChanged{
+							Name:    name,
+							Status:  clipProcessStatusToProto(status),
+							Message: message,
+						},
+					}})
+				})
+				defer c.daemon.process.SetOnStatusChange(nil)
+
+				// Send initial status for all clips (SLEEPING — no process running yet)
+				if clips, err := c.daemon.registry.ListClips(); err == nil {
+					for _, clip := range clips {
+						status, msg := c.daemon.process.ClipStatus(clip.Name)
+						_ = c.sendProvider(stream, &pinixv2.ProviderMessage{Payload: &pinixv2.ProviderMessage_ClipStatusChanged{
+							ClipStatusChanged: &pinixv2.ClipStatusChanged{
+								Name:    clip.Name,
+								Status:  clipProcessStatusToProto(status),
+								Message: msg,
+							},
+						}})
+					}
+				}
+			}
 			break
 		}
 	}

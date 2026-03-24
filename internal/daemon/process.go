@@ -58,8 +58,9 @@ type ProcessManager struct {
 	mu        sync.Mutex
 	processes map[string]*clipProcess
 
-	statusMu sync.RWMutex
-	statuses map[string]clipStatusEntry
+	statusMu       sync.RWMutex
+	statuses       map[string]clipStatusEntry
+	onStatusChange func(name string, status ClipProcessStatus, message string)
 }
 
 type clipProcess struct {
@@ -128,10 +129,20 @@ func NewProcessManager(registry *Registry, bunPath string, pinixURL ...string) (
 	}, nil
 }
 
+func (m *ProcessManager) SetOnStatusChange(fn func(name string, status ClipProcessStatus, message string)) {
+	m.statusMu.Lock()
+	m.onStatusChange = fn
+	m.statusMu.Unlock()
+}
+
 func (m *ProcessManager) setClipStatus(name string, status ClipProcessStatus, message string) {
 	m.statusMu.Lock()
 	m.statuses[name] = clipStatusEntry{status: status, message: message, since: time.Now()}
+	fn := m.onStatusChange
 	m.statusMu.Unlock()
+	if fn != nil {
+		fn(name, status, message)
+	}
 }
 
 func (m *ProcessManager) ClipStatus(name string) (ClipProcessStatus, string) {
