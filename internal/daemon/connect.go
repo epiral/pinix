@@ -118,26 +118,24 @@ func (h *HubService) GetClipWeb(ctx context.Context, req *connect.Request[pinixv
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("clip_name is required"))
 	}
 
+	if h.daemon == nil || h.daemon.provider == nil || !h.daemon.provider.HasClip(clipName) {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("clip %q not found", clipName))
+	}
+
 	options := clipWebReadOptions{
 		Offset:      req.Msg.GetOffset(),
 		Length:      req.Msg.GetLength(),
 		IfNoneMatch: req.Msg.GetIfNoneMatch(),
 	}
-	if result, err := h.readLocalClipWebFile(clipName, req.Msg.GetPath(), options); err == nil {
-		return connect.NewResponse(clipWebResultToProto(result)), nil
-	} else if !isDaemonCode(err, "not_found") {
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	result, err := h.readProviderClipWebFile(ctx, clipName, req.Msg.GetPath(), options)
+	if err != nil {
 		return nil, connectErrorFromErr(err)
 	}
-
-	if h.daemon != nil && h.daemon.provider != nil && h.daemon.provider.HasClip(clipName) {
-		result, err := h.readProviderClipWebFile(ctx, clipName, req.Msg.GetPath(), options)
-		if err != nil {
-			return nil, connectErrorFromErr(err)
-		}
-		return connect.NewResponse(clipWebResultToProto(result)), nil
-	}
-
-	return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("clip %q not found", clipName))
+	return connect.NewResponse(clipWebResultToProto(result)), nil
 }
 
 func clipWebResultToProto(result *clipWebReadResult) *pinixv2.GetClipWebResponse {
@@ -376,20 +374,6 @@ func (h *HubService) localClipNames() ([]string, error) {
 	}
 	sort.Strings(result)
 	return result, nil
-}
-
-func (h *HubService) readLocalClipWebFile(clipName, requestedPath string, opts clipWebReadOptions) (*clipWebReadResult, error) {
-	if h.daemon == nil || !h.daemon.hasLocalRuntime() {
-		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", clipName)}
-	}
-	clip, found, err := h.daemon.registry.GetClip(clipName)
-	if err != nil {
-		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip %q: %v", clipName, err)}
-	}
-	if !found {
-		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", clipName)}
-	}
-	return readClipWebFile(clipWebDir(clip), requestedPath, opts)
 }
 
 func (h *HubService) readProviderClipWebFile(ctx context.Context, clipName, requestedPath string, opts clipWebReadOptions) (*clipWebReadResult, error) {
