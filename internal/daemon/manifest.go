@@ -1,5 +1,5 @@
 // Role:    Manifest enrichment helpers shared by local and provider-backed clips
-// Depends: bytes, encoding/json, fmt, os, path/filepath, sort, strings, gopkg.in/yaml.v3
+// Depends: bytes, encoding/json, fmt, os, path/filepath, sort, strings
 // Exports: (package-internal helpers)
 
 package daemon
@@ -12,39 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
-
-type clipYAML struct {
-	Name         string               `yaml:"name"`
-	Version      string               `yaml:"version"`
-	Description  string               `yaml:"description"`
-	Dependencies manifestDependencies `yaml:"dependencies"`
-	Patterns     []string             `yaml:"patterns"`
-}
-
-type pinixJSON struct {
-	Name         string                 `json:"name"`
-	Version      string                 `json:"version"`
-	Type         string                 `json:"type,omitempty"`
-	Description  string                 `json:"description,omitempty"`
-	Domain       string                 `json:"domain,omitempty"`
-	Runtime      string                 `json:"runtime,omitempty"`
-	Main         string                 `json:"main,omitempty"`
-	Web          string                 `json:"web,omitempty"`
-	Commands     []pinixJSONCommand     `json:"commands,omitempty"`
-	Dependencies manifestDependencies   `json:"dependencies,omitempty"`
-	Patterns     []string               `json:"patterns,omitempty"`
-	Extra        map[string]interface{} `json:"-"`
-}
-
-type pinixJSONCommand struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	Input       json.RawMessage `json:"input,omitempty"`
-	Output      json.RawMessage `json:"output,omitempty"`
-}
 
 type packageJSON struct {
 	Name        string `json:"name"`
@@ -77,20 +45,6 @@ func (d *manifestDependencies) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (d *manifestDependencies) UnmarshalYAML(value *yaml.Node) error {
-	if value == nil || value.Kind == 0 || value.Tag == "!!null" {
-		*d = nil
-		return nil
-	}
-
-	var specMap map[string]DependencySpec
-	if err := value.Decode(&specMap); err != nil {
-		return fmt.Errorf("parse dependencies: %w", err)
-	}
-	*d = manifestDependencies(normalizeDependencySpecs(specMap))
-	return nil
-}
-
 func enrichManifestForClip(clip ClipConfig, manifest *ManifestCache) *ManifestCache {
 	merged := cloneManifest(manifest)
 	if merged == nil {
@@ -118,24 +72,6 @@ func enrichManifestForClip(clip ClipConfig, manifest *ManifestCache) *ManifestCa
 		}
 		if len(merged.CommandDetails) == 0 {
 			merged.CommandDetails = normalizeCommandDetails(meta.Commands)
-		}
-	}
-
-	if meta, err := readClipYAMLMetadata(clipProjectDir(clip)); err == nil {
-		if merged.Package == "" {
-			merged.Package = strings.TrimSpace(meta.Name)
-		}
-		if merged.Version == "" {
-			merged.Version = strings.TrimSpace(meta.Version)
-		}
-		if merged.Description == "" {
-			merged.Description = strings.TrimSpace(meta.Description)
-		}
-		if len(merged.Dependencies) == 0 {
-			merged.Dependencies = cloneDependencySpecs(map[string]DependencySpec(meta.Dependencies))
-		}
-		if len(merged.Patterns) == 0 {
-			merged.Patterns = normalizeStrings(meta.Patterns)
 		}
 	}
 
@@ -173,9 +109,6 @@ func loadProjectMetadata(clip ClipConfig) (*projectMetadata, error) {
 	}
 
 	meta := &projectMetadata{}
-	if pinixMeta, err := readPinixJSONMetadata(workdir); err == nil {
-		mergeProjectMetadata(meta, pinixMeta)
-	}
 	if packageMeta, err := readPackageJSONMetadata(workdir); err == nil {
 		mergeProjectMetadata(meta, packageMeta)
 	}
@@ -273,29 +206,6 @@ func clipEntrypointHint(clip ClipConfig) string {
 	return ""
 }
 
-func readPinixJSONMetadata(workdir string) (*projectMetadata, error) {
-	data, err := os.ReadFile(filepath.Join(workdir, "pinix.json"))
-	if err != nil {
-		return nil, err
-	}
-	var raw pinixJSON
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, err
-	}
-	meta := &projectMetadata{
-		Package:      strings.TrimSpace(raw.Name),
-		Version:      strings.TrimSpace(raw.Version),
-		Description:  strings.TrimSpace(raw.Description),
-		Domain:       strings.TrimSpace(raw.Domain),
-		Main:         strings.TrimSpace(raw.Main),
-		Web:          strings.TrimSpace(raw.Web),
-		Dependencies: normalizeDependencySpecs(map[string]DependencySpec(raw.Dependencies)),
-		Patterns:     normalizeStrings(raw.Patterns),
-		Commands:     pinixCommandsToInternal(raw.Commands),
-	}
-	return meta, nil
-}
-
 func readPackageJSONMetadata(workdir string) (*projectMetadata, error) {
 	data, err := os.ReadFile(filepath.Join(workdir, "package.json"))
 	if err != nil {
@@ -332,35 +242,6 @@ func packageJSONBin(raw packageJSON) string {
 		}
 	}
 	return ""
-}
-
-func pinixCommandsToInternal(commands []pinixJSONCommand) []CommandInfo {
-	result := make([]CommandInfo, 0, len(commands))
-	for _, command := range commands {
-		name := strings.TrimSpace(command.Name)
-		if name == "" {
-			continue
-		}
-		result = append(result, CommandInfo{
-			Name:        name,
-			Description: strings.TrimSpace(command.Description),
-			Input:       rawSchemaString(command.Input),
-			Output:      rawSchemaString(command.Output),
-		})
-	}
-	return normalizeCommandDetails(result)
-}
-
-func rawSchemaString(raw json.RawMessage) string {
-	raw = json.RawMessage(strings.TrimSpace(string(raw)))
-	if len(raw) == 0 {
-		return ""
-	}
-	var text string
-	if err := json.Unmarshal(raw, &text); err == nil {
-		return strings.TrimSpace(text)
-	}
-	return strings.TrimSpace(string(raw))
 }
 
 func parseDependencyPayload(data []byte) (map[string]DependencySpec, error) {
@@ -523,21 +404,6 @@ func commandNames(commands []CommandInfo) []string {
 		names = append(names, command.Name)
 	}
 	return names
-}
-
-func readClipYAMLMetadata(workdir string) (*clipYAML, error) {
-	if strings.TrimSpace(workdir) == "" {
-		return nil, fmt.Errorf("clip path is required")
-	}
-	data, err := os.ReadFile(filepath.Join(workdir, "clip.yaml"))
-	if err != nil {
-		return nil, err
-	}
-	var meta clipYAML
-	if err := yaml.Unmarshal(data, &meta); err != nil {
-		return nil, err
-	}
-	return &meta, nil
 }
 
 func readCommandNames(workdir string) ([]string, error) {

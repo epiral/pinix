@@ -15,10 +15,10 @@ This coupling is embedded throughout `internal/server`:
 
 - `ClipServer.Invoke()` directly calls `sandbox.ExecStream()` with `config.ClipEntry.Workdir`
 - `ClipServer.ReadFile()` directly calls `os.Open()` on local filesystem
-- `ClipServer.GetInfo()` scans local `commands/`, `web/`, `clip.yaml`
+- `ClipServer.GetInfo()` scans local `commands/`, `web/`
 - `AdminServer.ListClips()` scans local workdirs for metadata
 - `AdminServer.DeleteClip()` calls `sandbox.RemoveClip()`
-- `server.Run()` bootstraps scheduler by scanning local `clip.yaml` files
+- `server.Run()` bootstraps scheduler for local clips
 
 Adding **Edge Clips** (device-native capabilities exposed by iPhone, Raspberry Pi, ESP32) is impossible without branching every handler into `if local else edge`.
 
@@ -177,7 +177,6 @@ internal/
 | `readDirNames()` | worker/metadata.go |
 | `fileExists()` | worker/metadata.go |
 | `readClipDesc()` | worker/metadata.go |
-| `readClipYAML*()` | worker/metadata.go |
 | `readFirstLine()` | worker/metadata.go |
 
 ### From `internal/server/admin.go` → `internal/hub/`

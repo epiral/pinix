@@ -90,31 +90,18 @@ bun run index.ts --web
 - `entities`
 - `dependencies`（如果存在）
 
-在 `pinixd` 中，IPC `register` 只上传运行时 manifest。runtime 会再从本地目录补充元数据：当前实际会读取 `clip.yaml` 里的 `version`、`description`、`dependencies`、`patterns`，并在运行时 manifest 缺字段时用 `name` 兜底；如果没有 `clip.yaml`，这些字段就保持运行时值或从 source 推导。
+在 `pinixd` 中，IPC `register` 只上传运行时 manifest。runtime 会再从 `package.json` 补充 `name`、`version`、`description`、`main` 等元数据。`domain`、`commands`、`dependencies`、`patterns`、`entities` 由 SDK 代码在运行时上报。无需额外的 manifest 文件。
 
 一个本地 Clip 常见目录：
 
 ```text
 my-clip/
-├── clip.yaml
 ├── index.ts
 ├── package.json
 └── web/
     ├── index.html
     ├── app.js
     └── style.css
-```
-
-如果你需要补充版本、描述和依赖，可以放一个 `clip.yaml`：
-
-```yaml
-name: todo
-version: 0.1.0
-description: Simple todo Clip
-dependencies:
-  - browser
-patterns:
-  - list -> add -> list
 ```
 
 ## 4. IPC v2：`register / registered / invoke / result / error / chunk / done`

@@ -2,92 +2,14 @@
 
 开放协议，任何组织可自建 Registry。官方实现：registry.pinix.io
 
-## pinix.json — 包 Manifest
+## Manifest
 
-每个 Clip / Edge Clip 项目根目录放一个 `pinix.json`。
+Clip manifest 不再依赖独立的 manifest 文件（pinix.json 已移除）。发布时，manifest 由以下来源自动组装：
 
-### Clip
-
-```json
-{
-  "name": "todo",
-  "version": "0.2.0",
-  "type": "clip",
-  "description": "待办管理",
-  "domain": "productivity",
-  "runtime": "bun",
-  "main": "index.ts",
-  "web": "web/",
-  "commands": [
-    {
-      "name": "add",
-      "description": "添加待办",
-      "input": { "type": "object", "properties": { "title": { "type": "string" } }, "required": ["title"] },
-      "output": { "type": "object", "properties": { "todo": { "type": "object" } } }
-    },
-    {
-      "name": "list",
-      "description": "列出所有待办"
-    }
-  ],
-  "dependencies": {
-    "browser": "^1.0.0"
-  },
-  "license": "MIT",
-  "repository": "https://github.com/epiral/clip-todo",
-  "author": { "name": "epiral" }
-}
-```
-
-### Edge Clip
-
-```json
-{
-  "name": "browser",
-  "version": "1.0.0",
-  "type": "edge-clip",
-  "description": "浏览器自动化",
-  "domain": "automation",
-  "commands": [
-    { "name": "navigate", "description": "打开 URL" },
-    { "name": "click", "description": "点击元素" },
-    { "name": "type", "description": "输入文字" },
-    { "name": "evaluate", "description": "执行 JS" }
-  ],
-  "install": {
-    "npm": "bb-browser",
-    "homebrew": "epiral/tap/bb-browser",
-    "binary": {
-      "darwin-arm64": "https://github.com/epiral/bb-browser/releases/download/v1.0.0/bb-browser-darwin-arm64.gz",
-      "darwin-amd64": "https://github.com/epiral/bb-browser/releases/download/v1.0.0/bb-browser-darwin-amd64.gz",
-      "linux-arm64": "https://github.com/epiral/bb-browser/releases/download/v1.0.0/bb-browser-linux-arm64.gz",
-      "linux-amd64": "https://github.com/epiral/bb-browser/releases/download/v1.0.0/bb-browser-linux-amd64.gz"
-    }
-  },
-  "connect": "bb-browserd --hub http://<hub>",
-  "author": { "name": "epiral" }
-}
-```
-
-### 字段说明
-
-| 字段 | 必填 | 说明 |
-|---|---|---|
-| name | ✅ | 包名，Registry 内唯一 |
-| version | ✅ | semver 版本号 |
-| type | ✅ | `clip` 或 `edge-clip` |
-| description | ✅ | 一句话描述 |
-| domain | | 领域分类 |
-| commands | ✅ | 命令列表 |
-| dependencies | | 依赖的其他包（package name → semver range） |
-| runtime | | Clip 运行时（默认 `bun`） |
-| main | | 入口文件（默认 `index.ts`） |
-| web | | Web UI 目录 |
-| install | | Edge Clip 安装方式 |
-| connect | | Edge Clip 连接命令模板 |
-| license | | 开源协议 |
-| repository | | 源码仓库 |
-| author | | 作者信息 |
+- `name`、`version`、`main` 来自 `package.json`
+- `domain`、`commands`、`dependencies`、`patterns`、`entities`、`description` 由 SDK 代码在运行时通过 IPC register 上报
+- `web` 目录自动检测
+- `pinix publish` 会启动 Clip 进程提取上述信息，合并后生成发布用 manifest
 
 ## Registry REST API
 
@@ -115,7 +37,7 @@
   },
   "versions": {
     "0.1.0": {
-      "pinix": { /* pinix.json 内容 */ },
+      "pinix": { /* 发布时自动生成的 manifest */ },
       "dist": {
         "tarball": "https://registry.pinix.io/packages/todo/-/todo-0.1.0.tgz",
         "shasum": "abc123...",
@@ -159,7 +81,7 @@
 
 发布新版本。需认证。
 
-Request body：multipart 或 JSON，包含 pinix.json + tarball（Clip）或 pinix.json（Edge Clip）。
+Request body：multipart 或 JSON，包含 manifest + tarball（Clip）或 manifest（Edge Clip）。
 
 成功返回 201。包名已被其他用户占用返回 403。版本已存在返回 409。
 
@@ -246,7 +168,7 @@ pinix whoami
 pinix logout
 
 # 发布
-pinix publish                    # 读 pinix.json → 打包 → 上传
+pinix publish                    # 自动生成 manifest → 打包 → 上传
 pinix publish --tag beta         # 发布为 beta
 
 # 搜索

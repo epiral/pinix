@@ -1,5 +1,5 @@
 // Role:    Local clip metadata scanning helpers
-// Depends: os, path/filepath, strings, gopkg.in/yaml.v3, internal/scheduler
+// Depends: os, path/filepath, strings
 // Exports: (package-internal helpers)
 
 package worker
@@ -10,17 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/epiral/pinix/internal/scheduler"
-	"gopkg.in/yaml.v3"
 )
-
-type clipYAML struct {
-	Name        string                    `yaml:"name"`
-	Version     string                    `yaml:"version"`
-	Description string                    `yaml:"description"`
-	Schedules   []scheduler.ScheduleEntry `yaml:"schedules"`
-}
 
 func readDirNames(workdir string, subdir string) ([]string, error) {
 	dir := filepath.Join(workdir, subdir)
@@ -48,39 +38,7 @@ func fileExists(workdir string, parts ...string) bool {
 }
 
 func readClipDesc(workdir string) string {
-	meta, err := readClipYAML(workdir)
-	if err == nil && strings.TrimSpace(meta.Description) != "" {
-		return strings.TrimSpace(meta.Description)
-	}
 	return readFirstLine(filepath.Join(workdir, "README.md"))
-}
-
-func readClipYAML(workdir string) (*clipYAML, error) {
-	data, err := os.ReadFile(filepath.Join(workdir, "clip.yaml"))
-	if err != nil {
-		return nil, fmt.Errorf("read clip.yaml: %w", err)
-	}
-	var meta clipYAML
-	if err := yaml.Unmarshal(data, &meta); err != nil {
-		return nil, fmt.Errorf("parse clip.yaml: %w", err)
-	}
-	return &meta, nil
-}
-
-func readClipYAMLVersion(workdir string) string {
-	meta, err := readClipYAML(workdir)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(meta.Version)
-}
-
-func readClipYAMLSchedules(workdir string) ([]scheduler.ScheduleEntry, error) {
-	meta, err := readClipYAML(workdir)
-	if err != nil {
-		return nil, err
-	}
-	return meta.Schedules, nil
 }
 
 func readFirstLine(path string) string {

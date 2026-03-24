@@ -54,9 +54,6 @@ func (h *AdminHandler) CreateClip(ctx context.Context, req *connect.Request[v1.C
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("create clip %q: %w", name, err))
 	}
 	h.registry.Register(worker.NewLocalClip(entry, h.sandbox))
-	if h.sched != nil {
-		worker.RegisterExistingSchedules(h.store, h.sched)
-	}
 	return connect.NewResponse(&v1.CreateClipResponse{ClipId: entry.ID}), nil
 }
 
