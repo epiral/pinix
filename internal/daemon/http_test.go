@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -48,26 +47,41 @@ func (s *stubProviderStream) Send(message *pinixv2.HubMessage) error {
 	return nil
 }
 
-func TestServeClipWebFileLocalSupportsRangeAndIfNoneMatch(t *testing.T) {
+func TestServeClipWebFileProviderLocalSupportsRangeAndIfNoneMatch(t *testing.T) {
 	registry := newTestRegistry(t)
-	clipDir := t.TempDir()
-	content := []byte("body { color: red; }\n")
-	if err := os.MkdirAll(filepath.Join(clipDir, "web"), 0o755); err != nil {
-		t.Fatalf("mkdir web: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(clipDir, "web", "style.css"), content, 0o644); err != nil {
-		t.Fatalf("write style.css: %v", err)
-	}
-	if err := registry.PutClip(ClipConfig{Name: "todo-web", Path: clipDir}); err != nil {
-		t.Fatalf("put clip: %v", err)
-	}
-
-	daemon := &Daemon{registry: registry, process: &ProcessManager{}, provider: NewProviderManager(registry)}
+	daemon := &Daemon{registry: registry, provider: NewProviderManager(nil)}
+	stream := startTestProviderSession(t, daemon.provider, "local-runtime", "todo-web")
 	handler := daemon.httpMux()
 
-	rangeResp := performRequest(handler, httptest.NewRequest(http.MethodGet, "/clips/todo-web/style.css", nil), func(req *http.Request) {
+	content := []byte("body { color: red; }\n")
+	etag := makeETag(content)
+
+	// Range request
+	rangeCh := performRequestAsync(handler, httptest.NewRequest(http.MethodGet, "/clips/todo-web/style.css", nil), func(req *http.Request) {
 		req.Header.Set("Range", "bytes=5-10")
 	})
+
+	message := waitHubMessage(t, stream.outgoing)
+	command := message.GetGetClipWebCommand()
+	if command == nil {
+		t.Fatalf("expected get_clip_web_command, got %#v", message.GetPayload())
+	}
+	if command.GetClipName() != "todo-web" {
+		t.Fatalf("clip name = %q, want %q", command.GetClipName(), "todo-web")
+	}
+	if command.GetOffset() != 5 || command.GetLength() != 6 {
+		t.Fatalf("range = (%d, %d), want (5, 6)", command.GetOffset(), command.GetLength())
+	}
+
+	stream.incoming <- &pinixv2.ProviderMessage{Payload: &pinixv2.ProviderMessage_GetClipWebResult{GetClipWebResult: &pinixv2.GetClipWebResult{
+		RequestId:   command.GetRequestId(),
+		Content:     content[5:11],
+		ContentType: "text/css; charset=utf-8",
+		Etag:        etag,
+		TotalSize:   int64(len(content)),
+	}}}
+
+	rangeResp := waitHTTPResponse(t, rangeCh)
 	if rangeResp.status != http.StatusPartialContent {
 		t.Fatalf("range status = %d, want %d", rangeResp.status, http.StatusPartialContent)
 	}
@@ -80,17 +94,33 @@ func TestServeClipWebFileLocalSupportsRangeAndIfNoneMatch(t *testing.T) {
 	if got, want := rangeResp.header.Get("Content-Range"), "bytes 5-10/21"; got != want {
 		t.Fatalf("content-range = %q, want %q", got, want)
 	}
-	etag := rangeResp.header.Get("ETag")
-	if got, want := etag, makeETag(content); got != want {
-		t.Fatalf("etag = %q, want %q", got, want)
+	if got := rangeResp.header.Get("ETag"); got != etag {
+		t.Fatalf("etag = %q, want %q", got, etag)
 	}
 	if got := rangeResp.header.Get("Content-Type"); got == "" {
 		t.Fatalf("content-type is empty")
 	}
 
-	cacheResp := performRequest(handler, httptest.NewRequest(http.MethodGet, "/clips/todo-web/style.css", nil), func(req *http.Request) {
+	// If-None-Match request
+	cacheCh := performRequestAsync(handler, httptest.NewRequest(http.MethodGet, "/clips/todo-web/style.css", nil), func(req *http.Request) {
 		req.Header.Set("If-None-Match", etag)
 	})
+
+	message = waitHubMessage(t, stream.outgoing)
+	command = message.GetGetClipWebCommand()
+	if command == nil {
+		t.Fatalf("expected cache get_clip_web_command, got %#v", message.GetPayload())
+	}
+
+	stream.incoming <- &pinixv2.ProviderMessage{Payload: &pinixv2.ProviderMessage_GetClipWebResult{GetClipWebResult: &pinixv2.GetClipWebResult{
+		RequestId:   command.GetRequestId(),
+		ContentType: "text/css; charset=utf-8",
+		Etag:        etag,
+		TotalSize:   int64(len(content)),
+		NotModified: true,
+	}}}
+
+	cacheResp := waitHTTPResponse(t, cacheCh)
 	if cacheResp.status != http.StatusNotModified {
 		t.Fatalf("cache status = %d, want %d", cacheResp.status, http.StatusNotModified)
 	}
