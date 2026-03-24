@@ -84,24 +84,11 @@ func (d *manifestDependencies) UnmarshalYAML(value *yaml.Node) error {
 	}
 
 	var specMap map[string]DependencySpec
-	if err := value.Decode(&specMap); err == nil {
-		*d = manifestDependencies(normalizeDependencySpecs(specMap))
-		return nil
+	if err := value.Decode(&specMap); err != nil {
+		return fmt.Errorf("parse dependencies: %w", err)
 	}
-
-	var stringMap map[string]string
-	if err := value.Decode(&stringMap); err == nil {
-		*d = manifestDependencies(dependencySpecsFromVersionMap(stringMap))
-		return nil
-	}
-
-	var list []string
-	if err := value.Decode(&list); err == nil {
-		*d = manifestDependencies(dependencySpecsFromStrings(list))
-		return nil
-	}
-
-	return fmt.Errorf("parse dependencies")
+	*d = manifestDependencies(normalizeDependencySpecs(specMap))
+	return nil
 }
 
 func enrichManifestForClip(clip ClipConfig, manifest *ManifestCache) *ManifestCache {
@@ -383,21 +370,10 @@ func parseDependencyPayload(data []byte) (map[string]DependencySpec, error) {
 	}
 
 	var specMap map[string]DependencySpec
-	if err := json.Unmarshal(data, &specMap); err == nil {
-		return normalizeDependencySpecs(specMap), nil
+	if err := json.Unmarshal(data, &specMap); err != nil {
+		return nil, fmt.Errorf("parse dependencies: %w", err)
 	}
-
-	var stringMap map[string]string
-	if err := json.Unmarshal(data, &stringMap); err == nil {
-		return dependencySpecsFromVersionMap(stringMap), nil
-	}
-
-	var list []string
-	if err := json.Unmarshal(data, &list); err == nil {
-		return dependencySpecsFromStrings(list), nil
-	}
-
-	return nil, fmt.Errorf("parse dependencies")
+	return normalizeDependencySpecs(specMap), nil
 }
 
 func normalizeDependencySpecs(values map[string]DependencySpec) map[string]DependencySpec {
@@ -437,32 +413,6 @@ func cloneDependencySpecs(values map[string]DependencySpec) map[string]Dependenc
 		return nil
 	}
 	return cloned
-}
-
-func dependencySpecsFromStrings(values []string) map[string]DependencySpec {
-	if len(values) == 0 {
-		return nil
-	}
-	result := make(map[string]DependencySpec, len(values))
-	for _, value := range normalizeStrings(values) {
-		result[value] = DependencySpec{Package: value}
-	}
-	return normalizeDependencySpecs(result)
-}
-
-func dependencySpecsFromVersionMap(values map[string]string) map[string]DependencySpec {
-	if len(values) == 0 {
-		return nil
-	}
-	result := make(map[string]DependencySpec, len(values))
-	for name, version := range values {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		result[name] = DependencySpec{Package: name, Version: strings.TrimSpace(version)}
-	}
-	return normalizeDependencySpecs(result)
 }
 
 func dependencySlots(values map[string]DependencySpec) []string {
