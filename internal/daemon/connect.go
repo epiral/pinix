@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -335,6 +337,160 @@ func (h *HubService) RemoveClip(ctx context.Context, req *connect.Request[pinixv
 			return connect.NewResponse(&pinixv2.RemoveClipResponse{ClipName: clipName}), nil
 		}
 	}
+}
+
+func (h *HubService) GetBindings(ctx context.Context, req *connect.Request[pinixv2.GetBindingsRequest]) (*connect.Response[pinixv2.GetBindingsResponse], error) {
+	clipName := strings.TrimSpace(req.Msg.GetClipName())
+	if clipName == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("clip_name is required"))
+	}
+	if h.daemon == nil || h.daemon.registry == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("registry is not available"))
+	}
+	clip, ok, err := h.daemon.registry.GetClip(clipName)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("get clip: %v", err))
+	}
+	if !ok {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("clip %q not found", clipName))
+	}
+	bindings, err := readClipBindingsFile(filepath.Join(strings.TrimSpace(clip.Path), "bindings.json"))
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("read bindings: %v", err))
+	}
+	protoBindings := make(map[string]*pinixv2.ClipBinding, len(bindings))
+	for slot, b := range bindings {
+		protoBindings[slot] = &pinixv2.ClipBinding{
+			Alias:    b.Alias,
+			Hub:      b.Hub,
+			HubToken: b.HubToken,
+			ClipToken: b.ClipToken,
+		}
+	}
+	protoSlots := dependencySlotsToProto(clip.Manifest)
+	return connect.NewResponse(&pinixv2.GetBindingsResponse{
+		Bindings:       protoBindings,
+		DependencySlots: protoSlots,
+	}), nil
+}
+
+func (h *HubService) SetBinding(ctx context.Context, req *connect.Request[pinixv2.SetBindingRequest]) (*connect.Response[pinixv2.SetBindingResponse], error) {
+	clipName := strings.TrimSpace(req.Msg.GetClipName())
+	slot := strings.TrimSpace(req.Msg.GetSlot())
+	if clipName == "" || slot == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("clip_name and slot are required"))
+	}
+	binding := req.Msg.GetBinding()
+	if binding == nil || strings.TrimSpace(binding.GetAlias()) == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("binding with alias is required"))
+	}
+	if h.daemon == nil || h.daemon.registry == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("registry is not available"))
+	}
+	clip, ok, err := h.daemon.registry.GetClip(clipName)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("get clip: %v", err))
+	}
+	if !ok {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("clip %q not found", clipName))
+	}
+	bindingsPath := filepath.Join(strings.TrimSpace(clip.Path), "bindings.json")
+	bindings, err := readClipBindingsFile(bindingsPath)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("read bindings: %v", err))
+	}
+	bindings[slot] = clipBindingEntry{
+		Alias:    strings.TrimSpace(binding.GetAlias()),
+		Hub:      strings.TrimSpace(binding.GetHub()),
+		HubToken: strings.TrimSpace(binding.GetHubToken()),
+		ClipToken: strings.TrimSpace(binding.GetClipToken()),
+	}
+	if err := writeClipBindingsFile(bindingsPath, bindings); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("write bindings: %v", err))
+	}
+	return connect.NewResponse(&pinixv2.SetBindingResponse{}), nil
+}
+
+func (h *HubService) RemoveBinding(ctx context.Context, req *connect.Request[pinixv2.RemoveBindingRequest]) (*connect.Response[pinixv2.RemoveBindingResponse], error) {
+	clipName := strings.TrimSpace(req.Msg.GetClipName())
+	slot := strings.TrimSpace(req.Msg.GetSlot())
+	if clipName == "" || slot == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("clip_name and slot are required"))
+	}
+	if h.daemon == nil || h.daemon.registry == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("registry is not available"))
+	}
+	clip, ok, err := h.daemon.registry.GetClip(clipName)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("get clip: %v", err))
+	}
+	if !ok {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("clip %q not found", clipName))
+	}
+	bindingsPath := filepath.Join(strings.TrimSpace(clip.Path), "bindings.json")
+	bindings, err := readClipBindingsFile(bindingsPath)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("read bindings: %v", err))
+	}
+	delete(bindings, slot)
+	if err := writeClipBindingsFile(bindingsPath, bindings); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("write bindings: %v", err))
+	}
+	return connect.NewResponse(&pinixv2.RemoveBindingResponse{}), nil
+}
+
+func readClipBindingsFile(path string) (map[string]clipBindingEntry, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]clipBindingEntry{}, nil
+		}
+		return nil, err
+	}
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return map[string]clipBindingEntry{}, nil
+	}
+	var bindings map[string]clipBindingEntry
+	if err := json.Unmarshal(data, &bindings); err != nil {
+		return nil, err
+	}
+	return bindings, nil
+}
+
+func writeClipBindingsFile(path string, bindings map[string]clipBindingEntry) error {
+	if len(bindings) == 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	data, err := json.MarshalIndent(bindings, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(path, data, 0o600)
+}
+
+type clipBindingEntry struct {
+	Alias    string `json:"alias"`
+	Hub      string `json:"hub,omitempty"`
+	HubToken string `json:"hub_token,omitempty"`
+	ClipToken string `json:"clip_token,omitempty"`
+}
+
+func dependencySlotsToProto(manifest *ManifestCache) map[string]*pinixv2.DependencySlot {
+	if manifest == nil || len(manifest.Dependencies) == 0 {
+		return nil
+	}
+	result := make(map[string]*pinixv2.DependencySlot, len(manifest.Dependencies))
+	for slot, spec := range manifest.Dependencies {
+		result[slot] = &pinixv2.DependencySlot{
+			Package: spec.Package,
+			Version: spec.Version,
+		}
+	}
+	return result
 }
 
 func (h *HubService) listLocalClipInfos() ([]*pinixv2.ClipInfo, error) {
@@ -813,16 +969,17 @@ func manifestToProto(manifest *ManifestCache) *pinixv2.ClipManifest {
 	}
 	manifest = finalizeManifestCache(cloneManifest(manifest))
 	return &pinixv2.ClipManifest{
-		Name:         manifest.Name,
-		Package:      manifest.Package,
-		Version:      manifest.Version,
-		Domain:       manifest.Domain,
-		Description:  manifest.Description,
-		Commands:     internalCommandsToProto(manifest.CommandDetails),
-		Dependencies: dependencySlots(manifest.Dependencies),
-		HasWeb:       manifest.HasWeb,
-		Patterns:     append([]string(nil), manifest.Patterns...),
-		Entities:     entitiesToProto(manifest.Entities),
+		Name:            manifest.Name,
+		Package:         manifest.Package,
+		Version:         manifest.Version,
+		Domain:          manifest.Domain,
+		Description:     manifest.Description,
+		Commands:        internalCommandsToProto(manifest.CommandDetails),
+		Dependencies:    dependencySlots(manifest.Dependencies),
+		HasWeb:          manifest.HasWeb,
+		Patterns:        append([]string(nil), manifest.Patterns...),
+		Entities:        entitiesToProto(manifest.Entities),
+		DependencySlots: dependencySlotsToProto(manifest),
 	}
 }
 

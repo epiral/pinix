@@ -31,6 +31,9 @@ service HubService {
   rpc InvokeStream(stream InvokeStreamMessage) returns (stream InvokeResponse);
   rpc AddClip(AddClipRequest) returns (AddClipResponse);
   rpc RemoveClip(RemoveClipRequest) returns (RemoveClipResponse);
+  rpc GetBindings(GetBindingsRequest) returns (GetBindingsResponse);
+  rpc SetBinding(SetBindingRequest) returns (SetBindingResponse);
+  rpc RemoveBinding(RemoveBindingRequest) returns (RemoveBindingResponse);
 }
 
 message HubError {
@@ -68,6 +71,18 @@ message ClipInfo {
   string status_message = 11;
 }
 
+message DependencySlot {
+  string package = 1;
+  string version = 2;
+}
+
+message ClipBinding {
+  string alias = 1;
+  string hub = 2;
+  string hub_token = 3;
+  string clip_token = 4;
+}
+
 message ClipManifest {
   string name = 1;
   string package = 2;
@@ -79,6 +94,7 @@ message ClipManifest {
   bool has_web = 8;
   repeated string patterns = 9;
   map<string, string> entities = 10;
+  map<string, DependencySlot> dependency_slots = 11;
 }
 
 // 当前连入的 Provider（在列表里 = 在线）。
@@ -328,3 +344,27 @@ message RemoveClipRequest {
 message RemoveClipResponse {
   string clip_name = 1;
 }
+
+message GetBindingsRequest {
+  string clip_name = 1;
+}
+
+message GetBindingsResponse {
+  map<string, ClipBinding> bindings = 1;
+  map<string, DependencySlot> dependency_slots = 2;
+}
+
+message SetBindingRequest {
+  string clip_name = 1;
+  string slot = 2;
+  ClipBinding binding = 3;
+}
+
+message SetBindingResponse {}
+
+message RemoveBindingRequest {
+  string clip_name = 1;
+  string slot = 2;
+}
+
+message RemoveBindingResponse {}
