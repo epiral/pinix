@@ -1,14 +1,18 @@
 // Role:    Embedded asset package for the Pinix portal web UI
-// Depends: embed
-// Exports: Files, ReadFile
+// Depends: embed, io/fs
+// Exports: Files, DistFS
 
 package web
 
-import "embed"
+import (
+	"embed"
+	"io/fs"
+)
 
-//go:embed index.html style.css app.js
+//go:embed dist
 var Files embed.FS
 
-func ReadFile(name string) ([]byte, error) {
-	return Files.ReadFile(name)
+// DistFS returns a sub-filesystem rooted at the dist/ directory.
+func DistFS() (fs.FS, error) {
+	return fs.Sub(Files, "dist")
 }

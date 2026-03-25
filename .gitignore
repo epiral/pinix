@@ -6,6 +6,9 @@ gen/
 *.test
 /pinix
 
+# Portal frontend
+web/node_modules/
+
 # macOS
 .DS_Store
 .gomodcache*
