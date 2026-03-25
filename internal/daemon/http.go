@@ -72,10 +72,31 @@ func (d *Daemon) httpMux() http.Handler {
 	mux := http.NewServeMux()
 	hubPath, hubHandler := pinixv2connect.NewHubServiceHandler(NewHubService(d))
 	mux.Handle(hubPath, hubHandler)
-	mux.HandleFunc("/", d.handleIndex)
-	mux.HandleFunc("/style.css", d.handleStyle)
-	mux.HandleFunc("/app.js", d.handleApp)
 	mux.HandleFunc("/clips/", d.handleClipWeb)
+
+	// Serve Vite build output from embedded dist/ directory
+	distFS, err := portalweb.DistFS()
+	if err != nil {
+		// Fallback: if dist/ cannot be resolved, serve a plain error
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			writeJSONError(w, daemonError{Code: "internal", Message: "portal assets not available"})
+		})
+	} else {
+		fileServer := http.FileServer(http.FS(distFS))
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				writeMethodNotAllowed(w, http.MethodGet)
+				return
+			}
+			// Root or SPA fallback: serve index.html directly (avoid FileServer redirect loop)
+			path := strings.TrimPrefix(r.URL.Path, "/")
+			if path == "" || !strings.Contains(path, ".") {
+				http.ServeFileFS(w, r, distFS, "index.html")
+				return
+			}
+			fileServer.ServeHTTP(w, r)
+		})
+	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
@@ -85,42 +106,6 @@ func (d *Daemon) httpMux() http.Handler {
 		}
 		mux.ServeHTTP(w, r)
 	})
-}
-
-func (d *Daemon) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
-	if r.Method != http.MethodGet {
-		writeMethodNotAllowed(w, http.MethodGet)
-		return
-	}
-	d.serveAsset(w, "index.html", "text/html; charset=utf-8")
-}
-
-func (d *Daemon) handleStyle(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/style.css" {
-		http.NotFound(w, r)
-		return
-	}
-	if r.Method != http.MethodGet {
-		writeMethodNotAllowed(w, http.MethodGet)
-		return
-	}
-	d.serveAsset(w, "style.css", "text/css; charset=utf-8")
-}
-
-func (d *Daemon) handleApp(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/app.js" {
-		http.NotFound(w, r)
-		return
-	}
-	if r.Method != http.MethodGet {
-		writeMethodNotAllowed(w, http.MethodGet)
-		return
-	}
-	d.serveAsset(w, "app.js", "application/javascript; charset=utf-8")
 }
 
 func (d *Daemon) handleClipWeb(w http.ResponseWriter, r *http.Request) {
@@ -312,16 +297,6 @@ func (d *Daemon) hasClip(name string) (bool, error) {
 		return true, nil
 	}
 	return d.provider != nil && d.provider.HasClip(name), nil
-}
-
-func (d *Daemon) serveAsset(w http.ResponseWriter, name, contentType string) {
-	data, err := portalweb.ReadFile(name)
-	if err != nil {
-		writeJSONError(w, daemonError{Code: "internal", Message: fmt.Sprintf("read asset %s: %v", name, err)})
-		return
-	}
-	w.Header().Set("Content-Type", contentType)
-	_, _ = w.Write(data)
 }
 
 func parseClipWebPath(requestPath string) (clipName, filePath string, ok bool) {
