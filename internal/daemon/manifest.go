@@ -452,24 +452,24 @@ func dirExists(path string) bool {
 
 func derivePackageName(clip ClipConfig) string {
 	source := strings.TrimSpace(clip.Source)
-	switch {
-	case strings.HasPrefix(source, "npm:"):
-		pkg, _ := splitPackageVersion(strings.TrimSpace(strings.TrimPrefix(source, "npm:")))
-		return strings.TrimSpace(pkg)
-	case strings.HasPrefix(source, "registry:"):
-		if ref, err := parseSource(source); err == nil {
+	if ref, err := parseSource(source); err == nil {
+		switch ref.Kind {
+		case sourceTypeRegistry:
 			return strings.TrimSpace(ref.Package)
+		case sourceTypeGitHub:
+			repo := strings.TrimSpace(strings.TrimPrefix(ref.Source, "github/"))
+			repo = strings.TrimSuffix(repo, ".git")
+			if idx := strings.Index(repo, "#"); idx >= 0 {
+				repo = repo[:idx]
+			}
+			return filepath.Base(repo)
+		case sourceTypeLocal:
+			name := strings.TrimSpace(strings.TrimPrefix(ref.Source, "local/"))
+			if idx := strings.Index(name, ":"); idx >= 0 {
+				name = name[:idx]
+			}
+			return name
 		}
-	case strings.HasPrefix(source, "github:"):
-		repo := strings.TrimSpace(strings.TrimPrefix(source, "github:"))
-		if repo == "" {
-			break
-		}
-		repo = strings.TrimSuffix(repo, ".git")
-		if idx := strings.Index(repo, "#"); idx >= 0 {
-			repo = repo[:idx]
-		}
-		return filepath.Base(repo)
 	}
 	if clip.Manifest != nil && strings.TrimSpace(clip.Manifest.Package) != "" {
 		return strings.TrimSpace(clip.Manifest.Package)

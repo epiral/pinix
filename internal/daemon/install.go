@@ -1,4 +1,4 @@
-// Role:    Clip installation helpers for npm, GitHub, registry tarballs, and local source copies
+// Role:    Clip installation helpers for registry, GitHub, and local source copies
 // Depends: archive/tar, bytes, compress/gzip, context, crypto/sha1, encoding/hex, fmt, io, io/fs, os, os/exec, path/filepath, strings, internal/client
 // Exports: (package-internal helpers)
 
@@ -28,11 +28,6 @@ func (h *Handler) installClip(ctx context.Context, ref sourceRef, targetPath str
 	}
 
 	switch ref.Kind {
-	case sourceTypeNPM:
-		if err := installFromNPM(targetPath, ref.Source, h.process.BunPath()); err != nil {
-			return sourceRef{}, "", daemonError{Code: "internal", Message: err.Error()}
-		}
-		return ref, targetPath, nil
 	case sourceTypeRegistry:
 		version, err := installFromRegistry(ctx, targetPath, ref, h.process.BunPath())
 		if err != nil {
@@ -47,14 +42,18 @@ func (h *Handler) installClip(ctx context.Context, ref sourceRef, targetPath str
 		}
 		return ref, targetPath, nil
 	case sourceTypeLocal:
-		info, err := os.Stat(ref.Source)
+		localPath := extractLocalPath(ref.Source)
+		if localPath == "" {
+			return sourceRef{}, "", daemonError{Code: "invalid_argument", Message: "local source requires --path flag"}
+		}
+		info, err := os.Stat(localPath)
 		if err != nil {
-			return sourceRef{}, "", daemonError{Code: "not_found", Message: fmt.Sprintf("local clip path %s not found", ref.Source)}
+			return sourceRef{}, "", daemonError{Code: "not_found", Message: fmt.Sprintf("local clip path %s not found", localPath)}
 		}
 		if !info.IsDir() {
-			return sourceRef{}, "", daemonError{Code: "invalid_argument", Message: fmt.Sprintf("local clip path %s is not a directory", ref.Source)}
+			return sourceRef{}, "", daemonError{Code: "invalid_argument", Message: fmt.Sprintf("local clip path %s is not a directory", localPath)}
 		}
-		if err := copyDirectory(ref.Source, targetPath); err != nil {
+		if err := copyDirectory(localPath, targetPath); err != nil {
 			return sourceRef{}, "", daemonError{Code: "internal", Message: fmt.Sprintf("copy local clip: %v", err)}
 		}
 		if err := runBunInstall(targetPath, h.process.BunPath()); err != nil {
@@ -64,24 +63,6 @@ func (h *Handler) installClip(ctx context.Context, ref sourceRef, targetPath str
 	default:
 		return sourceRef{}, "", daemonError{Code: "invalid_argument", Message: fmt.Sprintf("unsupported source %q", ref.Source)}
 	}
-}
-
-func installFromNPM(targetPath, source, bunPath string) error {
-	pkg := strings.TrimSpace(strings.TrimPrefix(source, "npm:"))
-	if pkg == "" {
-		return fmt.Errorf("npm source is empty")
-	}
-	packageJSON := []byte("{\n  \"name\": \"pinix-clip-host\",\n  \"private\": true\n}\n")
-	if err := os.WriteFile(filepath.Join(targetPath, "package.json"), packageJSON, 0o644); err != nil {
-		return fmt.Errorf("write package.json: %w", err)
-	}
-	cmd := exec.Command(bunPath, "add", pkg)
-	cmd.Dir = targetPath
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("bun add %s: %w: %s", pkg, err, strings.TrimSpace(string(output)))
-	}
-	return nil
 }
 
 func installFromRegistry(ctx context.Context, targetPath string, ref sourceRef, bunPath string) (string, error) {
@@ -97,10 +78,10 @@ func installFromRegistry(ctx context.Context, targetPath string, ref sourceRef, 
 	if err != nil {
 		return "", err
 	}
-	if versionDoc == nil || versionDoc.Dist == nil || strings.TrimSpace(versionDoc.Dist.Tarball) == "" {
-		return "", fmt.Errorf("registry package %q version %q does not provide a tarball", ref.Package, resolvedVersion)
+	if versionDoc == nil || versionDoc.Dist == nil {
+		return "", fmt.Errorf("registry package %q version %q does not provide dist info", ref.Package, resolvedVersion)
 	}
-	tarball, err := registryClient.Download(ctx, versionDoc.Dist.Tarball)
+	tarball, err := registryClient.Download(ctx, ref.Package, resolvedVersion)
 	if err != nil {
 		return "", err
 	}
@@ -130,11 +111,21 @@ func verifyRegistryTarballShasum(pkg, version, expected string, tarball []byte) 
 }
 
 func installFromGitHub(targetPath, source, bunPath string) error {
-	repo := strings.TrimSpace(strings.TrimPrefix(source, "github:"))
-	url := fmt.Sprintf("https://github.com/%s.git", strings.TrimSuffix(repo, ".git"))
-	clone := exec.Command("git", "clone", url, targetPath)
+	repo := strings.TrimSpace(strings.TrimPrefix(source, "github/"))
+	branch := ""
+	if idx := strings.Index(repo, "#"); idx >= 0 {
+		branch = strings.TrimSpace(repo[idx+1:])
+		repo = repo[:idx]
+	}
+	repoURL := fmt.Sprintf("https://github.com/%s.git", strings.TrimSuffix(repo, ".git"))
+	args := []string{"clone"}
+	if branch != "" {
+		args = append(args, "--branch", branch)
+	}
+	args = append(args, repoURL, targetPath)
+	clone := exec.Command("git", args...)
 	if output, err := clone.CombinedOutput(); err != nil {
-		return fmt.Errorf("git clone %s: %w: %s", url, err, strings.TrimSpace(string(output)))
+		return fmt.Errorf("git clone %s: %w: %s", repoURL, err, strings.TrimSpace(string(output)))
 	}
 	return runBunInstall(targetPath, bunPath)
 }

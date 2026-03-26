@@ -69,7 +69,7 @@ func newRegisterCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&registryURL, "registry", os.Getenv("PINIX_REGISTRY"), "Pinix Registry base URL")
+	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinix.ai)")
 	return cmd
 }
 
@@ -106,7 +106,36 @@ func newLoginCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&registryURL, "registry", os.Getenv("PINIX_REGISTRY"), "Pinix Registry base URL")
+	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinix.ai)")
+	return cmd
+}
+
+func newLogoutCommand() *cobra.Command {
+	var registryURL string
+
+	cmd := &cobra.Command{
+		Use:   "logout",
+		Short: "Log out from a Pinix Registry",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			resolvedURL := getRegistryURL(registryURL)
+			normalizedURL, err := normalizeRegistryCredentialRegistry(resolvedURL)
+			if err != nil {
+				return err
+			}
+			credentials, err := loadRegistryCredentialsFile()
+			if err != nil {
+				return err
+			}
+			delete(credentials.Registries, normalizedURL)
+			if err := saveRegistryCredentialsFile(credentials); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "logged out from %s\n", normalizedURL)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinix.ai)")
 	return cmd
 }
 
@@ -138,7 +167,7 @@ func newWhoAmICommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&registryURL, "registry", os.Getenv("PINIX_REGISTRY"), "Pinix Registry base URL")
+	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinix.ai)")
 	return cmd
 }
 
@@ -164,11 +193,11 @@ func (p *interactivePrompter) readRequired(label string, trimSpaces bool) (strin
 	return value, nil
 }
 
+// requireRegistryClient resolves the registry URL using getRegistryURL
+// (flag > env > config > default) and creates a client.
 func requireRegistryClient(registryURL string) (*client.RegistryClient, error) {
-	if strings.TrimSpace(registryURL) == "" {
-		return nil, fmt.Errorf("--registry is required")
-	}
-	return client.NewRegistry(registryURL)
+	resolved := getRegistryURL(registryURL)
+	return client.NewRegistry(resolved)
 }
 
 func saveRegistryCredential(registryURL, username, token string) error {

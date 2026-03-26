@@ -73,7 +73,7 @@ func newSearchCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&registryURL, "registry", os.Getenv("PINIX_REGISTRY"), "Pinix Registry base URL")
+	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinix.ai)")
 	cmd.Flags().StringVar(&domain, "domain", "", "filter results by domain")
 	cmd.Flags().StringVar(&packageType, "type", "", "filter results by package type")
 	return cmd
@@ -121,46 +121,49 @@ func newPublishCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&registryURL, "registry", os.Getenv("PINIX_REGISTRY"), "Pinix Registry base URL")
+	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinix.ai)")
 	cmd.Flags().StringVar(&tag, "tag", "", "dist-tag to publish under")
 	return cmd
 }
 
+// normalizeAddSource validates the three source prefixes and constructs
+// the internal canonical source string for the daemon.
 func normalizeAddSource(source, registryURL string) (string, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
 		return "", fmt.Errorf("source is required")
 	}
-	if strings.HasPrefix(source, "npm:") || strings.HasPrefix(source, "registry:") || strings.HasPrefix(source, "github:") {
+
+	// Already in internal canonical form
+	if strings.HasPrefix(source, "registry:") {
 		return source, nil
 	}
-	if looksLikeScopedPackage(source) {
+
+	// @scope/name[@version] → registry source
+	if strings.HasPrefix(source, "@") {
 		pkg, version := splitPackageVersionSpec(source)
-		if strings.TrimSpace(registryURL) == "" {
-			return canonicalNPMSource(pkg, version), nil
+		if pkg == "" {
+			return "", fmt.Errorf("invalid registry source %q", source)
 		}
-		reg, err := client.NewRegistry(registryURL)
+		resolvedURL := getRegistryURL(registryURL)
+		reg, err := client.NewRegistry(resolvedURL)
 		if err != nil {
 			return "", err
 		}
 		return canonicalRegistrySource(reg.BaseURL(), pkg, version), nil
 	}
-	if looksLikeLocalPath(source) {
+
+	// github/user/repo[#branch] → pass through
+	if strings.HasPrefix(source, "github/") {
 		return source, nil
 	}
 
-	pkg, version := splitPackageVersionSpec(source)
-	if pkg == "" {
-		return "", fmt.Errorf("invalid source %q", source)
+	// local/name → pass through
+	if strings.HasPrefix(source, "local/") {
+		return source, nil
 	}
-	if strings.TrimSpace(registryURL) == "" {
-		return canonicalNPMSource(pkg, version), nil
-	}
-	reg, err := client.NewRegistry(registryURL)
-	if err != nil {
-		return "", err
-	}
-	return canonicalRegistrySource(reg.BaseURL(), pkg, version), nil
+
+	return "", fmt.Errorf("unknown source format %q; use @scope/name, github/user/repo, or local/name", source)
 }
 
 func splitPackageVersionSpec(spec string) (string, string) {
@@ -192,37 +195,6 @@ func splitPackageVersionSpec(spec string) (string, string) {
 		return spec, ""
 	}
 	return strings.TrimSpace(spec[:versionIndex]), strings.TrimSpace(spec[versionIndex+1:])
-}
-
-func looksLikeScopedPackage(spec string) bool {
-	pkg, _ := splitPackageVersionSpec(spec)
-	if !strings.HasPrefix(pkg, "@") {
-		return false
-	}
-	parts := strings.Split(pkg, "/")
-	return len(parts) == 2 && strings.TrimSpace(parts[0]) != "" && strings.TrimSpace(parts[1]) != ""
-}
-
-func looksLikeLocalPath(spec string) bool {
-	if spec == "" {
-		return false
-	}
-	if strings.Contains(spec, "://") {
-		return false
-	}
-	if strings.HasPrefix(spec, "@") && looksLikeScopedPackage(spec) {
-		return false
-	}
-	return strings.Contains(spec, "/") || strings.HasPrefix(spec, ".") || strings.HasPrefix(spec, "~")
-}
-
-func canonicalNPMSource(pkg, version string) string {
-	pkg = strings.TrimSpace(pkg)
-	version = strings.TrimSpace(version)
-	if version == "" {
-		return "npm:" + pkg
-	}
-	return "npm:" + pkg + "@" + version
 }
 
 func canonicalRegistrySource(registryURL, pkg, version string) string {
@@ -359,6 +331,8 @@ func inspectLocalClip(dir string, pkg localPackageJSON) (*daemonpkg.ManifestCach
 	return manifest, nil
 }
 
+// deriveRegistryPackageName preserves the @scope/name format from package.json
+// or manifest. This is the name that will be used for the registry publish.
 func deriveRegistryPackageName(pkg localPackageJSON, manifest *daemonpkg.ManifestCache, dir string) string {
 	if manifest != nil && strings.TrimSpace(manifest.Package) != "" {
 		return defaultPackageName(strings.TrimSpace(manifest.Package))
@@ -369,10 +343,20 @@ func deriveRegistryPackageName(pkg localPackageJSON, manifest *daemonpkg.Manifes
 	return defaultPackageName(filepath.Base(dir))
 }
 
+// defaultPackageName preserves @scope/name format. Only strips clip- prefix
+// from unscoped names.
 func defaultPackageName(value string) string {
-	value = filepath.Base(filepath.FromSlash(strings.TrimSpace(value)))
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	// Preserve @scope/name format
+	if strings.HasPrefix(value, "@") {
+		return value
+	}
+	// For unscoped names, strip clip- prefix
+	value = filepath.Base(filepath.FromSlash(value))
 	value = strings.TrimPrefix(value, "clip-")
-	value = strings.TrimPrefix(value, "@")
 	return strings.TrimSpace(value)
 }
 

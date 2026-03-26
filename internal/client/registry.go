@@ -95,13 +95,34 @@ func (c *RegistryClient) BaseURL() string {
 	return c.baseURL
 }
 
+// splitScopedName splits "@scope/name" into ("scope", "name").
+// If the name is not scoped, returns ("", name).
+func splitScopedName(name string) (string, string) {
+	name = strings.TrimSpace(name)
+	if !strings.HasPrefix(name, "@") {
+		return "", name
+	}
+	parts := strings.SplitN(name[1:], "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", name
+	}
+	return parts[0], parts[1]
+}
+
 func (c *RegistryClient) GetPackage(ctx context.Context, name string) (*RegistryPackageDocument, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, fmt.Errorf("package name is required")
 	}
+	scope, shortName := splitScopedName(name)
+	var path string
+	if scope != "" {
+		path = "/packages/" + url.PathEscape(scope) + "/" + url.PathEscape(shortName)
+	} else {
+		path = "/packages/" + url.PathEscape(name)
+	}
 	var doc RegistryPackageDocument
-	if err := c.getJSON(ctx, "/packages/"+url.PathEscape(name), &doc); err != nil {
+	if err := c.getJSON(ctx, path, &doc); err != nil {
 		return nil, err
 	}
 	if doc.DistTags == nil {
@@ -151,19 +172,24 @@ func (c *RegistryClient) Search(ctx context.Context, query, domain, packageType 
 	return &resp, nil
 }
 
-func (c *RegistryClient) Download(ctx context.Context, rawURL string) ([]byte, error) {
-	rawURL = strings.TrimSpace(rawURL)
-	if rawURL == "" {
-		return nil, fmt.Errorf("tarball URL is required")
+// Download fetches a tarball by scope/name/version from the registry.
+func (c *RegistryClient) Download(ctx context.Context, name, version string) ([]byte, error) {
+	name = strings.TrimSpace(name)
+	version = strings.TrimSpace(version)
+	if name == "" {
+		return nil, fmt.Errorf("package name is required for download")
 	}
-	resolved := rawURL
-	if parsed, err := url.Parse(rawURL); err == nil && !parsed.IsAbs() {
-		base, baseErr := url.Parse(c.baseURL + "/")
-		if baseErr == nil {
-			resolved = base.ResolveReference(parsed).String()
-		}
+	if version == "" {
+		return nil, fmt.Errorf("package version is required for download")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, resolved, nil)
+	scope, shortName := splitScopedName(name)
+	var path string
+	if scope != "" {
+		path = "/packages/" + url.PathEscape(scope) + "/" + url.PathEscape(shortName) + "/" + url.PathEscape(version) + "/download"
+	} else {
+		path = "/packages/" + url.PathEscape(name) + "/" + url.PathEscape(version) + "/download"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build registry download request: %w", err)
 	}
@@ -218,8 +244,16 @@ func (c *RegistryClient) Publish(ctx context.Context, name, token string, manife
 		return nil, fmt.Errorf("close registry multipart body: %w", err)
 	}
 
+	scope, shortName := splitScopedName(name)
+	var path string
+	if scope != "" {
+		path = "/packages/" + url.PathEscape(scope) + "/" + url.PathEscape(shortName) + "/versions"
+	} else {
+		path = "/packages/" + url.PathEscape(name) + "/versions"
+	}
+
 	var resp RegistryPublishResponse
-	if err := c.doJSON(ctx, http.MethodPut, "/packages/"+url.PathEscape(name), body, writer.FormDataContentType(), token, &resp); err != nil {
+	if err := c.doJSON(ctx, http.MethodPut, path, body, writer.FormDataContentType(), token, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
