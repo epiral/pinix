@@ -1035,14 +1035,6 @@ func resolveEntrypoint(clip ClipConfig) (string, error) {
 		return indexPath, nil
 	}
 
-	if strings.HasPrefix(clip.Source, "npm:") {
-		pkg := firstNonEmpty(strings.TrimSpace(clip.Package), strings.TrimPrefix(clip.Source, "npm:"))
-		npmPath := filepath.Join(clip.Path, "node_modules", filepath.FromSlash(pkg), "index.ts")
-		if isRegularFile(npmPath) {
-			return npmPath, nil
-		}
-	}
-
 	return "", fmt.Errorf("clip %s entrypoint not found under %s", clip.Name, workdir)
 }
 

@@ -159,19 +159,6 @@ func clipProjectDir(clip ClipConfig) string {
 	if base == "" {
 		return ""
 	}
-	if strings.HasPrefix(strings.TrimSpace(clip.Source), "npm:") {
-		pkg := strings.TrimSpace(clip.Package)
-		if pkg == "" {
-			pkg = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(clip.Source, "npm:"), "registry:"))
-			pkg, _ = splitPackageVersion(pkg)
-		}
-		if pkg != "" {
-			moduleDir := filepath.Join(base, "node_modules", filepath.FromSlash(pkg))
-			if dirExists(moduleDir) {
-				return moduleDir
-			}
-		}
-	}
 	return base
 }
 
