@@ -22,6 +22,19 @@ type packageJSON struct {
 	Bin         any    `json:"bin,omitempty"`
 }
 
+// ClipJSON represents the clip.json package identity file.
+type ClipJSON struct {
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Description string `json:"description"`
+	Runtime     string `json:"runtime"`
+	Main        string `json:"main"`
+	Web         string `json:"web"`
+	Author      string `json:"author"`
+	License     string `json:"license"`
+	Repository  string `json:"repository"`
+}
+
 type projectMetadata struct {
 	Package      string
 	Version      string
@@ -109,14 +122,50 @@ func loadProjectMetadata(clip ClipConfig) (*projectMetadata, error) {
 	}
 
 	meta := &projectMetadata{}
+
+	// Try clip.json first — it takes priority over package.json
+	if clipMeta, err := readClipJSONMetadata(workdir); err == nil {
+		mergeProjectMetadata(meta, clipMeta)
+	}
+
+	// Fall back to package.json for any fields not set by clip.json
 	if packageMeta, err := readPackageJSONMetadata(workdir); err == nil {
 		mergeProjectMetadata(meta, packageMeta)
 	}
+
 	if meta.Package == "" && strings.TrimSpace(clip.Package) != "" {
 		meta.Package = strings.TrimSpace(clip.Package)
 	}
 	if meta.Version == "" && strings.TrimSpace(clip.Version) != "" {
 		meta.Version = strings.TrimSpace(clip.Version)
+	}
+	return meta, nil
+}
+
+// LoadClipJSON reads and parses clip.json from the given directory.
+func LoadClipJSON(dir string) (ClipJSON, error) {
+	data, err := os.ReadFile(filepath.Join(dir, "clip.json"))
+	if err != nil {
+		return ClipJSON{}, fmt.Errorf("read clip.json: %w", err)
+	}
+	var clip ClipJSON
+	if err := json.Unmarshal(data, &clip); err != nil {
+		return ClipJSON{}, fmt.Errorf("parse clip.json: %w", err)
+	}
+	return clip, nil
+}
+
+func readClipJSONMetadata(workdir string) (*projectMetadata, error) {
+	clip, err := LoadClipJSON(workdir)
+	if err != nil {
+		return nil, err
+	}
+	meta := &projectMetadata{
+		Package:     strings.TrimSpace(clip.Name),
+		Version:     strings.TrimSpace(clip.Version),
+		Description: strings.TrimSpace(clip.Description),
+		Main:        strings.TrimSpace(clip.Main),
+		Web:         strings.TrimSpace(clip.Web),
 	}
 	return meta, nil
 }
@@ -158,19 +207,6 @@ func clipProjectDir(clip ClipConfig) string {
 	base := strings.TrimSpace(clip.Path)
 	if base == "" {
 		return ""
-	}
-	if strings.HasPrefix(strings.TrimSpace(clip.Source), "npm:") {
-		pkg := strings.TrimSpace(clip.Package)
-		if pkg == "" {
-			pkg = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(clip.Source, "npm:"), "registry:"))
-			pkg, _ = splitPackageVersion(pkg)
-		}
-		if pkg != "" {
-			moduleDir := filepath.Join(base, "node_modules", filepath.FromSlash(pkg))
-			if dirExists(moduleDir) {
-				return moduleDir
-			}
-		}
 	}
 	return base
 }
@@ -452,24 +488,24 @@ func dirExists(path string) bool {
 
 func derivePackageName(clip ClipConfig) string {
 	source := strings.TrimSpace(clip.Source)
-	switch {
-	case strings.HasPrefix(source, "npm:"):
-		pkg, _ := splitPackageVersion(strings.TrimSpace(strings.TrimPrefix(source, "npm:")))
-		return strings.TrimSpace(pkg)
-	case strings.HasPrefix(source, "registry:"):
-		if ref, err := parseSource(source); err == nil {
+	if ref, err := parseSource(source); err == nil {
+		switch ref.Kind {
+		case sourceTypeRegistry:
 			return strings.TrimSpace(ref.Package)
+		case sourceTypeGitHub:
+			repo := strings.TrimSpace(strings.TrimPrefix(ref.Source, "github/"))
+			repo = strings.TrimSuffix(repo, ".git")
+			if idx := strings.Index(repo, "#"); idx >= 0 {
+				repo = repo[:idx]
+			}
+			return filepath.Base(repo)
+		case sourceTypeLocal:
+			name := strings.TrimSpace(strings.TrimPrefix(ref.Source, "local/"))
+			if idx := strings.Index(name, ":"); idx >= 0 {
+				name = name[:idx]
+			}
+			return name
 		}
-	case strings.HasPrefix(source, "github:"):
-		repo := strings.TrimSpace(strings.TrimPrefix(source, "github:"))
-		if repo == "" {
-			break
-		}
-		repo = strings.TrimSuffix(repo, ".git")
-		if idx := strings.Index(repo, "#"); idx >= 0 {
-			repo = repo[:idx]
-		}
-		return filepath.Base(repo)
 	}
 	if clip.Manifest != nil && strings.TrimSpace(clip.Manifest.Package) != "" {
 		return strings.TrimSpace(clip.Manifest.Package)

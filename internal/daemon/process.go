@@ -739,8 +739,9 @@ func (m *ProcessManager) persistRegisteredManifest(clip ClipConfig, manifest *Ma
 		return nil
 	}
 	updated.Name = strings.TrimSpace(stored.Name)
-	stored.Package = firstNonEmpty(strings.TrimSpace(updated.Package), strings.TrimSpace(stored.Package))
-	stored.Version = firstNonEmpty(strings.TrimSpace(updated.Version), strings.TrimSpace(stored.Version))
+	// Package is determined by install source, not IPC manifest
+	stored.Package = firstNonEmpty(strings.TrimSpace(stored.Package), strings.TrimSpace(updated.Package))
+	stored.Version = firstNonEmpty(strings.TrimSpace(stored.Version), strings.TrimSpace(updated.Version))
 	stored.Manifest = finalizeManifestCache(updated)
 	if err := m.registry.PutClip(stored); err != nil {
 		return fmt.Errorf("save clip %s manifest: %w", clip.Name, err)
@@ -1035,14 +1036,6 @@ func resolveEntrypoint(clip ClipConfig) (string, error) {
 		return indexPath, nil
 	}
 
-	if strings.HasPrefix(clip.Source, "npm:") {
-		pkg := firstNonEmpty(strings.TrimSpace(clip.Package), strings.TrimPrefix(clip.Source, "npm:"))
-		npmPath := filepath.Join(clip.Path, "node_modules", filepath.FromSlash(pkg), "index.ts")
-		if isRegularFile(npmPath) {
-			return npmPath, nil
-		}
-	}
-
 	return "", fmt.Errorf("clip %s entrypoint not found under %s", clip.Name, workdir)
 }
 
@@ -1153,7 +1146,7 @@ func registeredManifestForClip(clip ClipConfig, manifest *ipc.Manifest) (*Manife
 
 	registered := &ManifestCache{
 		Name:           strings.TrimSpace(clip.Name),
-		Package:        firstNonEmpty(strings.TrimSpace(manifest.Package), strings.TrimSpace(clip.Package)),
+		Package:        firstNonEmpty(strings.TrimSpace(clip.Package), strings.TrimSpace(manifest.Package)),
 		Version:        firstNonEmpty(strings.TrimSpace(manifest.Version), strings.TrimSpace(clip.Version)),
 		Domain:         strings.TrimSpace(manifest.Domain),
 		Description:    strings.TrimSpace(manifest.Description),
