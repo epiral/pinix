@@ -32,6 +32,9 @@ type registryPublishManifest struct {
 	Runtime      string            `json:"runtime,omitempty"`
 	Main         string            `json:"main,omitempty"`
 	Web          string            `json:"web,omitempty"`
+	Author       string            `json:"author,omitempty"`
+	License      string            `json:"license,omitempty"`
+	Repository   string            `json:"repository,omitempty"`
 	Commands     []map[string]any  `json:"commands,omitempty"`
 	Dependencies map[string]string `json:"dependencies,omitempty"`
 	Patterns     []string          `json:"patterns,omitempty"`
@@ -238,31 +241,42 @@ func loadRegistryPublishManifest(dir string) (json.RawMessage, *registryPublishM
 }
 
 func synthesizeRegistryPublishManifest(dir string) (*registryPublishManifest, error) {
+	clip, clipErr := daemonpkg.LoadClipJSON(dir)
 	pkg, pkgErr := readLocalPackageJSON(dir)
 	inspected, inspectErr := inspectLocalClip(dir, pkg)
 
 	manifest := &registryPublishManifest{
-		Name:         deriveRegistryPackageName(pkg, inspected, dir),
-		Version:      firstNonEmpty(pkg.Version, manifestVersionValue(inspected)),
+		Name:         deriveRegistryPackageName(clip, clipErr, pkg, inspected, dir),
+		Version:      firstNonEmpty(strings.TrimSpace(clip.Version), pkg.Version, manifestVersionValue(inspected)),
 		Type:         "clip",
-		Description:  firstNonEmpty(manifestDescriptionValue(inspected), pkg.Description),
+		Description:  firstNonEmpty(strings.TrimSpace(clip.Description), manifestDescriptionValue(inspected), pkg.Description),
 		Domain:       manifestDomainValue(inspected),
-		Runtime:      "bun",
-		Main:         firstNonEmpty(strings.TrimSpace(pkg.Main), packageJSONBin(pkg), defaultMainEntry(dir)),
-		Web:          defaultWebEntry(dir),
+		Runtime:      firstNonEmpty(strings.TrimSpace(clip.Runtime), "bun"),
+		Main:         firstNonEmpty(strings.TrimSpace(clip.Main), strings.TrimSpace(pkg.Main), packageJSONBin(pkg), defaultMainEntry(dir)),
+		Web:          firstNonEmpty(strings.TrimSpace(clip.Web), defaultWebEntry(dir)),
+		Author:       strings.TrimSpace(clip.Author),
+		License:      strings.TrimSpace(clip.License),
+		Repository:   strings.TrimSpace(clip.Repository),
 		Commands:     commandMapsFromManifest(inspected),
 		Dependencies: manifestDependenciesValue(inspected),
 		Patterns:     manifestPatternsValue(inspected),
 	}
 
-	if pkgErr == nil && strings.TrimSpace(pkg.Name) != "" && strings.TrimSpace(manifest.Version) != "" {
+	hasName := (clipErr == nil && strings.TrimSpace(clip.Name) != "") || (pkgErr == nil && strings.TrimSpace(pkg.Name) != "")
+	if hasName && strings.TrimSpace(manifest.Version) != "" {
 		return manifest, inspectErr
 	}
 	if inspectErr != nil {
+		if pkgErr != nil && clipErr != nil {
+			return manifest, errors.Join(clipErr, pkgErr, inspectErr)
+		}
 		if pkgErr != nil {
 			return manifest, errors.Join(pkgErr, inspectErr)
 		}
 		return manifest, inspectErr
+	}
+	if clipErr != nil && pkgErr != nil {
+		return manifest, errors.Join(clipErr, pkgErr)
 	}
 	return manifest, pkgErr
 }
@@ -331,9 +345,12 @@ func inspectLocalClip(dir string, pkg localPackageJSON) (*daemonpkg.ManifestCach
 	return manifest, nil
 }
 
-// deriveRegistryPackageName preserves the @scope/name format from package.json
-// or manifest. This is the name that will be used for the registry publish.
-func deriveRegistryPackageName(pkg localPackageJSON, manifest *daemonpkg.ManifestCache, dir string) string {
+// deriveRegistryPackageName preserves the @scope/name format from clip.json,
+// package.json, or manifest. clip.json takes priority.
+func deriveRegistryPackageName(clip daemonpkg.ClipJSON, clipErr error, pkg localPackageJSON, manifest *daemonpkg.ManifestCache, dir string) string {
+	if clipErr == nil && strings.TrimSpace(clip.Name) != "" {
+		return defaultPackageName(strings.TrimSpace(clip.Name))
+	}
 	if manifest != nil && strings.TrimSpace(manifest.Package) != "" {
 		return defaultPackageName(strings.TrimSpace(manifest.Package))
 	}
@@ -492,11 +509,7 @@ func shouldSkipTarPath(rel string, entry fs.DirEntry) bool {
 		return false
 	}
 	top := strings.Split(rel, string(os.PathSeparator))[0]
-	if top == ".git" || top == "node_modules" {
-		return true
-	}
-	base := filepath.Base(rel)
-	return base == "pinix.json" || base == "clip.yaml"
+	return top == ".git" || top == "node_modules"
 }
 
 func addTarEntry(writer *tar.Writer, rootDir, rel, path string, entry fs.DirEntry) error {

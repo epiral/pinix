@@ -22,6 +22,19 @@ type packageJSON struct {
 	Bin         any    `json:"bin,omitempty"`
 }
 
+// ClipJSON represents the clip.json package identity file.
+type ClipJSON struct {
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Description string `json:"description"`
+	Runtime     string `json:"runtime"`
+	Main        string `json:"main"`
+	Web         string `json:"web"`
+	Author      string `json:"author"`
+	License     string `json:"license"`
+	Repository  string `json:"repository"`
+}
+
 type projectMetadata struct {
 	Package      string
 	Version      string
@@ -109,14 +122,50 @@ func loadProjectMetadata(clip ClipConfig) (*projectMetadata, error) {
 	}
 
 	meta := &projectMetadata{}
+
+	// Try clip.json first — it takes priority over package.json
+	if clipMeta, err := readClipJSONMetadata(workdir); err == nil {
+		mergeProjectMetadata(meta, clipMeta)
+	}
+
+	// Fall back to package.json for any fields not set by clip.json
 	if packageMeta, err := readPackageJSONMetadata(workdir); err == nil {
 		mergeProjectMetadata(meta, packageMeta)
 	}
+
 	if meta.Package == "" && strings.TrimSpace(clip.Package) != "" {
 		meta.Package = strings.TrimSpace(clip.Package)
 	}
 	if meta.Version == "" && strings.TrimSpace(clip.Version) != "" {
 		meta.Version = strings.TrimSpace(clip.Version)
+	}
+	return meta, nil
+}
+
+// LoadClipJSON reads and parses clip.json from the given directory.
+func LoadClipJSON(dir string) (ClipJSON, error) {
+	data, err := os.ReadFile(filepath.Join(dir, "clip.json"))
+	if err != nil {
+		return ClipJSON{}, fmt.Errorf("read clip.json: %w", err)
+	}
+	var clip ClipJSON
+	if err := json.Unmarshal(data, &clip); err != nil {
+		return ClipJSON{}, fmt.Errorf("parse clip.json: %w", err)
+	}
+	return clip, nil
+}
+
+func readClipJSONMetadata(workdir string) (*projectMetadata, error) {
+	clip, err := LoadClipJSON(workdir)
+	if err != nil {
+		return nil, err
+	}
+	meta := &projectMetadata{
+		Package:     strings.TrimSpace(clip.Name),
+		Version:     strings.TrimSpace(clip.Version),
+		Description: strings.TrimSpace(clip.Description),
+		Main:        strings.TrimSpace(clip.Main),
+		Web:         strings.TrimSpace(clip.Web),
 	}
 	return meta, nil
 }
