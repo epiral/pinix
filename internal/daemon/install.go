@@ -10,6 +10,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -74,13 +75,25 @@ func installFromRegistry(ctx context.Context, targetPath string, ref sourceRef, 
 	if err != nil {
 		return "", err
 	}
+
+	// Resolve version from dist-tags
 	resolvedVersion, versionDoc, err := packageDoc.ResolveVersion(ref.Version)
 	if err != nil {
 		return "", err
 	}
+
+	// If package doc didn't embed version info, fetch it separately (commercial registry)
+	if versionDoc == nil || versionDoc.Dist == nil {
+		fetched, fetchErr := registryClient.GetVersion(ctx, ref.Package, resolvedVersion)
+		if fetchErr != nil {
+			return "", fmt.Errorf("get version %q: %w", resolvedVersion, fetchErr)
+		}
+		versionDoc = fetched
+	}
 	if versionDoc == nil || versionDoc.Dist == nil {
 		return "", fmt.Errorf("registry package %q version %q does not provide dist info", ref.Package, resolvedVersion)
 	}
+
 	tarball, err := registryClient.Download(ctx, ref.Package, resolvedVersion)
 	if err != nil {
 		return "", err
@@ -102,8 +115,14 @@ func verifyRegistryTarballShasum(pkg, version, expected string, tarball []byte) 
 	if expected == "" {
 		return fmt.Errorf("registry package %q version %q does not provide a dist shasum", pkg, version)
 	}
-	sum := sha1.Sum(tarball)
-	actual := hex.EncodeToString(sum[:])
+	var actual string
+	if len(expected) == 64 {
+		sum := sha256.Sum256(tarball)
+		actual = hex.EncodeToString(sum[:])
+	} else {
+		sum := sha1.Sum(tarball)
+		actual = hex.EncodeToString(sum[:])
+	}
 	if !strings.EqualFold(actual, expected) {
 		return fmt.Errorf("registry tarball shasum mismatch for package %q version %q: expected %s, got %s", pkg, version, expected, actual)
 	}

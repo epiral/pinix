@@ -61,7 +61,7 @@ func newRegisterCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			username = firstNonEmpty(resp.Username, username)
+			username = firstNonEmpty(resp.GetUsername(), username)
 			if err := saveRegistryCredential(reg.BaseURL(), username, resp.Token); err != nil {
 				return err
 			}
@@ -98,7 +98,7 @@ func newLoginCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			username = firstNonEmpty(resp.Username, username)
+			username = firstNonEmpty(resp.GetUsername(), username)
 			if err := saveRegistryCredential(reg.BaseURL(), username, resp.Token); err != nil {
 				return err
 			}
@@ -159,7 +159,7 @@ func newWhoAmICommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			username := strings.TrimSpace(resp.Username)
+			username := strings.TrimSpace(resp.GetUsername())
 			if username == "" {
 				return fmt.Errorf("registry whoami returned an empty username")
 			}

@@ -425,10 +425,10 @@ func commandMapsFromManifest(manifest *daemonpkg.ManifestCache) []map[string]any
 		if description := strings.TrimSpace(command.Description); description != "" {
 			item["description"] = description
 		}
-		if input := maybeJSONValue(command.Input); input != nil {
+		if input := strings.TrimSpace(command.Input); input != "" {
 			item["input"] = input
 		}
-		if output := maybeJSONValue(command.Output); output != nil {
+		if output := strings.TrimSpace(command.Output); output != "" {
 			item["output"] = output
 		}
 		result = append(result, item)
