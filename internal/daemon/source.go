@@ -51,7 +51,12 @@ func parseSource(source string) (sourceRef, error) {
 		if repo == "" {
 			return sourceRef{}, daemonError{Code: "invalid_argument", Message: "github source is empty"}
 		}
-		return sourceRef{Kind: sourceTypeGitHub, Source: "github/" + repo}, nil
+		// Strip #branch for package name
+		pkg := "github/" + repo
+		if idx := strings.Index(pkg, "#"); idx >= 0 {
+			pkg = pkg[:idx]
+		}
+		return sourceRef{Kind: sourceTypeGitHub, Source: "github/" + repo, Package: pkg}, nil
 	}
 
 	// local/name[:path]
@@ -69,7 +74,7 @@ func parseSource(source string) (sourceRef, error) {
 		if name == "" {
 			return sourceRef{}, daemonError{Code: "invalid_argument", Message: "local source name is empty"}
 		}
-		ref := sourceRef{Kind: sourceTypeLocal, Source: "local/" + name}
+		ref := sourceRef{Kind: sourceTypeLocal, Source: "local/" + name, Package: "local/" + name}
 		if localPath != "" {
 			ref.Source = "local/" + name + ":" + localPath
 		}
