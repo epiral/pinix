@@ -30,7 +30,8 @@ type AddParams struct {
 }
 
 type RemoveParams struct {
-	Name string `json:"name"`
+	Name  string `json:"name"`
+	Purge bool   `json:"purge,omitempty"`
 }
 
 type AddResult struct {

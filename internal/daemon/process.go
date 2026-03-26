@@ -173,6 +173,28 @@ func (m *ProcessManager) PinixURL() string {
 	return m.pinixURL
 }
 
+// ensureClipDataDir returns the data directory for a clip, creating it if needed.
+// On first run, migrates data/ from the clip installation directory if present.
+func (m *ProcessManager) ensureClipDataDir(clip ClipConfig) string {
+	dataDir := m.registry.ClipDataDir(clip.Name)
+	if _, err := os.Stat(dataDir); err == nil {
+		return dataDir
+	}
+
+	// Migrate: move legacy data/ from clip path to the new location
+	legacyData := filepath.Join(clip.Path, "data")
+	if info, err := os.Stat(legacyData); err == nil && info.IsDir() {
+		_ = os.MkdirAll(filepath.Dir(dataDir), 0o755)
+		if err := os.Rename(legacyData, dataDir); err == nil {
+			return dataDir
+		}
+		// Rename failed (cross-device?), fall through to create empty
+	}
+
+	_ = os.MkdirAll(dataDir, 0o755)
+	return dataDir
+}
+
 func (m *ProcessManager) SetHubClient(cli *clientpkg.Client, hubToken string) {
 	if m == nil {
 		return
@@ -381,9 +403,14 @@ func (m *ProcessManager) startLocked(clip ClipConfig) (*clipProcess, error) {
 		return nil, err
 	}
 
+	dataDir := m.ensureClipDataDir(clip)
+
 	cmd := exec.Command(m.bunPath, "run", entrypoint, "--ipc")
 	cmd.Dir = clipProjectDir(clip)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("PINIX_URL=%s", m.pinixURL))
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("PINIX_URL=%s", m.pinixURL),
+		fmt.Sprintf("PINIX_DATA_DIR=%s", dataDir),
+	)
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

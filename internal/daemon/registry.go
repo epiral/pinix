@@ -112,6 +112,14 @@ func (r *Registry) ClipsDir() string {
 	return filepath.Join(r.RootDir(), "clips")
 }
 
+func (r *Registry) DataDir() string {
+	return filepath.Join(r.RootDir(), "data")
+}
+
+func (r *Registry) ClipDataDir(name string) string {
+	return filepath.Join(r.DataDir(), name)
+}
+
 func (r *Registry) GetSuperToken() (string, error) {
 	var token string
 	err := r.withConfig(false, func(cfg *Config) error {
