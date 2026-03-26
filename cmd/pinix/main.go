@@ -1,5 +1,5 @@
 // Role:    pinix CLI entrypoint for HubService-backed Clip management and invocation
-// Depends: encoding/json, fmt, os, strconv, strings, internal/client, pinix v2, cobra
+// Depends: encoding/json, fmt, os, path/filepath, strconv, strings, internal/client, pinix v2, cobra
 // Exports: main
 
 package main
@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,6 +34,7 @@ func execute() error {
 		"list":       {},
 		"register":   {},
 		"login":      {},
+		"logout":     {},
 		"whoami":     {},
 		"bind":       {},
 		"unbind":     {},
@@ -40,6 +42,7 @@ func execute() error {
 		"search":     {},
 		"publish":    {},
 		"info":       {},
+		"config":     {},
 		"help":       {},
 		"completion": {},
 	}
@@ -145,6 +148,7 @@ func newRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newListCommand(&serverURL, &hubToken))
 	rootCmd.AddCommand(newRegisterCommand())
 	rootCmd.AddCommand(newLoginCommand())
+	rootCmd.AddCommand(newLogoutCommand())
 	rootCmd.AddCommand(newWhoAmICommand())
 	rootCmd.AddCommand(newBindCommand(&serverURL, &hubToken))
 	rootCmd.AddCommand(newUnbindCommand())
@@ -152,29 +156,38 @@ func newRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newSearchCommand())
 	rootCmd.AddCommand(newPublishCommand())
 	rootCmd.AddCommand(newInfoCommand(&serverURL, &hubToken))
+	rootCmd.AddCommand(newConfigCommand())
 	return rootCmd
 }
 
 func newAddCommand(serverURL, hubToken *string) *cobra.Command {
 	var clipToken string
 	var alias string
-	var legacyName string
 	var provider string
 	var registryURL string
+	var localPath string
 	cmd := &cobra.Command{
 		Use:   "add <source>",
-		Short: "Install and register a Clip",
+		Short: "Install and register a Clip (@scope/name, github/user/repo, or local/name)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			source, err := normalizeAddSource(args[0], registryURL)
 			if err != nil {
 				return err
 			}
+			// For local/ sources, append the resolved path
+			if strings.HasPrefix(args[0], "local/") && strings.TrimSpace(localPath) != "" {
+				absPath, pathErr := filepath.Abs(strings.TrimSpace(localPath))
+				if pathErr != nil {
+					return fmt.Errorf("resolve local path: %w", pathErr)
+				}
+				source = source + ":" + absPath
+			}
 			cli, err := client.New(*serverURL)
 			if err != nil {
 				return err
 			}
-			clip, err := cli.Add(cmd.Context(), source, firstNonEmpty(alias, legacyName), provider, clipToken, *hubToken)
+			clip, err := cli.Add(cmd.Context(), source, alias, provider, clipToken, *hubToken)
 			if err != nil {
 				return err
 			}
@@ -184,10 +197,9 @@ func newAddCommand(serverURL, hubToken *string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&clipToken, "token", "", "clip token required for invoking this Clip")
 	cmd.Flags().StringVar(&alias, "alias", "", "explicit clip alias")
-	cmd.Flags().StringVar(&legacyName, "name", "", "deprecated: explicit clip alias")
 	cmd.Flags().StringVar(&provider, "provider", "", "target provider for add/remove operations")
-	cmd.Flags().StringVar(&registryURL, "registry", os.Getenv("PINIX_REGISTRY"), "install Clip from a Pinix Registry instead of npm")
-	_ = cmd.Flags().MarkDeprecated("name", "use --alias")
+	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinix.ai)")
+	cmd.Flags().StringVar(&localPath, "path", "", "local directory path for local/ sources")
 	return cmd
 }
 

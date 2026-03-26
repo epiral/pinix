@@ -32,6 +32,9 @@ type registryPublishManifest struct {
 	Runtime      string            `json:"runtime,omitempty"`
 	Main         string            `json:"main,omitempty"`
 	Web          string            `json:"web,omitempty"`
+	Author       string            `json:"author,omitempty"`
+	License      string            `json:"license,omitempty"`
+	Repository   string            `json:"repository,omitempty"`
 	Commands     []map[string]any  `json:"commands,omitempty"`
 	Dependencies map[string]string `json:"dependencies,omitempty"`
 	Patterns     []string          `json:"patterns,omitempty"`
@@ -73,7 +76,7 @@ func newSearchCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&registryURL, "registry", os.Getenv("PINIX_REGISTRY"), "Pinix Registry base URL")
+	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinix.ai)")
 	cmd.Flags().StringVar(&domain, "domain", "", "filter results by domain")
 	cmd.Flags().StringVar(&packageType, "type", "", "filter results by package type")
 	return cmd
@@ -121,46 +124,49 @@ func newPublishCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&registryURL, "registry", os.Getenv("PINIX_REGISTRY"), "Pinix Registry base URL")
+	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinix.ai)")
 	cmd.Flags().StringVar(&tag, "tag", "", "dist-tag to publish under")
 	return cmd
 }
 
+// normalizeAddSource validates the three source prefixes and constructs
+// the internal canonical source string for the daemon.
 func normalizeAddSource(source, registryURL string) (string, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
 		return "", fmt.Errorf("source is required")
 	}
-	if strings.HasPrefix(source, "npm:") || strings.HasPrefix(source, "registry:") || strings.HasPrefix(source, "github:") {
+
+	// Already in internal canonical form
+	if strings.HasPrefix(source, "registry:") {
 		return source, nil
 	}
-	if looksLikeScopedPackage(source) {
+
+	// @scope/name[@version] → registry source
+	if strings.HasPrefix(source, "@") {
 		pkg, version := splitPackageVersionSpec(source)
-		if strings.TrimSpace(registryURL) == "" {
-			return canonicalNPMSource(pkg, version), nil
+		if pkg == "" {
+			return "", fmt.Errorf("invalid registry source %q", source)
 		}
-		reg, err := client.NewRegistry(registryURL)
+		resolvedURL := getRegistryURL(registryURL)
+		reg, err := client.NewRegistry(resolvedURL)
 		if err != nil {
 			return "", err
 		}
 		return canonicalRegistrySource(reg.BaseURL(), pkg, version), nil
 	}
-	if looksLikeLocalPath(source) {
+
+	// github/user/repo[#branch] → pass through
+	if strings.HasPrefix(source, "github/") {
 		return source, nil
 	}
 
-	pkg, version := splitPackageVersionSpec(source)
-	if pkg == "" {
-		return "", fmt.Errorf("invalid source %q", source)
+	// local/name → pass through
+	if strings.HasPrefix(source, "local/") {
+		return source, nil
 	}
-	if strings.TrimSpace(registryURL) == "" {
-		return canonicalNPMSource(pkg, version), nil
-	}
-	reg, err := client.NewRegistry(registryURL)
-	if err != nil {
-		return "", err
-	}
-	return canonicalRegistrySource(reg.BaseURL(), pkg, version), nil
+
+	return "", fmt.Errorf("unknown source format %q; use @scope/name, github/user/repo, or local/name", source)
 }
 
 func splitPackageVersionSpec(spec string) (string, string) {
@@ -192,37 +198,6 @@ func splitPackageVersionSpec(spec string) (string, string) {
 		return spec, ""
 	}
 	return strings.TrimSpace(spec[:versionIndex]), strings.TrimSpace(spec[versionIndex+1:])
-}
-
-func looksLikeScopedPackage(spec string) bool {
-	pkg, _ := splitPackageVersionSpec(spec)
-	if !strings.HasPrefix(pkg, "@") {
-		return false
-	}
-	parts := strings.Split(pkg, "/")
-	return len(parts) == 2 && strings.TrimSpace(parts[0]) != "" && strings.TrimSpace(parts[1]) != ""
-}
-
-func looksLikeLocalPath(spec string) bool {
-	if spec == "" {
-		return false
-	}
-	if strings.Contains(spec, "://") {
-		return false
-	}
-	if strings.HasPrefix(spec, "@") && looksLikeScopedPackage(spec) {
-		return false
-	}
-	return strings.Contains(spec, "/") || strings.HasPrefix(spec, ".") || strings.HasPrefix(spec, "~")
-}
-
-func canonicalNPMSource(pkg, version string) string {
-	pkg = strings.TrimSpace(pkg)
-	version = strings.TrimSpace(version)
-	if version == "" {
-		return "npm:" + pkg
-	}
-	return "npm:" + pkg + "@" + version
 }
 
 func canonicalRegistrySource(registryURL, pkg, version string) string {
@@ -266,31 +241,42 @@ func loadRegistryPublishManifest(dir string) (json.RawMessage, *registryPublishM
 }
 
 func synthesizeRegistryPublishManifest(dir string) (*registryPublishManifest, error) {
+	clip, clipErr := daemonpkg.LoadClipJSON(dir)
 	pkg, pkgErr := readLocalPackageJSON(dir)
 	inspected, inspectErr := inspectLocalClip(dir, pkg)
 
 	manifest := &registryPublishManifest{
-		Name:         deriveRegistryPackageName(pkg, inspected, dir),
-		Version:      firstNonEmpty(pkg.Version, manifestVersionValue(inspected)),
+		Name:         deriveRegistryPackageName(clip, clipErr, pkg, inspected, dir),
+		Version:      firstNonEmpty(strings.TrimSpace(clip.Version), pkg.Version, manifestVersionValue(inspected)),
 		Type:         "clip",
-		Description:  firstNonEmpty(manifestDescriptionValue(inspected), pkg.Description),
+		Description:  firstNonEmpty(strings.TrimSpace(clip.Description), manifestDescriptionValue(inspected), pkg.Description),
 		Domain:       manifestDomainValue(inspected),
-		Runtime:      "bun",
-		Main:         firstNonEmpty(strings.TrimSpace(pkg.Main), packageJSONBin(pkg), defaultMainEntry(dir)),
-		Web:          defaultWebEntry(dir),
+		Runtime:      firstNonEmpty(strings.TrimSpace(clip.Runtime), "bun"),
+		Main:         firstNonEmpty(strings.TrimSpace(clip.Main), strings.TrimSpace(pkg.Main), packageJSONBin(pkg), defaultMainEntry(dir)),
+		Web:          firstNonEmpty(strings.TrimSpace(clip.Web), defaultWebEntry(dir)),
+		Author:       strings.TrimSpace(clip.Author),
+		License:      strings.TrimSpace(clip.License),
+		Repository:   strings.TrimSpace(clip.Repository),
 		Commands:     commandMapsFromManifest(inspected),
 		Dependencies: manifestDependenciesValue(inspected),
 		Patterns:     manifestPatternsValue(inspected),
 	}
 
-	if pkgErr == nil && strings.TrimSpace(pkg.Name) != "" && strings.TrimSpace(manifest.Version) != "" {
+	hasName := (clipErr == nil && strings.TrimSpace(clip.Name) != "") || (pkgErr == nil && strings.TrimSpace(pkg.Name) != "")
+	if hasName && strings.TrimSpace(manifest.Version) != "" {
 		return manifest, inspectErr
 	}
 	if inspectErr != nil {
+		if pkgErr != nil && clipErr != nil {
+			return manifest, errors.Join(clipErr, pkgErr, inspectErr)
+		}
 		if pkgErr != nil {
 			return manifest, errors.Join(pkgErr, inspectErr)
 		}
 		return manifest, inspectErr
+	}
+	if clipErr != nil && pkgErr != nil {
+		return manifest, errors.Join(clipErr, pkgErr)
 	}
 	return manifest, pkgErr
 }
@@ -359,7 +345,12 @@ func inspectLocalClip(dir string, pkg localPackageJSON) (*daemonpkg.ManifestCach
 	return manifest, nil
 }
 
-func deriveRegistryPackageName(pkg localPackageJSON, manifest *daemonpkg.ManifestCache, dir string) string {
+// deriveRegistryPackageName preserves the @scope/name format from clip.json,
+// package.json, or manifest. clip.json takes priority.
+func deriveRegistryPackageName(clip daemonpkg.ClipJSON, clipErr error, pkg localPackageJSON, manifest *daemonpkg.ManifestCache, dir string) string {
+	if clipErr == nil && strings.TrimSpace(clip.Name) != "" {
+		return defaultPackageName(strings.TrimSpace(clip.Name))
+	}
 	if manifest != nil && strings.TrimSpace(manifest.Package) != "" {
 		return defaultPackageName(strings.TrimSpace(manifest.Package))
 	}
@@ -369,10 +360,20 @@ func deriveRegistryPackageName(pkg localPackageJSON, manifest *daemonpkg.Manifes
 	return defaultPackageName(filepath.Base(dir))
 }
 
+// defaultPackageName preserves @scope/name format. Only strips clip- prefix
+// from unscoped names.
 func defaultPackageName(value string) string {
-	value = filepath.Base(filepath.FromSlash(strings.TrimSpace(value)))
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	// Preserve @scope/name format
+	if strings.HasPrefix(value, "@") {
+		return value
+	}
+	// For unscoped names, strip clip- prefix
+	value = filepath.Base(filepath.FromSlash(value))
 	value = strings.TrimPrefix(value, "clip-")
-	value = strings.TrimPrefix(value, "@")
 	return strings.TrimSpace(value)
 }
 
@@ -424,10 +425,10 @@ func commandMapsFromManifest(manifest *daemonpkg.ManifestCache) []map[string]any
 		if description := strings.TrimSpace(command.Description); description != "" {
 			item["description"] = description
 		}
-		if input := maybeJSONValue(command.Input); input != nil {
+		if input := strings.TrimSpace(command.Input); input != "" {
 			item["input"] = input
 		}
-		if output := maybeJSONValue(command.Output); output != nil {
+		if output := strings.TrimSpace(command.Output); output != "" {
 			item["output"] = output
 		}
 		result = append(result, item)
@@ -508,11 +509,7 @@ func shouldSkipTarPath(rel string, entry fs.DirEntry) bool {
 		return false
 	}
 	top := strings.Split(rel, string(os.PathSeparator))[0]
-	if top == ".git" || top == "node_modules" {
-		return true
-	}
-	base := filepath.Base(rel)
-	return base == "pinix.json" || base == "clip.yaml"
+	return top == ".git" || top == "node_modules"
 }
 
 func addTarEntry(writer *tar.Writer, rootDir, rel, path string, entry fs.DirEntry) error {

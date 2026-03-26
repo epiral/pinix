@@ -22,15 +22,28 @@ type RegistryClient struct {
 }
 
 type RegistryDistInfo struct {
-	Tarball string `json:"tarball,omitempty"`
-	Shasum  string `json:"shasum,omitempty"`
-	Size    int64  `json:"size,omitempty"`
+	Tarball    string `json:"tarball,omitempty"`
+	TarballURL string `json:"TarballURL,omitempty"`
+	Shasum     string `json:"shasum,omitempty"`
+	Size       int64  `json:"size,omitempty"`
+}
+
+func (d *RegistryDistInfo) GetTarball() string {
+	if d == nil {
+		return ""
+	}
+	if d.Tarball != "" {
+		return d.Tarball
+	}
+	return d.TarballURL
 }
 
 type RegistryVersionDocument struct {
 	Pinix      json.RawMessage   `json:"pinix"`
 	Dist       *RegistryDistInfo `json:"dist,omitempty"`
 	Deprecated string            `json:"deprecated,omitempty"`
+	Version    string            `json:"version,omitempty"`
+	Runtime    string            `json:"runtime,omitempty"`
 }
 
 type RegistryPackageDocument struct {
@@ -38,8 +51,19 @@ type RegistryPackageDocument struct {
 	Type        string                             `json:"type"`
 	Description string                             `json:"description"`
 	Domain      string                             `json:"domain,omitempty"`
-	DistTags    map[string]string                  `json:"dist-tags"`
+	DistTags    map[string]string                  `json:"dist_tags"`
+	DistTagsAlt map[string]string                  `json:"dist-tags"`
 	Versions    map[string]RegistryVersionDocument `json:"versions"`
+}
+
+func (d *RegistryPackageDocument) mergeDistTags() {
+	if d == nil {
+		return
+	}
+	if len(d.DistTags) == 0 && len(d.DistTagsAlt) > 0 {
+		d.DistTags = d.DistTagsAlt
+	}
+	d.DistTagsAlt = nil
 }
 
 type RegistrySearchResponse struct {
@@ -62,8 +86,28 @@ type RegistryPublishResponse struct {
 }
 
 type RegistryAuthResponse struct {
-	Token    string `json:"token,omitempty"`
+	Token    string              `json:"token,omitempty"`
+	Username string              `json:"username,omitempty"`
+	User     *RegistryAuthUser   `json:"user,omitempty"`
+	Scope    string              `json:"scope,omitempty"`
+}
+
+type RegistryAuthUser struct {
 	Username string `json:"username,omitempty"`
+	Email    string `json:"email,omitempty"`
+}
+
+func (r *RegistryAuthResponse) GetUsername() string {
+	if r == nil {
+		return ""
+	}
+	if r.Username != "" {
+		return r.Username
+	}
+	if r.User != nil && r.User.Username != "" {
+		return r.User.Username
+	}
+	return ""
 }
 
 type registryAPIError struct {
@@ -95,20 +139,40 @@ func (c *RegistryClient) BaseURL() string {
 	return c.baseURL
 }
 
+func packagePath(name string) string {
+	return "/packages/" + url.PathEscape(strings.TrimSpace(name))
+}
+
 func (c *RegistryClient) GetPackage(ctx context.Context, name string) (*RegistryPackageDocument, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, fmt.Errorf("package name is required")
 	}
+	path := packagePath(name)
 	var doc RegistryPackageDocument
-	if err := c.getJSON(ctx, "/packages/"+url.PathEscape(name), &doc); err != nil {
+	if err := c.getJSON(ctx, path, &doc); err != nil {
 		return nil, err
 	}
+	doc.mergeDistTags()
 	if doc.DistTags == nil {
 		doc.DistTags = make(map[string]string)
 	}
 	if doc.Versions == nil {
 		doc.Versions = make(map[string]RegistryVersionDocument)
+	}
+	return &doc, nil
+}
+
+func (c *RegistryClient) GetVersion(ctx context.Context, name, version string) (*RegistryVersionDocument, error) {
+	name = strings.TrimSpace(name)
+	version = strings.TrimSpace(version)
+	if name == "" || version == "" {
+		return nil, fmt.Errorf("package name and version are required")
+	}
+	path := packagePath(name) + "/" + url.PathEscape(version)
+	var doc RegistryVersionDocument
+	if err := c.getJSON(ctx, path, &doc); err != nil {
+		return nil, err
 	}
 	return &doc, nil
 }
@@ -129,7 +193,8 @@ func (d *RegistryPackageDocument) ResolveVersion(requested string) (string, *Reg
 	}
 	versionDoc, ok := d.Versions[requested]
 	if !ok {
-		return "", nil, fmt.Errorf("package %q version or dist-tag %q not found", d.Name, requested)
+		// Commercial registry doesn't embed versions in package doc
+		return requested, nil, nil
 	}
 	copy := versionDoc
 	return requested, &copy, nil
@@ -151,19 +216,18 @@ func (c *RegistryClient) Search(ctx context.Context, query, domain, packageType 
 	return &resp, nil
 }
 
-func (c *RegistryClient) Download(ctx context.Context, rawURL string) ([]byte, error) {
-	rawURL = strings.TrimSpace(rawURL)
-	if rawURL == "" {
-		return nil, fmt.Errorf("tarball URL is required")
+// Download fetches a tarball by scope/name/version from the registry.
+func (c *RegistryClient) Download(ctx context.Context, name, version string) ([]byte, error) {
+	name = strings.TrimSpace(name)
+	version = strings.TrimSpace(version)
+	if name == "" {
+		return nil, fmt.Errorf("package name is required for download")
 	}
-	resolved := rawURL
-	if parsed, err := url.Parse(rawURL); err == nil && !parsed.IsAbs() {
-		base, baseErr := url.Parse(c.baseURL + "/")
-		if baseErr == nil {
-			resolved = base.ResolveReference(parsed).String()
-		}
+	if version == "" {
+		return nil, fmt.Errorf("package version is required for download")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, resolved, nil)
+	dlPath := packagePath(name) + "/" + url.PathEscape(version) + "/download"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+dlPath, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build registry download request: %w", err)
 	}
@@ -196,8 +260,8 @@ func (c *RegistryClient) Publish(ctx context.Context, name, token string, manife
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
-	if err := writer.WriteField("manifest", strings.TrimSpace(string(manifest))); err != nil {
-		return nil, fmt.Errorf("write registry manifest field: %w", err)
+	if err := writer.WriteField("metadata", strings.TrimSpace(string(manifest))); err != nil {
+		return nil, fmt.Errorf("write registry metadata field: %w", err)
 	}
 	if strings.TrimSpace(tag) != "" {
 		if err := writer.WriteField("tag", strings.TrimSpace(tag)); err != nil {
@@ -218,8 +282,10 @@ func (c *RegistryClient) Publish(ctx context.Context, name, token string, manife
 		return nil, fmt.Errorf("close registry multipart body: %w", err)
 	}
 
+	pubPath := packagePath(name) + "/versions"
+
 	var resp RegistryPublishResponse
-	if err := c.doJSON(ctx, http.MethodPut, "/packages/"+url.PathEscape(name), body, writer.FormDataContentType(), token, &resp); err != nil {
+	if err := c.doJSON(ctx, http.MethodPut, pubPath, body, writer.FormDataContentType(), token, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

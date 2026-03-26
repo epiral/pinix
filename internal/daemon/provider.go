@@ -995,12 +995,18 @@ func aliasBaseFromSource(source string) string {
 	ref, err := parseSource(source)
 	if err == nil {
 		switch ref.Kind {
-		case sourceTypeNPM, sourceTypeRegistry:
+		case sourceTypeRegistry:
+			_, name, ok := splitScopedPackage(ref.Package)
+			if ok {
+				if alias := normalizeName(name); alias != "" {
+					return alias
+				}
+			}
 			if alias := normalizeName(ref.Package); alias != "" {
 				return alias
 			}
 		case sourceTypeGitHub:
-			repo := strings.TrimSpace(strings.TrimPrefix(ref.Source, "github:"))
+			repo := strings.TrimSpace(strings.TrimPrefix(ref.Source, "github/"))
 			repo = strings.TrimSuffix(repo, ".git")
 			if idx := strings.Index(repo, "#"); idx >= 0 {
 				repo = repo[:idx]
@@ -1009,7 +1015,12 @@ func aliasBaseFromSource(source string) string {
 				return alias
 			}
 		case sourceTypeLocal:
-			if alias := normalizeName(ref.Source); alias != "" {
+			name := strings.TrimSpace(strings.TrimPrefix(ref.Source, "local/"))
+			// Strip :path suffix if present
+			if idx := strings.Index(name, ":"); idx >= 0 {
+				name = name[:idx]
+			}
+			if alias := normalizeName(name); alias != "" {
 				return alias
 			}
 		}

@@ -1,4 +1,4 @@
-// Role:    Clip source parsing helpers for npm, registry, GitHub, and local runtime installs
+// Role:    Clip source parsing helpers for registry, GitHub, and local runtime installs
 // Depends: fmt, net/url, os, path/filepath, strings
 // Exports: (package-internal helpers)
 
@@ -15,7 +15,6 @@ import (
 type sourceKind string
 
 const (
-	sourceTypeNPM      sourceKind = "npm"
 	sourceTypeRegistry sourceKind = "registry"
 	sourceTypeGitHub   sourceKind = "github"
 	sourceTypeLocal    sourceKind = "local"
@@ -26,6 +25,7 @@ type sourceRef struct {
 	Source   string
 	Package  string
 	Version  string
+	Scope    string
 	Registry string
 }
 
@@ -35,54 +35,82 @@ func parseSource(source string) (sourceRef, error) {
 		return sourceRef{}, daemonError{Code: "invalid_argument", Message: "source is required"}
 	}
 
+	// registry:<url>#@scope/name[@version] — internal canonical form
 	if strings.HasPrefix(source, "registry:") {
 		return parseRegistrySource(strings.TrimSpace(strings.TrimPrefix(source, "registry:")))
 	}
-	if strings.HasPrefix(source, "npm:") {
-		return parseNPMSource(strings.TrimSpace(strings.TrimPrefix(source, "npm:")))
+
+	// @scope/name[@version] — registry shorthand
+	if strings.HasPrefix(source, "@") {
+		return parseRegistryShorthand(source)
 	}
-	if strings.HasPrefix(source, "github:") {
-		repo := strings.TrimSpace(strings.TrimPrefix(source, "github:"))
+
+	// github/user/repo[#branch]
+	if strings.HasPrefix(source, "github/") {
+		repo := strings.TrimSpace(strings.TrimPrefix(source, "github/"))
 		if repo == "" {
 			return sourceRef{}, daemonError{Code: "invalid_argument", Message: "github source is empty"}
 		}
-		return sourceRef{Kind: sourceTypeGitHub, Source: "github:" + repo}, nil
-	}
-	if looksLikeScopedNPMPackage(source) {
-		return parseNPMSource(source)
-	}
-
-	expanded, err := expandUserPath(source)
-	if err != nil {
-		return sourceRef{}, daemonError{Code: "internal", Message: fmt.Sprintf("expand local path: %v", err)}
-	}
-	if _, err := os.Stat(expanded); err == nil {
-		return sourceRef{Kind: sourceTypeLocal, Source: expanded}, nil
-	}
-	if looksLikeLocalPath(source) {
-		return sourceRef{Kind: sourceTypeLocal, Source: expanded}, nil
+		// Strip #branch for package name
+		pkg := "github/" + repo
+		if idx := strings.Index(pkg, "#"); idx >= 0 {
+			pkg = pkg[:idx]
+		}
+		return sourceRef{Kind: sourceTypeGitHub, Source: "github/" + repo, Package: pkg}, nil
 	}
 
-	return parseNPMSource(source)
+	// local/name[:path]
+	if strings.HasPrefix(source, "local/") {
+		rest := strings.TrimSpace(strings.TrimPrefix(source, "local/"))
+		if rest == "" {
+			return sourceRef{}, daemonError{Code: "invalid_argument", Message: "local source name is empty"}
+		}
+		name := rest
+		localPath := ""
+		if idx := strings.Index(rest, ":"); idx >= 0 {
+			name = strings.TrimSpace(rest[:idx])
+			localPath = strings.TrimSpace(rest[idx+1:])
+		}
+		if name == "" {
+			return sourceRef{}, daemonError{Code: "invalid_argument", Message: "local source name is empty"}
+		}
+		ref := sourceRef{Kind: sourceTypeLocal, Source: "local/" + name, Package: "local/" + name}
+		if localPath != "" {
+			ref.Source = "local/" + name + ":" + localPath
+		}
+		return ref, nil
+	}
+
+	return sourceRef{}, daemonError{
+		Code:    "invalid_argument",
+		Message: "unknown source format; use @scope/name, github/user/repo, or local/name",
+	}
 }
 
-func parseNPMSource(spec string) (sourceRef, error) {
+func parseRegistryShorthand(spec string) (sourceRef, error) {
 	spec = strings.TrimSpace(spec)
-	if spec == "" {
-		return sourceRef{}, daemonError{Code: "invalid_argument", Message: "npm source is empty"}
+	if !strings.HasPrefix(spec, "@") {
+		return sourceRef{}, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("invalid registry source %q", spec)}
 	}
 	pkg, version := splitPackageVersion(spec)
 	if pkg == "" {
-		return sourceRef{}, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("invalid npm source %q", spec)}
+		return sourceRef{}, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("invalid registry source %q", spec)}
 	}
-	if strings.HasSuffix(spec, "@") || strings.HasSuffix(spec, ":") {
-		return sourceRef{}, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("invalid npm version in %q", spec)}
+	scope, name, ok := splitScopedPackage(pkg)
+	if !ok {
+		return sourceRef{}, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("invalid scoped package %q; expected @scope/name", pkg)}
 	}
+	canonical := pkg
+	if version != "" {
+		canonical = pkg + "@" + version
+	}
+	_ = name
 	return sourceRef{
-		Kind:    sourceTypeNPM,
-		Source:  canonicalNPMSource(pkg, version),
+		Kind:    sourceTypeRegistry,
+		Source:  canonical,
 		Package: pkg,
 		Version: version,
+		Scope:   scope,
 	}, nil
 }
 
@@ -90,7 +118,7 @@ func parseRegistrySource(spec string) (sourceRef, error) {
 	spec = strings.TrimSpace(spec)
 	registryURL, packageSpec, ok := strings.Cut(spec, "#")
 	if !ok {
-		return sourceRef{}, daemonError{Code: "invalid_argument", Message: "registry source must use registry:<url>#<package>[:version]"}
+		return sourceRef{}, daemonError{Code: "invalid_argument", Message: "registry source must use registry:<url>#@scope/name[@version]"}
 	}
 	registryURL = normalizeRegistryURL(registryURL)
 	if registryURL == "" {
@@ -106,13 +134,28 @@ func parseRegistrySource(spec string) (sourceRef, error) {
 	if strings.HasSuffix(packageSpec, "@") || strings.HasSuffix(packageSpec, ":") {
 		return sourceRef{}, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("invalid registry version in %q", packageSpec)}
 	}
+	scope, _, _ := splitScopedPackage(pkg)
 	return sourceRef{
 		Kind:     sourceTypeRegistry,
 		Source:   canonicalRegistrySource(registryURL, pkg, version),
 		Package:  pkg,
 		Version:  version,
+		Scope:    scope,
 		Registry: registryURL,
 	}, nil
+}
+
+// splitScopedPackage splits "@scope/name" into ("scope", "name", true).
+// Returns ("", "", false) if the format is invalid.
+func splitScopedPackage(pkg string) (string, string, bool) {
+	if !strings.HasPrefix(pkg, "@") {
+		return "", "", false
+	}
+	parts := strings.SplitN(pkg[1:], "/", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
 }
 
 func splitPackageVersion(spec string) (string, string) {
@@ -146,15 +189,6 @@ func splitPackageVersion(spec string) (string, string) {
 	return strings.TrimSpace(spec[:versionIndex]), strings.TrimSpace(spec[versionIndex+1:])
 }
 
-func canonicalNPMSource(pkg, version string) string {
-	pkg = strings.TrimSpace(pkg)
-	version = strings.TrimSpace(version)
-	if version == "" {
-		return "npm:" + pkg
-	}
-	return "npm:" + pkg + "@" + version
-}
-
 func canonicalRegistrySource(registryURL, pkg, version string) string {
 	registryURL = normalizeRegistryURL(registryURL)
 	pkg = strings.TrimSpace(pkg)
@@ -181,22 +215,30 @@ func deriveNameFromSource(source string) string {
 	ref, err := parseSource(source)
 	if err == nil {
 		switch ref.Kind {
-		case sourceTypeNPM, sourceTypeRegistry:
+		case sourceTypeRegistry:
+			_, name, ok := splitScopedPackage(ref.Package)
+			if ok {
+				return normalizeName(name)
+			}
 			return defaultInstanceName(ref.Package)
 		case sourceTypeGitHub:
-			repo := strings.TrimSpace(strings.TrimPrefix(ref.Source, "github:"))
+			repo := strings.TrimSpace(strings.TrimPrefix(ref.Source, "github/"))
 			repo = strings.TrimSuffix(repo, ".git")
 			if idx := strings.Index(repo, "#"); idx >= 0 {
 				repo = repo[:idx]
 			}
-			return defaultInstanceName(filepath.Base(repo))
+			return normalizeName(filepath.Base(repo))
 		case sourceTypeLocal:
-			return defaultInstanceName(filepath.Base(ref.Source))
+			name := strings.TrimSpace(strings.TrimPrefix(ref.Source, "local/"))
+			// Strip :path suffix if present
+			if idx := strings.Index(name, ":"); idx >= 0 {
+				name = name[:idx]
+			}
+			return normalizeName(name)
 		}
 	}
 
-	source = strings.TrimPrefix(source, "npm:")
-	source = strings.TrimPrefix(source, "github:")
+	// Fallback for legacy internal canonical forms
 	source = strings.TrimPrefix(source, "registry:")
 	if _, remainder, ok := strings.Cut(source, "#"); ok {
 		source = remainder
@@ -219,23 +261,17 @@ func defaultInstanceName(value string) string {
 	return normalizeName(value)
 }
 
-func looksLikeScopedNPMPackage(source string) bool {
-	pkg, _ := splitPackageVersion(source)
-	if !strings.HasPrefix(pkg, "@") {
-		return false
+// extractLocalPath extracts the filesystem path from a local/ source string.
+// Format: "local/name:/absolute/path" → "/absolute/path"
+func extractLocalPath(source string) string {
+	if !strings.HasPrefix(source, "local/") {
+		return ""
 	}
-	parts := strings.Split(pkg, "/")
-	return len(parts) == 2 && strings.TrimSpace(parts[0]) != "" && strings.TrimSpace(parts[1]) != ""
-}
-
-func looksLikeLocalPath(source string) bool {
-	if source == "" {
-		return false
+	rest := strings.TrimPrefix(source, "local/")
+	if idx := strings.Index(rest, ":"); idx >= 0 {
+		return strings.TrimSpace(rest[idx+1:])
 	}
-	if strings.Contains(source, "://") {
-		return false
-	}
-	return strings.Contains(source, "/") || strings.HasPrefix(source, ".") || strings.HasPrefix(source, "~")
+	return ""
 }
 
 func expandUserPath(path string) (string, error) {
