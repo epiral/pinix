@@ -187,6 +187,11 @@ func (h *Handler) removeClip(params RemoveParams) (*RemoveResult, error) {
 		return nil, daemonError{Code: "internal", Message: err.Error()}
 	}
 
+	if params.Purge {
+		dataDir := h.registry.ClipDataDir(clip.Name)
+		_ = os.RemoveAll(dataDir)
+	}
+
 	return &RemoveResult{Name: clip.Name, Path: clip.Path}, nil
 }
 

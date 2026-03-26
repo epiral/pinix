@@ -300,7 +300,7 @@ func (h *HubService) RemoveClip(ctx context.Context, req *connect.Request[pinixv
 		if _, ok, err := h.daemon.registry.GetClip(clipName); err != nil {
 			return nil, connectErrorFromErr(daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)})
 		} else if ok {
-			result, err := h.daemon.handler.handleRemove(authToken, RemoveParams{Name: clipName})
+			result, err := h.daemon.handler.handleRemove(authToken, RemoveParams{Name: clipName, Purge: req.Msg.GetPurge()})
 			if err != nil {
 				return nil, connectErrorFromErr(err)
 			}
