@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	stdruntime "runtime"
 	"strings"
@@ -58,8 +59,10 @@ func (d *Daemon) ConnectHub(ctx context.Context, hubURL string, port int, hubTok
 		return fmt.Errorf("hub URL is required")
 	}
 
+	slog.Info("hub: connecting", "url", hubURL, "token_len", len(hubToken))
 	cli, err := clientpkg.New(hubURL)
 	if err != nil {
+		slog.Error("hub: failed to create client", "error", err)
 		return err
 	}
 	d.process.SetHubClient(cli, hubToken)
@@ -174,21 +177,27 @@ func (c *runtimeHubConnector) runProviderSession(parent context.Context) error {
 	sessionCtx, cancel := context.WithCancel(parent)
 	defer cancel()
 
+	slog.Info("hub: opening ProviderStream", "url", c.client.BaseURL(), "token_len", len(c.hubToken))
 	stream := c.client.ProviderStream(sessionCtx, c.hubToken)
 	defer stream.CloseRequest()
 	defer stream.CloseResponse()
 
 	register, err := c.registerMessage(sessionCtx)
 	if err != nil {
+		slog.Error("hub: failed to build register message", "error", err)
 		return err
 	}
+	slog.Info("hub: sending register message", "provider", c.providerName, "clips", len(register.GetPayload().(*pinixv2.ProviderMessage_Register).Register.GetClips()))
 	if err := c.sendProvider(stream, register); err != nil {
+		slog.Error("hub: failed to send register message", "error", err)
 		return err
 	}
+	slog.Info("hub: register message sent, waiting for response")
 
 	for {
 		message, err := stream.Receive()
 		if err != nil {
+			slog.Error("hub: receive error", "error", err)
 			if parent.Err() != nil || sessionCtx.Err() != nil {
 				return nil
 			}
@@ -199,6 +208,7 @@ func (c *runtimeHubConnector) runProviderSession(parent context.Context) error {
 		}
 
 		if response := message.GetRegisterResponse(); response != nil {
+			slog.Info("hub: register response", "accepted", response.GetAccepted(), "message", response.GetMessage())
 			if !response.GetAccepted() {
 				msg := strings.TrimSpace(response.GetMessage())
 				if msg == "" {

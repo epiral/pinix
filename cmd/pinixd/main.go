@@ -6,11 +6,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -28,6 +30,7 @@ func main() {
 		hubURL     string
 		hubToken   string
 		port       int
+		pidPath    string
 		hubOnly    bool
 	)
 
@@ -38,13 +41,26 @@ func main() {
 	flag.StringVar(&hubToken, "hub-token", "", "JWT token for authenticating with the external hub (env: PINIX_HUB_TOKEN)")
 	flag.BoolVar(&hubOnly, "hub-only", false, "run Hub + Portal only, without a local runtime")
 	flag.IntVar(&port, "port", 9000, "http port for the embedded portal UI; used in provider identity for --hub mode")
+	flag.StringVar(&pidPath, "pid", "", "custom path to PID file (default: ~/.pinix/pinixd.pid)")
 	flag.Parse()
 
+	// Resolve hub-token: flag > env > config file
 	if hubToken == "" {
 		hubToken = strings.TrimSpace(os.Getenv("PINIX_HUB_TOKEN"))
 	}
+	if hubToken == "" {
+		hubToken = readClientConfigValue("hub_token")
+	}
 
+	// Resolve hub: flag > env > config file
 	hubURL = strings.TrimSpace(hubURL)
+	if hubURL == "" {
+		if v := strings.TrimSpace(os.Getenv("PINIX_HUB")); v != "" {
+			hubURL = v
+		} else {
+			hubURL = readClientConfigValue("hub")
+		}
+	}
 	if hubOnly && hubURL != "" {
 		exitErr(fmt.Errorf("--hub and --hub-only cannot be used together"))
 	}
@@ -63,10 +79,10 @@ func main() {
 	defer stop()
 
 	// PID file: prevent duplicate pinixd, enable CLI auto-discovery
-	if err := pidfile.CheckExistingPIDFile(port); err != nil {
+	if err := pidfile.CheckExistingPIDFile(port, pidPath); err != nil {
 		exitErr(err)
 	}
-	pidCleanup, err := pidfile.WritePIDFile(port)
+	pidCleanup, err := pidfile.WritePIDFile(port, pidPath)
 	if err != nil {
 		exitErr(fmt.Errorf("write pid file: %w", err))
 	}
@@ -181,6 +197,24 @@ func waitForHub(ctx context.Context, hubURL string, timeout time.Duration) error
 		time.Sleep(50 * time.Millisecond)
 	}
 	return fmt.Errorf("timeout waiting for %s", hubURL)
+}
+
+// readClientConfigValue reads a single value from ~/.pinix/client.json.
+// Returns empty string on any error.
+func readClientConfigValue(key string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".pinix", "client.json"))
+	if err != nil {
+		return ""
+	}
+	var cfg map[string]string
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(cfg[key])
 }
 
 func exitErr(err error) {
