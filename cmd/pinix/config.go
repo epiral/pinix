@@ -19,6 +19,8 @@ const defaultRegistryURL = "https://api.pinix.ai"
 
 type clientConfig struct {
 	Registry string `json:"registry,omitempty"`
+	Hub      string `json:"hub,omitempty"`
+	HubToken string `json:"hub_token,omitempty"`
 }
 
 func newConfigCommand() *cobra.Command {
@@ -48,8 +50,12 @@ func newConfigSetCommand() *cobra.Command {
 			switch key {
 			case "registry":
 				cfg.Registry = value
+			case "hub":
+				cfg.Hub = value
+			case "hub-token":
+				cfg.HubToken = value
 			default:
-				return fmt.Errorf("unknown config key %q; supported keys: registry", key)
+				return fmt.Errorf("unknown config key %q; supported keys: registry, hub, hub-token", key)
 			}
 
 			if err := saveClientConfig(cfg); err != nil {
@@ -81,8 +87,12 @@ func newConfigGetCommand() *cobra.Command {
 					value = defaultRegistryURL
 				}
 				fmt.Fprintln(cmd.OutOrStdout(), value)
+			case "hub":
+				fmt.Fprintln(cmd.OutOrStdout(), cfg.Hub)
+			case "hub-token":
+				fmt.Fprintln(cmd.OutOrStdout(), cfg.HubToken)
 			default:
-				return fmt.Errorf("unknown config key %q; supported keys: registry", key)
+				return fmt.Errorf("unknown config key %q; supported keys: registry, hub, hub-token", key)
 			}
 			return nil
 		},
