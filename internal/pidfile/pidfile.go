@@ -21,8 +21,8 @@ type PIDFile struct {
 	HubURL    string `json:"hubURL"`
 }
 
-// pidFilePath returns the path to ~/.pinix/pinixd.pid.
-func pidFilePath() (string, error) {
+// defaultPIDFilePath returns the default path ~/.pinix/pinixd.pid.
+func defaultPIDFilePath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("get home directory: %w", err)
@@ -30,10 +30,23 @@ func pidFilePath() (string, error) {
 	return filepath.Join(home, ".pinix", "pinixd.pid"), nil
 }
 
+// resolvePIDPath returns customPath if non-empty, otherwise the default path.
+func resolvePIDPath(customPath string) (string, error) {
+	if customPath != "" {
+		return customPath, nil
+	}
+	return defaultPIDFilePath()
+}
+
 // WritePIDFile writes the PID file with current process info.
+// If customPath is provided, uses that path instead of the default.
 // Returns a cleanup function that removes the file.
-func WritePIDFile(port int) (cleanup func(), err error) {
-	path, err := pidFilePath()
+func WritePIDFile(port int, customPath ...string) (cleanup func(), err error) {
+	cp := ""
+	if len(customPath) > 0 {
+		cp = customPath[0]
+	}
+	path, err := resolvePIDPath(cp)
 	if err != nil {
 		return nil, err
 	}
@@ -66,9 +79,14 @@ func WritePIDFile(port int) (cleanup func(), err error) {
 }
 
 // ReadPIDFile reads and validates the PID file.
+// If customPath is provided, uses that path instead of the default.
 // Returns nil, nil if the file doesn't exist or the process is dead (stale file is auto-cleaned).
-func ReadPIDFile() (*PIDFile, error) {
-	path, err := pidFilePath()
+func ReadPIDFile(customPath ...string) (*PIDFile, error) {
+	cp := ""
+	if len(customPath) > 0 {
+		cp = customPath[0]
+	}
+	path, err := resolvePIDPath(cp)
 	if err != nil {
 		return nil, err
 	}
@@ -99,9 +117,10 @@ func ReadPIDFile() (*PIDFile, error) {
 }
 
 // CheckExistingPIDFile checks if another pinixd is already running.
+// If customPath is provided, checks that specific PID file.
 // Returns an error if a live process is found.
-func CheckExistingPIDFile(port int) error {
-	pf, err := ReadPIDFile()
+func CheckExistingPIDFile(port int, customPath ...string) error {
+	pf, err := ReadPIDFile(customPath...)
 	if err != nil {
 		return err
 	}
