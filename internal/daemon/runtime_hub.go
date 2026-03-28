@@ -30,6 +30,7 @@ type runtimeHubConnector struct {
 	daemon       *Daemon
 	client       *clientpkg.Client
 	providerName string
+	hubToken     string
 
 	sendMu sync.Mutex
 
@@ -45,7 +46,7 @@ func (e registerRejectedError) Error() string {
 	return strings.TrimSpace(e.message)
 }
 
-func (d *Daemon) ConnectHub(ctx context.Context, hubURL string, port int) error {
+func (d *Daemon) ConnectHub(ctx context.Context, hubURL string, port int, hubToken string) error {
 	if d == nil {
 		return fmt.Errorf("daemon is required")
 	}
@@ -61,12 +62,13 @@ func (d *Daemon) ConnectHub(ctx context.Context, hubURL string, port int) error 
 	if err != nil {
 		return err
 	}
-	d.process.SetHubClient(cli, "")
+	d.process.SetHubClient(cli, hubToken)
 
 	connector := &runtimeHubConnector{
 		daemon:       d,
 		client:       cli,
 		providerName: runtimeProviderName(port),
+		hubToken:     hubToken,
 	}
 	return connector.run(ctx)
 }
@@ -172,7 +174,7 @@ func (c *runtimeHubConnector) runProviderSession(parent context.Context) error {
 	sessionCtx, cancel := context.WithCancel(parent)
 	defer cancel()
 
-	stream := c.client.ProviderStream(sessionCtx, "")
+	stream := c.client.ProviderStream(sessionCtx, c.hubToken)
 	defer stream.CloseRequest()
 	defer stream.CloseResponse()
 
@@ -322,7 +324,7 @@ func (c *runtimeHubConnector) runRuntimeSession(parent context.Context) error {
 	sessionCtx, cancel := context.WithCancel(parent)
 	defer cancel()
 
-	stream := c.client.RuntimeStream(sessionCtx, "")
+	stream := c.client.RuntimeStream(sessionCtx, c.hubToken)
 	defer stream.CloseRequest()
 	defer stream.CloseResponse()
 

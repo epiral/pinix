@@ -26,6 +26,7 @@ func main() {
 		configPath string
 		bunPath    string
 		hubURL     string
+		hubToken   string
 		port       int
 		hubOnly    bool
 	)
@@ -34,9 +35,14 @@ func main() {
 	flag.StringVar(&configPath, "config", "", "config path (default: ~/.pinix/config.json)")
 	flag.StringVar(&bunPath, "bun", "", "path to bun binary (default: auto-detect)")
 	flag.StringVar(&hubURL, "hub", "", "connect to an external hub as a runtime provider")
+	flag.StringVar(&hubToken, "hub-token", "", "JWT token for authenticating with the external hub (env: PINIX_HUB_TOKEN)")
 	flag.BoolVar(&hubOnly, "hub-only", false, "run Hub + Portal only, without a local runtime")
 	flag.IntVar(&port, "port", 9000, "http port for the embedded portal UI; used in provider identity for --hub mode")
 	flag.Parse()
+
+	if hubToken == "" {
+		hubToken = strings.TrimSpace(os.Getenv("PINIX_HUB_TOKEN"))
+	}
 
 	hubURL = strings.TrimSpace(hubURL)
 	if hubOnly && hubURL != "" {
@@ -89,7 +95,7 @@ func main() {
 			exitErr(err)
 		}
 		defer func() { _ = d.Close() }()
-		if err := d.ConnectHub(ctx, hubURL, port); err != nil {
+		if err := d.ConnectHub(ctx, hubURL, port, hubToken); err != nil {
 			exitErr(err)
 		}
 		return
@@ -136,7 +142,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := runtimeDaemon.ConnectHub(ctx, localHubURL, port); err != nil {
+		if err := runtimeDaemon.ConnectHub(ctx, localHubURL, port, ""); err != nil {
 			runtimeErr <- err
 		}
 	}()
