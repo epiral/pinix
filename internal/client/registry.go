@@ -140,7 +140,15 @@ func (c *RegistryClient) BaseURL() string {
 }
 
 func packagePath(name string) string {
-	return "/packages/" + url.PathEscape(strings.TrimSpace(name))
+	name = strings.TrimSpace(name)
+	// Scoped packages like "@scope/name" must become two path segments
+	// (/packages/@scope/name), not one URL-encoded segment (/packages/@scope%2Fname).
+	parts := strings.SplitN(name, "/", 2)
+	escaped := make([]string, len(parts))
+	for i, p := range parts {
+		escaped[i] = url.PathEscape(p)
+	}
+	return "/packages/" + strings.Join(escaped, "/")
 }
 
 func (c *RegistryClient) GetPackage(ctx context.Context, name string) (*RegistryPackageDocument, error) {
