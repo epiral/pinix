@@ -150,6 +150,37 @@ func (c *Client) Remove(ctx context.Context, clipName, hubToken string) (string,
 	return resp.Msg.GetClipName(), nil
 }
 
+func (c *Client) GetBindings(ctx context.Context, clipName, hubToken string) (*pinixv2.GetBindingsResponse, error) {
+	req := connect.NewRequest(&pinixv2.GetBindingsRequest{ClipName: strings.TrimSpace(clipName)})
+	setAuthHeader(req.Header(), hubToken)
+	resp, err := c.hub.GetBindings(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
+func (c *Client) SetBinding(ctx context.Context, clipName, slot string, binding *pinixv2.ClipBinding, hubToken string) error {
+	req := connect.NewRequest(&pinixv2.SetBindingRequest{
+		ClipName: strings.TrimSpace(clipName),
+		Slot:     strings.TrimSpace(slot),
+		Binding:  binding,
+	})
+	setAuthHeader(req.Header(), hubToken)
+	_, err := c.hub.SetBinding(ctx, req)
+	return err
+}
+
+func (c *Client) RemoveBinding(ctx context.Context, clipName, slot, hubToken string) error {
+	req := connect.NewRequest(&pinixv2.RemoveBindingRequest{
+		ClipName: strings.TrimSpace(clipName),
+		Slot:     strings.TrimSpace(slot),
+	})
+	setAuthHeader(req.Header(), hubToken)
+	_, err := c.hub.RemoveBinding(ctx, req)
+	return err
+}
+
 func (c *Client) Invoke(ctx context.Context, clipName, command string, input json.RawMessage, clipToken, hubToken string) (json.RawMessage, error) {
 	if len(input) == 0 {
 		input = json.RawMessage(`{}`)

@@ -1,6 +1,6 @@
 // Role:    File-locked config registry for Pinix daemon state
 // Depends: encoding/json, fmt, os, path/filepath, sort, strings, syscall
-// Exports: ClipConfig, CommandInfo, DependencySpec, ManifestCache, Config, Registry, DefaultRootDir, DefaultConfigPath, DefaultClipsDir, NewRegistry
+// Exports: ClipConfig, CommandInfo, DependencySpec, ManifestCache, Config, Registry, DefaultRootDir, DefaultConfigPath, NewRegistry
 
 package daemon
 
@@ -37,17 +37,17 @@ type DependencySpec struct {
 }
 
 type ManifestCache struct {
-	Name           string                         `json:"name"`
-	Package        string                         `json:"package,omitempty"`
-	Version        string                         `json:"version,omitempty"`
-	Domain         string                         `json:"domain,omitempty"`
-	Description    string                         `json:"description,omitempty"`
-	Commands       []string                       `json:"commands,omitempty"`
-	CommandDetails []CommandInfo                  `json:"command_details,omitempty"`
-	HasWeb         bool                           `json:"has_web,omitempty"`
-	Dependencies   manifestDependencies           `json:"dependencies,omitempty"`
-	Patterns       []string                       `json:"patterns,omitempty"`
-	Entities       map[string]json.RawMessage     `json:"entities,omitempty"`
+	Name           string                     `json:"name"`
+	Package        string                     `json:"package,omitempty"`
+	Version        string                     `json:"version,omitempty"`
+	Domain         string                     `json:"domain,omitempty"`
+	Description    string                     `json:"description,omitempty"`
+	Commands       []string                   `json:"commands,omitempty"`
+	CommandDetails []CommandInfo              `json:"command_details,omitempty"`
+	HasWeb         bool                       `json:"has_web,omitempty"`
+	Dependencies   manifestDependencies       `json:"dependencies,omitempty"`
+	Patterns       []string                   `json:"patterns,omitempty"`
+	Entities       map[string]json.RawMessage `json:"entities,omitempty"`
 }
 
 type Config struct {
@@ -76,14 +76,6 @@ func DefaultConfigPath() (string, error) {
 	return filepath.Join(root, "config.json"), nil
 }
 
-func DefaultClipsDir() (string, error) {
-	root, err := DefaultRootDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(root, "clips"), nil
-}
-
 func NewRegistry(path string) (*Registry, error) {
 	if strings.TrimSpace(path) == "" {
 		var err error
@@ -98,10 +90,6 @@ func NewRegistry(path string) (*Registry, error) {
 		return nil, err
 	}
 	return registry, nil
-}
-
-func (r *Registry) Path() string {
-	return r.path
 }
 
 func (r *Registry) RootDir() string {

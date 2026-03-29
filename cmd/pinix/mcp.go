@@ -369,7 +369,7 @@ func (p *pinixMCP) invokeTarget(ctx context.Context, target resolvedTarget, comm
 	if command == "" {
 		return nil, fmt.Errorf("command is required")
 	}
-	return p.cli.Invoke(ctx, target.clip.GetName(), command, normalizeInput(input), p.authToken, p.authToken)
+	return p.cli.Invoke(ctx, target.clip.GetName(), command, normalizeInput(input), "", p.authToken)
 }
 
 func commandSpecsFromManifest(manifest *pinixv2.ClipManifest, clip *pinixv2.ClipInfo) []commandSpec {

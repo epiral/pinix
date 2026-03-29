@@ -151,8 +151,8 @@ func newRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newLogoutCommand())
 	rootCmd.AddCommand(newWhoAmICommand())
 	rootCmd.AddCommand(newBindCommand(&serverURL, &hubToken))
-	rootCmd.AddCommand(newUnbindCommand())
-	rootCmd.AddCommand(newBindingsCommand())
+	rootCmd.AddCommand(newUnbindCommand(&serverURL, &hubToken))
+	rootCmd.AddCommand(newBindingsCommand(&serverURL, &hubToken))
 	rootCmd.AddCommand(newSearchCommand())
 	rootCmd.AddCommand(newPublishCommand())
 	rootCmd.AddCommand(newInfoCommand(&serverURL, &hubToken))
@@ -248,50 +248,6 @@ func newListCommand(serverURL, hubToken *string) *cobra.Command {
 			return nil
 		},
 	}
-}
-
-func newInvokeCommand() *cobra.Command {
-	var serverURL string
-	var hubToken string
-	var clipToken string
-
-	cmd := &cobra.Command{
-		Use:           "pinix [flags] <clip-name> <command> [--key value ...]",
-		Short:         "Invoke a Clip command through pinixd",
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		Args:          cobra.MinimumNArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			input, err := parseInvokeInput(args[2:])
-			if err != nil {
-				return err
-			}
-			cli, err := client.New(serverURL)
-			if err != nil {
-				return err
-			}
-			result, err := cli.Invoke(cmd.Context(), args[0], args[1], input, clipToken, hubToken)
-			if err != nil {
-				return err
-			}
-			if len(result) == 0 {
-				return nil
-			}
-			if result[0] == '"' {
-				var value string
-				if err := json.Unmarshal(result, &value); err == nil {
-					fmt.Println(value)
-					return nil
-				}
-			}
-			fmt.Println(string(result))
-			return nil
-		},
-	}
-	cmd.Flags().StringVar(&serverURL, "server", client.DefaultServerURL(), "pinixd HubService base URL")
-	cmd.Flags().StringVar(&hubToken, "auth-token", os.Getenv("PINIX_TOKEN"), "hub auth token")
-	cmd.Flags().StringVar(&clipToken, "clip-token", "", "clip token for protected invoke operations")
-	return cmd
 }
 
 func newInfoCommand(serverURL, hubToken *string) *cobra.Command {

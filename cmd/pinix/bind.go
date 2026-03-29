@@ -1,5 +1,5 @@
-// Role:    CLI commands for reading and writing local Clip bindings metadata
-// Depends: context, encoding/json, fmt, os, path/filepath, sort, strconv, strings, internal/client, internal/daemon, pinix v2, cobra
+// Role:    CLI commands for listing and mutating Clip bindings through Hub RPCs
+// Depends: context, encoding/json, fmt, sort, strconv, strings, internal/client, pinix v2, cobra
 // Exports: newBindCommand, newUnbindCommand, newBindingsCommand
 
 package main
@@ -8,15 +8,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 
 	pinixv2 "github.com/epiral/pinix/gen/go/pinix/v2"
 	"github.com/epiral/pinix/internal/client"
-	daemonpkg "github.com/epiral/pinix/internal/daemon"
 	"github.com/spf13/cobra"
 )
 
@@ -28,7 +25,6 @@ type clipBinding struct {
 }
 
 func newBindCommand(serverURL, authToken *string) *cobra.Command {
-	var configPath string
 	var remoteHub string
 	var remoteHubToken string
 	var remoteClipToken string
@@ -56,15 +52,11 @@ func newBindCommand(serverURL, authToken *string) *cobra.Command {
 				return fmt.Errorf("clip alias and slot are required")
 			}
 
-			registry, err := daemonpkg.NewRegistry(configPath)
+			state, err := loadBindingState(cmd.Context(), *serverURL, *authToken, clipAlias)
 			if err != nil {
 				return err
 			}
-			clip, err := requireLocalClip(registry, clipAlias)
-			if err != nil {
-				return err
-			}
-			dep, err := requireDependencySlot(clip, slot)
+			dep, err := requireDependencySlot(state, clipAlias, slot)
 			if err != nil {
 				return err
 			}
@@ -87,27 +79,23 @@ func newBindCommand(serverURL, authToken *string) *cobra.Command {
 				return fmt.Errorf("target alias is required")
 			}
 
-			bindingsPath := clipBindingsPath(clip)
-			bindings, err := readClipBindings(bindingsPath)
+			cli, err := client.New(*serverURL)
 			if err != nil {
 				return err
 			}
-			bindings[slot] = clipBinding{
+			if err := cli.SetBinding(cmd.Context(), clipAlias, slot, &pinixv2.ClipBinding{
 				Alias:     targetAlias,
 				Hub:       strings.TrimSpace(remoteHub),
 				HubToken:  strings.TrimSpace(remoteHubToken),
 				ClipToken: strings.TrimSpace(remoteClipToken),
-			}
-			if err := writeClipBindings(bindingsPath, bindings); err != nil {
+			}, *authToken); err != nil {
 				return err
 			}
 
-			_, _ = dep, clip
 			fmt.Fprintf(cmd.OutOrStdout(), "bound %s %s -> %s\n", clipAlias, slot, targetAlias)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&configPath, "config", "", "Pinix config path (default: ~/.pinix/config.json)")
 	cmd.Flags().StringVar(&remoteHub, "hub", "", "remote hub URL for cross-hub bindings or listing")
 	cmd.Flags().StringVar(&remoteHubToken, "hub-token", "", "hub token for the remote hub")
 	cmd.Flags().StringVar(&remoteClipToken, "clip-token", "", "clip token stored alongside the binding")
@@ -115,62 +103,37 @@ func newBindCommand(serverURL, authToken *string) *cobra.Command {
 	return cmd
 }
 
-func newUnbindCommand() *cobra.Command {
-	var configPath string
-
+func newUnbindCommand(serverURL, authToken *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "unbind <clip-alias> <slot>",
 		Short: "Remove a Clip dependency binding",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			registry, err := daemonpkg.NewRegistry(configPath)
+			cli, err := client.New(*serverURL)
 			if err != nil {
 				return err
 			}
-			clip, err := requireLocalClip(registry, args[0])
-			if err != nil {
-				return err
-			}
-
-			bindingsPath := clipBindingsPath(clip)
-			bindings, err := readClipBindings(bindingsPath)
-			if err != nil {
-				return err
-			}
-			delete(bindings, strings.TrimSpace(args[1]))
-			if err := writeClipBindings(bindingsPath, bindings); err != nil {
+			if err := cli.RemoveBinding(cmd.Context(), strings.TrimSpace(args[0]), strings.TrimSpace(args[1]), *authToken); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "unbound %s %s\n", strings.TrimSpace(args[0]), strings.TrimSpace(args[1]))
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&configPath, "config", "", "Pinix config path (default: ~/.pinix/config.json)")
 	return cmd
 }
 
-func newBindingsCommand() *cobra.Command {
-	var configPath string
-
+func newBindingsCommand(serverURL, authToken *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "bindings <clip-alias>",
-		Short: "Show bindings.json for a local Clip",
+		Short: "Show bindings for a local Clip",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			registry, err := daemonpkg.NewRegistry(configPath)
+			state, err := loadBindingState(cmd.Context(), *serverURL, *authToken, strings.TrimSpace(args[0]))
 			if err != nil {
 				return err
 			}
-			clip, err := requireLocalClip(registry, args[0])
-			if err != nil {
-				return err
-			}
-
-			bindings, err := readClipBindings(clipBindingsPath(clip))
-			if err != nil {
-				return err
-			}
-			payload, err := json.MarshalIndent(bindings, "", "  ")
+			payload, err := json.MarshalIndent(protoBindingsToLocal(state.GetBindings()), "", "  ")
 			if err != nil {
 				return fmt.Errorf("marshal bindings: %w", err)
 			}
@@ -179,89 +142,68 @@ func newBindingsCommand() *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&configPath, "config", "", "Pinix config path (default: ~/.pinix/config.json)")
 	return cmd
 }
 
-func requireLocalClip(registry *daemonpkg.Registry, alias string) (daemonpkg.ClipConfig, error) {
-	alias = strings.TrimSpace(alias)
-	if alias == "" {
-		return daemonpkg.ClipConfig{}, fmt.Errorf("clip alias is required")
+func loadBindingState(ctx context.Context, serverURL, hubToken, clipAlias string) (*pinixv2.GetBindingsResponse, error) {
+	clipAlias = strings.TrimSpace(clipAlias)
+	if clipAlias == "" {
+		return nil, fmt.Errorf("clip alias is required")
 	}
-	clip, ok, err := registry.GetClip(alias)
+	cli, err := client.New(serverURL)
 	if err != nil {
-		return daemonpkg.ClipConfig{}, fmt.Errorf("load clip %q: %w", alias, err)
+		return nil, err
 	}
-	if !ok {
-		return daemonpkg.ClipConfig{}, fmt.Errorf("clip %q not found in local registry", alias)
-	}
-	return clip, nil
+	return cli.GetBindings(ctx, clipAlias, hubToken)
 }
 
-func requireDependencySlot(clip daemonpkg.ClipConfig, slot string) (daemonpkg.DependencySpec, error) {
+func requireDependencySlot(state *pinixv2.GetBindingsResponse, clipAlias, slot string) (*pinixv2.DependencySlot, error) {
 	slot = strings.TrimSpace(slot)
 	if slot == "" {
-		return daemonpkg.DependencySpec{}, fmt.Errorf("slot is required")
+		return nil, fmt.Errorf("slot is required")
 	}
-	if clip.Manifest == nil {
-		return daemonpkg.DependencySpec{}, fmt.Errorf("clip %q manifest unavailable", clip.Name)
+	if state == nil {
+		return nil, fmt.Errorf("clip %q bindings unavailable", clipAlias)
 	}
-	spec, ok := clip.Manifest.Dependencies[slot]
+	spec, ok := state.GetDependencySlots()[slot]
 	if !ok {
-		return daemonpkg.DependencySpec{}, fmt.Errorf("clip %q does not declare dependency slot %q", clip.Name, slot)
+		return nil, fmt.Errorf("clip %q does not declare dependency slot %q", clipAlias, slot)
 	}
-	if strings.TrimSpace(spec.Package) == "" {
-		spec.Package = slot
+	dep := &pinixv2.DependencySlot{
+		Package: strings.TrimSpace(spec.GetPackage()),
+		Version: strings.TrimSpace(spec.GetVersion()),
 	}
-	return spec, nil
+	if dep.Package == "" {
+		dep.Package = slot
+	}
+	return dep, nil
 }
 
-func clipBindingsPath(clip daemonpkg.ClipConfig) string {
-	return filepath.Join(strings.TrimSpace(clip.Path), "bindings.json")
-}
-
-func readClipBindings(path string) (map[string]clipBinding, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return map[string]clipBinding{}, nil
-		}
-		return nil, fmt.Errorf("read bindings: %w", err)
-	}
-	if len(strings.TrimSpace(string(data))) == 0 {
-		return map[string]clipBinding{}, nil
-	}
-	bindings := make(map[string]clipBinding)
-	if err := json.Unmarshal(data, &bindings); err != nil {
-		return nil, fmt.Errorf("parse bindings: %w", err)
-	}
-	return bindings, nil
-}
-
-func writeClipBindings(path string, bindings map[string]clipBinding) error {
+func protoBindingsToLocal(bindings map[string]*pinixv2.ClipBinding) map[string]clipBinding {
 	if len(bindings) == 0 {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove bindings: %w", err)
+		return map[string]clipBinding{}
+	}
+	result := make(map[string]clipBinding, len(bindings))
+	for slot, binding := range bindings {
+		if binding == nil {
+			continue
 		}
-		return nil
+		result[slot] = clipBinding{
+			Alias:     strings.TrimSpace(binding.GetAlias()),
+			Hub:       strings.TrimSpace(binding.GetHub()),
+			HubToken:  strings.TrimSpace(binding.GetHubToken()),
+			ClipToken: strings.TrimSpace(binding.GetClipToken()),
+		}
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create bindings dir: %w", err)
-	}
-	data, err := json.MarshalIndent(bindings, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal bindings: %w", err)
-	}
-	data = append(data, '\n')
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return fmt.Errorf("write bindings: %w", err)
-	}
-	return nil
+	return result
 }
 
-func listBindingCandidates(ctx context.Context, out interface{ Write([]byte) (int, error) }, hubURL, hubToken string, dep daemonpkg.DependencySpec) error {
+func listBindingCandidates(ctx context.Context, out interface{ Write([]byte) (int, error) }, hubURL, hubToken string, dep *pinixv2.DependencySlot) error {
 	if strings.TrimSpace(hubURL) == "" {
 		return fmt.Errorf("hub URL is required")
+	}
+	if dep == nil {
+		return fmt.Errorf("dependency slot is required")
 	}
 	cli, err := client.New(hubURL)
 	if err != nil {
@@ -277,10 +219,10 @@ func listBindingCandidates(ctx context.Context, out interface{ Write([]byte) (in
 		if clip == nil {
 			continue
 		}
-		if strings.TrimSpace(clip.GetPackage()) != strings.TrimSpace(dep.Package) {
+		if strings.TrimSpace(clip.GetPackage()) != strings.TrimSpace(dep.GetPackage()) {
 			continue
 		}
-		if !versionMatches(strings.TrimSpace(clip.GetVersion()), strings.TrimSpace(dep.Version)) {
+		if !versionMatches(strings.TrimSpace(clip.GetVersion()), strings.TrimSpace(dep.GetVersion())) {
 			continue
 		}
 		matching = append(matching, clip)
