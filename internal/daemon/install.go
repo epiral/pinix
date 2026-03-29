@@ -12,6 +12,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -31,12 +32,13 @@ func (h *Handler) installClip(ctx context.Context, ref sourceRef, targetPath str
 
 	switch ref.Kind {
 	case sourceTypeRegistry:
-		version, err := installFromRegistry(ctx, targetPath, ref, h.process.BunPath())
+		result, err := installFromRegistry(ctx, targetPath, ref, h.process.BunPath())
 		if err != nil {
 			return sourceRef{}, "", daemonError{Code: "internal", Message: err.Error()}
 		}
-		ref.Version = version
-		ref.Source = canonicalRegistrySource(ref.Registry, ref.Package, version)
+		ref.Version = result.Version
+		ref.Type = result.Type
+		ref.Source = canonicalRegistrySource(ref.Registry, ref.Package, result.Version)
 		return ref, targetPath, nil
 	case sourceTypeGitHub:
 		if err := installFromGitHub(targetPath, ref.Source, h.process.BunPath()); err != nil {
@@ -67,48 +69,80 @@ func (h *Handler) installClip(ctx context.Context, ref sourceRef, targetPath str
 	}
 }
 
-func installFromRegistry(ctx context.Context, targetPath string, ref sourceRef, bunPath string) (string, error) {
+type registryInstallResult struct {
+	Version string
+	Type    string // "clip" or "edge-clip"
+}
+
+func installFromRegistry(ctx context.Context, targetPath string, ref sourceRef, bunPath string) (*registryInstallResult, error) {
 	registryClient, err := clientpkg.NewRegistry(ref.Registry)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	packageDoc, err := registryClient.GetPackage(ctx, ref.Package)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
+
+	pkgType := strings.TrimSpace(packageDoc.Type)
 
 	// Resolve version from dist-tags
 	resolvedVersion, versionDoc, err := packageDoc.ResolveVersion(ref.Version)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// If package doc didn't embed version info, fetch it separately (commercial registry)
 	if versionDoc == nil || versionDoc.Dist == nil {
 		fetched, fetchErr := registryClient.GetVersion(ctx, ref.Package, resolvedVersion)
 		if fetchErr != nil {
-			return "", fmt.Errorf("get version %q: %w", resolvedVersion, fetchErr)
+			return nil, fmt.Errorf("get version %q: %w", resolvedVersion, fetchErr)
 		}
 		versionDoc = fetched
 	}
+
+	// Edge clips don't have tarballs — just save metadata
+	if strings.EqualFold(pkgType, "edge-clip") {
+		if err := writeEdgeClipMetadata(targetPath, ref.Package, resolvedVersion, versionDoc); err != nil {
+			return nil, err
+		}
+		return &registryInstallResult{Version: resolvedVersion, Type: "edge-clip"}, nil
+	}
+
 	if versionDoc == nil || versionDoc.Dist == nil {
-		return "", fmt.Errorf("registry package %q version %q does not provide dist info", ref.Package, resolvedVersion)
+		return nil, fmt.Errorf("registry package %q version %q does not provide dist info", ref.Package, resolvedVersion)
 	}
 
 	tarball, err := registryClient.Download(ctx, ref.Package, resolvedVersion)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if err := verifyRegistryTarballShasum(ref.Package, resolvedVersion, versionDoc.Dist.Shasum, tarball); err != nil {
-		return "", err
+		return nil, err
 	}
 	if err := extractTarGz(targetPath, tarball); err != nil {
-		return "", err
+		return nil, err
 	}
 	if err := runBunInstall(targetPath, bunPath); err != nil {
-		return "", err
+		return nil, err
 	}
-	return resolvedVersion, nil
+	return &registryInstallResult{Version: resolvedVersion, Type: "clip"}, nil
+}
+
+func writeEdgeClipMetadata(targetPath, pkg, version string, versionDoc *clientpkg.RegistryVersionDocument) error {
+	metadata := map[string]any{
+		"name":    pkg,
+		"version": version,
+		"type":    "edge-clip",
+	}
+	if versionDoc != nil && len(versionDoc.Pinix) > 0 {
+		metadata["pinix"] = json.RawMessage(versionDoc.Pinix)
+	}
+	data, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal edge-clip metadata: %w", err)
+	}
+	return os.WriteFile(filepath.Join(targetPath, "clip.json"), append(data, '\n'), 0o644)
 }
 
 func verifyRegistryTarballShasum(pkg, version, expected string, tarball []byte) error {
