@@ -66,11 +66,11 @@ func newSearchCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if resp == nil || len(resp.Results) == 0 {
+			if len(resp.Packages) == 0 {
 				fmt.Println("(no results)")
 				return nil
 			}
-			for _, item := range resp.Results {
+			for _, item := range resp.Packages {
 				fmt.Printf("%s\t%s\t%s\t%s\n", item.Name, firstNonEmpty(item.Version, "-"), firstNonEmpty(item.Type, "-"), firstNonEmpty(item.Description, "-"))
 			}
 			return nil

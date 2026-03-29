@@ -26,6 +26,7 @@ type sourceRef struct {
 	Package  string
 	Version  string
 	Registry string
+	Type     string // "clip" or "edge-clip", populated during registry install
 }
 
 func NormalizeAddSource(source, registryURL string) (string, error) {

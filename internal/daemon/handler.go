@@ -121,21 +121,7 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 	}
 	ref = installedRef
 
-	slog.Info("addClip: installed", "path", clipPath, "package", ref.Package, "version", ref.Version)
-
-	manifest, err := h.inspectClip(ctx, ClipConfig{
-		Name:    alias,
-		Package: strings.TrimSpace(ref.Package),
-		Version: strings.TrimSpace(ref.Version),
-		Source:  ref.Source,
-		Path:    clipPath,
-		Token:   params.Token,
-	})
-	if err != nil {
-		slog.Error("addClip: inspect failed", "path", clipPath, "error", err)
-		cleanup()
-		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip manifest: %v", err)}
-	}
+	slog.Info("addClip: installed", "path", clipPath, "package", ref.Package, "version", ref.Version, "type", ref.Type)
 
 	if _, exists, err := h.registry.GetClip(alias); err != nil {
 		cleanup()
@@ -151,6 +137,38 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("move clip into place: %v", err)}
 	}
 	cleanup = func() { _ = os.RemoveAll(finalPath) }
+
+	// Edge clips self-connect via Connect-RPC — skip spawn and manifest inspection
+	if strings.EqualFold(ref.Type, "edge-clip") {
+		clip := ClipConfig{
+			Name:    alias,
+			Package: strings.TrimSpace(ref.Package),
+			Version: strings.TrimSpace(ref.Version),
+			Source:  ref.Source,
+			Path:    finalPath,
+			Token:   params.Token,
+		}
+		if err := h.registry.PutClip(clip); err != nil {
+			cleanup()
+			return nil, daemonError{Code: "internal", Message: fmt.Sprintf("save clip config: %v", err)}
+		}
+		slog.Info("addClip: edge-clip registered (not spawned)", "alias", alias, "package", ref.Package)
+		return &AddResult{Clip: clip}, nil
+	}
+
+	manifest, err := h.inspectClip(ctx, ClipConfig{
+		Name:    alias,
+		Package: strings.TrimSpace(ref.Package),
+		Version: strings.TrimSpace(ref.Version),
+		Source:  ref.Source,
+		Path:    clipPath,
+		Token:   params.Token,
+	})
+	if err != nil {
+		slog.Error("addClip: inspect failed", "path", clipPath, "error", err)
+		cleanup()
+		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip manifest: %v", err)}
+	}
 
 	clip := ClipConfig{
 		Name:     alias,

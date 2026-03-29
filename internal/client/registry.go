@@ -344,6 +344,22 @@ func (c *RegistryClient) WhoAmI(ctx context.Context, token string) (*RegistryAut
 	return &resp, nil
 }
 
+func (c *RegistryClient) SetDistTag(ctx context.Context, name, tag, version, token string) error {
+	name = strings.TrimSpace(name)
+	tag = strings.TrimSpace(tag)
+	version = strings.TrimSpace(version)
+	if name == "" || tag == "" || version == "" {
+		return fmt.Errorf("package name, tag, and version are required")
+	}
+	path := packagePath(name) + "/dist-tags/" + url.PathEscape(tag)
+	payload := map[string]string{"version": version}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal dist-tag request: %w", err)
+	}
+	return c.doJSON(ctx, http.MethodPut, path, bytes.NewReader(data), "application/json", token, nil)
+}
+
 func (c *RegistryClient) getJSON(ctx context.Context, path string, out any) error {
 	return c.doJSON(ctx, http.MethodGet, path, nil, "application/json", "", out)
 }
