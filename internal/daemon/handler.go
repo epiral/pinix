@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,8 +78,11 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 		return nil, daemonError{Code: "internal", Message: "handler is not configured"}
 	}
 
+	slog.Info("addClip: start", "source", params.Source, "alias", params.RequestedAlias)
+
 	ref, err := parseSource(params.Source)
 	if err != nil {
+		slog.Error("addClip: parseSource failed", "source", params.Source, "error", err)
 		return nil, err
 	}
 
@@ -91,6 +95,8 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 		ref.Registry = regURL
 		ref.Source = canonicalRegistrySource(regURL, ref.Package, ref.Version)
 	}
+
+	slog.Info("addClip: resolved source", "kind", ref.Kind, "package", ref.Package, "version", ref.Version, "registry", ref.Registry)
 
 	alias := normalizeName(params.RequestedAlias)
 	if alias == "" {
@@ -109,10 +115,13 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 
 	installedRef, clipPath, err := h.installClip(ctx, ref, stagePath)
 	if err != nil {
+		slog.Error("addClip: install failed", "source", ref.Source, "error", err)
 		cleanup()
 		return nil, err
 	}
 	ref = installedRef
+
+	slog.Info("addClip: installed", "path", clipPath, "package", ref.Package, "version", ref.Version)
 
 	manifest, err := h.inspectClip(ctx, ClipConfig{
 		Name:    alias,
@@ -123,6 +132,7 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 		Token:   params.Token,
 	})
 	if err != nil {
+		slog.Error("addClip: inspect failed", "path", clipPath, "error", err)
 		cleanup()
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip manifest: %v", err)}
 	}

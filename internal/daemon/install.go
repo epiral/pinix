@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -155,7 +156,9 @@ func runBunInstall(targetPath, bunPath string) error {
 	}
 	install := exec.Command(bunPath, "install")
 	install.Dir = targetPath
-	if output, err := install.CombinedOutput(); err != nil {
+	output, err := install.CombinedOutput()
+	slog.Info("bun install", "path", targetPath, "bun", bunPath, "output", strings.TrimSpace(string(output)), "error", err)
+	if err != nil {
 		return fmt.Errorf("bun install: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil

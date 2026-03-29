@@ -103,9 +103,18 @@ func parseSource(source string) (sourceRef, error) {
 		return ref, nil
 	}
 
+	// @scope/name[@version] — registry shorthand (URL resolved later by addClip)
+	if strings.HasPrefix(source, "@") {
+		pkg, version := splitPackageVersion(source)
+		if pkg == "" {
+			return sourceRef{}, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("invalid registry source %q", source)}
+		}
+		return sourceRef{Kind: sourceTypeRegistry, Package: pkg, Version: version}, nil
+	}
+
 	return sourceRef{}, daemonError{
 		Code:    "invalid_argument",
-		Message: "unknown source format; use registry:<url>#@scope/name[@version], github/user/repo, or local/name",
+		Message: "unknown source format; use @scope/name, registry:<url>#@scope/name[@version], github/user/repo, or local/name",
 	}
 }
 

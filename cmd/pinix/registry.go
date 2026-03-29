@@ -35,8 +35,8 @@ type registryPublishManifest struct {
 	Author       string            `json:"author,omitempty"`
 	License      string            `json:"license,omitempty"`
 	Repository   string            `json:"repository,omitempty"`
-	Commands     []map[string]any  `json:"commands,omitempty"`
-	Dependencies map[string]string `json:"dependencies,omitempty"`
+	Commands     []daemonpkg.CommandInfo          `json:"commands,omitempty"`
+	Dependencies map[string]daemonpkg.DependencySpec `json:"dependencies,omitempty"`
 	Patterns     []string          `json:"patterns,omitempty"`
 }
 
@@ -193,8 +193,8 @@ func synthesizeRegistryPublishManifest(dir string) (*registryPublishManifest, er
 		Author:       strings.TrimSpace(clip.Author),
 		License:      strings.TrimSpace(clip.License),
 		Repository:   strings.TrimSpace(clip.Repository),
-		Commands:     commandMapsFromManifest(inspected),
-		Dependencies: manifestDependenciesValue(inspected),
+		Commands:     commandInfosFromManifest(inspected),
+		Dependencies: manifestDependenciesSpec(inspected),
 		Patterns:     manifestPatternsValue(inspected),
 	}
 
@@ -347,38 +347,32 @@ func defaultWebEntry(dir string) string {
 	return ""
 }
 
-func commandMapsFromManifest(manifest *daemonpkg.ManifestCache) []map[string]any {
+func commandInfosFromManifest(manifest *daemonpkg.ManifestCache) []daemonpkg.CommandInfo {
 	if manifest == nil {
 		return nil
 	}
-	result := make([]map[string]any, 0, len(manifest.CommandDetails))
-	for _, command := range manifest.CommandDetails {
-		name := strings.TrimSpace(command.Name)
-		if name == "" {
-			continue
+	if len(manifest.CommandDetails) > 0 {
+		result := make([]daemonpkg.CommandInfo, 0, len(manifest.CommandDetails))
+		for _, cmd := range manifest.CommandDetails {
+			if strings.TrimSpace(cmd.Name) != "" {
+				result = append(result, cmd)
+			}
 		}
-		item := map[string]any{"name": name}
-		if description := strings.TrimSpace(command.Description); description != "" {
-			item["description"] = description
+		if len(result) > 0 {
+			return result
 		}
-		if input := strings.TrimSpace(command.Input); input != "" {
-			item["input"] = input
-		}
-		if output := strings.TrimSpace(command.Output); output != "" {
-			item["output"] = output
-		}
-		result = append(result, item)
 	}
-	if len(result) == 0 && len(manifest.Commands) > 0 {
+	if len(manifest.Commands) > 0 {
+		result := make([]daemonpkg.CommandInfo, 0, len(manifest.Commands))
 		for _, name := range manifest.Commands {
 			name = strings.TrimSpace(name)
-			if name == "" {
-				continue
+			if name != "" {
+				result = append(result, daemonpkg.CommandInfo{Name: name})
 			}
-			result = append(result, map[string]any{"name": name})
 		}
+		return result
 	}
-	return result
+	return nil
 }
 
 
@@ -387,6 +381,8 @@ func buildRegistryTarball(dir string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve package path: %w", err)
 	}
+
+	ignorePatterns := loadPinixIgnore(absDir)
 
 	var buffer bytes.Buffer
 	gzipWriter := gzip.NewWriter(&buffer)
@@ -403,7 +399,7 @@ func buildRegistryTarball(dir string) ([]byte, error) {
 		if rel == "." {
 			return nil
 		}
-		if shouldSkipTarPath(rel, entry) {
+		if shouldSkipTarPath(rel, entry, ignorePatterns) {
 			if entry.IsDir() {
 				return filepath.SkipDir
 			}
@@ -426,13 +422,42 @@ func buildRegistryTarball(dir string) ([]byte, error) {
 	return buffer.Bytes(), nil
 }
 
-func shouldSkipTarPath(rel string, entry fs.DirEntry) bool {
+func loadPinixIgnore(dir string) []string {
+	data, err := os.ReadFile(filepath.Join(dir, ".pinixignore"))
+	if err != nil {
+		return nil
+	}
+	var patterns []string
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		patterns = append(patterns, line)
+	}
+	return patterns
+}
+
+func shouldSkipTarPath(rel string, entry fs.DirEntry, ignorePatterns []string) bool {
 	rel = filepath.Clean(rel)
 	if rel == "." || rel == "" {
 		return false
 	}
 	top := strings.Split(rel, string(os.PathSeparator))[0]
-	return top == ".git" || top == "node_modules"
+	if top == ".git" || top == "node_modules" {
+		return true
+	}
+	for _, pattern := range ignorePatterns {
+		// Match against the top-level directory name
+		if matched, _ := filepath.Match(pattern, top); matched {
+			return true
+		}
+		// Match against the full relative path
+		if matched, _ := filepath.Match(pattern, filepath.ToSlash(rel)); matched {
+			return true
+		}
+	}
+	return false
 }
 
 func addTarEntry(writer *tar.Writer, rootDir, rel, path string, entry fs.DirEntry) error {
@@ -503,17 +528,16 @@ func manifestDomainValue(manifest *daemonpkg.ManifestCache) string {
 	return strings.TrimSpace(manifest.Domain)
 }
 
-func manifestDependenciesValue(manifest *daemonpkg.ManifestCache) map[string]string {
-	if manifest == nil {
+func manifestDependenciesSpec(manifest *daemonpkg.ManifestCache) map[string]daemonpkg.DependencySpec {
+	if manifest == nil || len(manifest.Dependencies) == 0 {
 		return nil
 	}
-	result := make(map[string]string, len(manifest.Dependencies))
+	result := make(map[string]daemonpkg.DependencySpec, len(manifest.Dependencies))
 	for slot, spec := range manifest.Dependencies {
 		slot = strings.TrimSpace(slot)
-		if slot == "" {
-			continue
+		if slot != "" {
+			result[slot] = spec
 		}
-		result[slot] = firstNonEmpty(strings.TrimSpace(spec.Version), "*")
 	}
 	if len(result) == 0 {
 		return nil
