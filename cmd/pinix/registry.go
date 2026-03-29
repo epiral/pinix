@@ -136,78 +136,14 @@ func normalizeAddSource(source, registryURL string) (string, error) {
 	if source == "" {
 		return "", fmt.Errorf("source is required")
 	}
-
-	// Already in internal canonical form
-	if strings.HasPrefix(source, "registry:") {
-		return source, nil
-	}
-
-	// @scope/name[@version] → registry source
 	if strings.HasPrefix(source, "@") {
-		pkg, version := splitPackageVersionSpec(source)
-		if pkg == "" {
-			return "", fmt.Errorf("invalid registry source %q", source)
-		}
-		resolvedURL := getRegistryURL(registryURL)
-		reg, err := client.NewRegistry(resolvedURL)
+		reg, err := client.NewRegistry(getRegistryURL(registryURL))
 		if err != nil {
 			return "", err
 		}
-		return canonicalRegistrySource(reg.BaseURL(), pkg, version), nil
+		return daemonpkg.NormalizeAddSource(source, reg.BaseURL())
 	}
-
-	// github/user/repo[#branch] → pass through
-	if strings.HasPrefix(source, "github/") {
-		return source, nil
-	}
-
-	// local/name → pass through
-	if strings.HasPrefix(source, "local/") {
-		return source, nil
-	}
-
-	return "", fmt.Errorf("unknown source format %q; use @scope/name, github/user/repo, or local/name", source)
-}
-
-func splitPackageVersionSpec(spec string) (string, string) {
-	spec = strings.TrimSpace(spec)
-	if spec == "" {
-		return "", ""
-	}
-
-	versionIndex := -1
-	if strings.HasPrefix(spec, "@") {
-		slash := strings.Index(spec, "/")
-		if slash <= 1 || slash == len(spec)-1 {
-			return "", ""
-		}
-		if at := strings.LastIndex(spec, "@"); at > slash {
-			versionIndex = at
-		} else if colon := strings.LastIndex(spec, ":"); colon > slash {
-			versionIndex = colon
-		}
-	} else {
-		if at := strings.LastIndex(spec, "@"); at > 0 {
-			versionIndex = at
-		} else if colon := strings.LastIndex(spec, ":"); colon > 0 {
-			versionIndex = colon
-		}
-	}
-
-	if versionIndex <= 0 {
-		return spec, ""
-	}
-	return strings.TrimSpace(spec[:versionIndex]), strings.TrimSpace(spec[versionIndex+1:])
-}
-
-func canonicalRegistrySource(registryURL, pkg, version string) string {
-	registryURL = strings.TrimRight(strings.TrimSpace(registryURL), "/")
-	pkg = strings.TrimSpace(pkg)
-	version = strings.TrimSpace(version)
-	if version == "" {
-		return "registry:" + registryURL + "#" + pkg
-	}
-	return "registry:" + registryURL + "#" + pkg + "@" + version
+	return daemonpkg.NormalizeAddSource(source, "")
 }
 
 func loadRegistryPublishManifest(dir string) (json.RawMessage, *registryPublishManifest, error) {
@@ -445,19 +381,6 @@ func commandMapsFromManifest(manifest *daemonpkg.ManifestCache) []map[string]any
 	return result
 }
 
-func maybeJSONValue(raw string) any {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil
-	}
-	if json.Valid([]byte(raw)) {
-		var value any
-		if err := json.Unmarshal([]byte(raw), &value); err == nil {
-			return value
-		}
-	}
-	return raw
-}
 
 func buildRegistryTarball(dir string) ([]byte, error) {
 	absDir, err := filepath.Abs(strings.TrimSpace(dir))

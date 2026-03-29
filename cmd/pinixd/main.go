@@ -1,23 +1,22 @@
-// Role:    pinixd daemon entrypoint — Hub and Runtime are always separate services
-// Depends: context, flag, fmt, net, os, os/signal, strings, sync, syscall, time, internal/daemon
+// Role:    pinixd daemon entrypoint for Hub, Runtime, and Portal modes
+// Depends: context, flag, fmt, net, os, os/signal, strings, sync, syscall, time, internal/config, internal/daemon, internal/pidfile
 // Exports: main
 
 package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	configpkg "github.com/epiral/pinix/internal/config"
 	"github.com/epiral/pinix/internal/daemon"
 	"github.com/epiral/pinix/internal/pidfile"
 )
@@ -44,12 +43,14 @@ func main() {
 	flag.StringVar(&pidPath, "pid", "", "custom path to PID file (default: ~/.pinix/pinixd.pid)")
 	flag.Parse()
 
+	clientConfig := loadClientConfig()
+
 	// Resolve hub-token: flag > env > config file
 	if hubToken == "" {
 		hubToken = strings.TrimSpace(os.Getenv("PINIX_HUB_TOKEN"))
 	}
 	if hubToken == "" {
-		hubToken = readClientConfigValue("hub_token")
+		hubToken = strings.TrimSpace(clientConfig.HubToken)
 	}
 
 	// Resolve hub: flag > env > config file
@@ -58,7 +59,7 @@ func main() {
 		if v := strings.TrimSpace(os.Getenv("PINIX_HUB")); v != "" {
 			hubURL = v
 		} else {
-			hubURL = readClientConfigValue("hub")
+			hubURL = strings.TrimSpace(clientConfig.Hub)
 		}
 	}
 	if hubOnly && hubURL != "" {
@@ -82,7 +83,7 @@ func main() {
 	if err := pidfile.CheckExistingPIDFile(port, pidPath); err != nil {
 		exitErr(err)
 	}
-	pidCleanup, err := pidfile.WritePIDFile(port, pidPath)
+	pidCleanup, err := pidfile.WritePIDFile(port, hubURL, pidPath)
 	if err != nil {
 		exitErr(fmt.Errorf("write pid file: %w", err))
 	}
@@ -199,22 +200,12 @@ func waitForHub(ctx context.Context, hubURL string, timeout time.Duration) error
 	return fmt.Errorf("timeout waiting for %s", hubURL)
 }
 
-// readClientConfigValue reads a single value from ~/.pinix/client.json.
-// Returns empty string on any error.
-func readClientConfigValue(key string) string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
+func loadClientConfig() *configpkg.ClientConfig {
+	cfg, err := configpkg.ReadClientConfig()
+	if err != nil || cfg == nil {
+		return &configpkg.ClientConfig{}
 	}
-	data, err := os.ReadFile(filepath.Join(home, ".pinix", "client.json"))
-	if err != nil {
-		return ""
-	}
-	var cfg map[string]string
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(cfg[key])
+	return cfg
 }
 
 func exitErr(err error) {

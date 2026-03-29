@@ -10,11 +10,12 @@ option go_package = "github.com/epiral/pinix/gen/go/pinix/v2;pinixv2";
 //
 //  Hub 是实时路由表 + 消息转发器。
 //  Provider 连入 → Clips 出现。Provider 断开 → Clips 消失。
-//  Hub 不维护状态，不做鉴权（Clip Token 透传）。
+//  Hub 不维护状态；Clip Token 只做透传。
 //
 //  认证模型：
-//    Hub Token  → Authorization header（Hub middleware 校验）
+//    Hub Token  → 当前只用于 AddClip / RemoveClip 的管理鉴权（Authorization header）
 //    Clip Token → proto 字段透传（Provider/Clip 自行校验）
+//    ProviderStream / RuntimeStream 当前不要假设有通用的 HTTP header 鉴权语义
 //
 // ============================================================
 

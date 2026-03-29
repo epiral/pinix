@@ -1,6 +1,6 @@
-// Role:    Clip source parsing helpers for registry, GitHub, and local runtime installs
+// Role:    Clip source parsing helpers shared by CLI normalization and daemon installs
 // Depends: fmt, net/url, os, path/filepath, strings
-// Exports: (package-internal helpers)
+// Exports: NormalizeAddSource
 
 package daemon
 
@@ -25,8 +25,35 @@ type sourceRef struct {
 	Source   string
 	Package  string
 	Version  string
-	Scope    string
 	Registry string
+}
+
+func NormalizeAddSource(source, registryURL string) (string, error) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return "", daemonError{Code: "invalid_argument", Message: "source is required"}
+	}
+
+	if strings.HasPrefix(source, "@") {
+		registryURL = normalizeRegistryURL(registryURL)
+		if registryURL == "" {
+			return "", daemonError{Code: "invalid_argument", Message: "registry URL is required"}
+		}
+		if !isRegistryURL(registryURL) {
+			return "", daemonError{Code: "invalid_argument", Message: fmt.Sprintf("invalid registry URL %q", registryURL)}
+		}
+		pkg, version := splitPackageVersion(source)
+		if pkg == "" {
+			return "", daemonError{Code: "invalid_argument", Message: fmt.Sprintf("invalid registry source %q", source)}
+		}
+		return canonicalRegistrySource(registryURL, pkg, version), nil
+	}
+
+	ref, err := parseSource(source)
+	if err != nil {
+		return "", err
+	}
+	return ref.Source, nil
 }
 
 func parseSource(source string) (sourceRef, error) {
@@ -38,11 +65,6 @@ func parseSource(source string) (sourceRef, error) {
 	// registry:<url>#@scope/name[@version] — internal canonical form
 	if strings.HasPrefix(source, "registry:") {
 		return parseRegistrySource(strings.TrimSpace(strings.TrimPrefix(source, "registry:")))
-	}
-
-	// @scope/name[@version] — registry shorthand
-	if strings.HasPrefix(source, "@") {
-		return parseRegistryShorthand(source)
 	}
 
 	// github/user/repo[#branch]
@@ -83,35 +105,8 @@ func parseSource(source string) (sourceRef, error) {
 
 	return sourceRef{}, daemonError{
 		Code:    "invalid_argument",
-		Message: "unknown source format; use @scope/name, github/user/repo, or local/name",
+		Message: "unknown source format; use registry:<url>#@scope/name[@version], github/user/repo, or local/name",
 	}
-}
-
-func parseRegistryShorthand(spec string) (sourceRef, error) {
-	spec = strings.TrimSpace(spec)
-	if !strings.HasPrefix(spec, "@") {
-		return sourceRef{}, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("invalid registry source %q", spec)}
-	}
-	pkg, version := splitPackageVersion(spec)
-	if pkg == "" {
-		return sourceRef{}, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("invalid registry source %q", spec)}
-	}
-	scope, name, ok := splitScopedPackage(pkg)
-	if !ok {
-		return sourceRef{}, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("invalid scoped package %q; expected @scope/name", pkg)}
-	}
-	canonical := pkg
-	if version != "" {
-		canonical = pkg + "@" + version
-	}
-	_ = name
-	return sourceRef{
-		Kind:    sourceTypeRegistry,
-		Source:  canonical,
-		Package: pkg,
-		Version: version,
-		Scope:   scope,
-	}, nil
 }
 
 func parseRegistrySource(spec string) (sourceRef, error) {
@@ -134,13 +129,11 @@ func parseRegistrySource(spec string) (sourceRef, error) {
 	if strings.HasSuffix(packageSpec, "@") || strings.HasSuffix(packageSpec, ":") {
 		return sourceRef{}, daemonError{Code: "invalid_argument", Message: fmt.Sprintf("invalid registry version in %q", packageSpec)}
 	}
-	scope, _, _ := splitScopedPackage(pkg)
 	return sourceRef{
 		Kind:     sourceTypeRegistry,
 		Source:   canonicalRegistrySource(registryURL, pkg, version),
 		Package:  pkg,
 		Version:  version,
-		Scope:    scope,
 		Registry: registryURL,
 	}, nil
 }
