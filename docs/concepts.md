@@ -1,8 +1,6 @@
 # Core Concepts
 
-Pinix 的核心概念，面向开源版开发者和使用者。
-
-完整的产品愿景见 [pinix.ai docs](https://pinix.ai/docs)。
+Pinix 的核心概念，面向任何初次接触 Pinix 的人。
 
 ---
 
@@ -10,29 +8,44 @@ Pinix 的核心概念，面向开源版开发者和使用者。
 
 Pinix 让 AI Agent 能使用任何设备的任何能力。
 
-开源版包含：
+AI 的鸿沟不是模型本身，而是使用模型的能力——知道问什么、怎么设置工具、怎么纠错、怎么拆解任务。Pinix 通过 Clip 生态消除这个鸿沟，让 Agent 普适化。
 
-- **pinixd** — Hub + Runtime，一个 binary 搞定
-- **CLI** — `pinix add`, `pinix create`, `pinix publish` 等命令
-- **Portal** — 内嵌在 pinixd 的 Web UI
-- **Proto** — Connect-RPC 协议定义（ProviderStream + RuntimeStream + HubService）
+Pinix 既是基础设施（Hub + 协议），也是产品（Portal + clip-dock）。
 
 ---
 
 ## What is a Clip?
 
-Clip 是 Pinix 的核心抽象，一个三合一的功能单元：
+Clip 是 Pinix 的核心抽象——一个三合一的功能单元：
 
-| 层 | 是什么 |
-|---|---|
-| **知识** | 面向 Agent 的方法论——什么场景用、怎么用、和谁配合（manifest: patterns, entities, schema） |
-| **能力** | 封装的执行逻辑——浏览器操作、设备 API、业务流程 |
-| **资产** | 可组合、可复用——clip 依赖 clip，形成能力网络 |
+### 知识层（Knowledge Layer）
 
-Clip 有两种类型：
+面向 Agent 的方法论——什么场景用、怎么用、和谁配合。
 
-- **Edge Clip**：设备驱动，直接绑定硬件/OS API（截屏、GPS、Docker 等）。自己实现 Provider 协议。
-- **SDK Clip（Runtime Clip）**：应用/服务，由 Runtime 管理生命周期。通过 `pinix add` 安装。
+Clip 的 manifest 告诉 Agent：我能做什么（commands + patterns）、什么时候该用我（patterns + entities）、怎么调用我（input schema）。Builder 的智慧编码在知识层，降低了对 Agent 模型能力的要求。
+
+### 能力层（Capability Layer）
+
+封装的执行逻辑——浏览器操作、设备 API、业务流程。
+
+复杂逻辑在 Clip 里跑，不在模型推理里。Agent 不需要知道"怎么做"，只需要知道"调谁"。
+
+### 资产层（Asset Layer）
+
+可组合、可复用、可沉淀——clip 用 clip，越用越厚。
+
+Clip 可以依赖其他 Clip，形成能力网络。一个 twitter Clip 可以依赖 browser Clip，一个 agent-clip 可以调度所有已安装的 Clip。
+
+### Clip vs MCP Tool vs GPTs
+
+| | Clip | MCP Tool | GPTs |
+|---|---|---|---|
+| 知识层 | manifest（patterns, entities, schema） | 无（靠 tool description） | system prompt |
+| 能力层 | 完整执行逻辑 | 函数调用 | 受限（Actions） |
+| 可组合 | clip 依赖 clip | 不支持 | 不支持 |
+| 省 token | 复杂逻辑在 Clip 里 | 取决于实现 | 全在模型推理 |
+| 分发 | Registry + pinix add | 无标准分发 | GPT Store |
+| 设备能力 | Edge Clip 直接绑定 | 需额外实现 | 不支持 |
 
 ---
 
@@ -40,85 +53,94 @@ Clip 有两种类型：
 
 Hub 是路由中心，所有 Clip 在 Hub 上被发现和调用。
 
-- Hub 是唯一路由器——Agent 通过 Hub 调用 Clip，不直接连 Clip
-- Hub 管理 alias 分配——每个 Clip 有唯一别名（自动生成 `{package}-{4hex}` 或用户指定 `--alias`）
-- `pinixd --port 9000` 启动本地 Hub + Runtime
+- Hub 是唯一路由器。Agent 通过 Hub 调用 Clip，不直接连 Clip。
+- Hub 管理 alias 分配——每个 Clip 在 Hub 上有唯一别名。
+- `pinixd --port 9000` 启动本地 Hub。Cloud Hub（hub.pinix.ai）提供云端版本。
 
 ---
 
-## What is a Provider?
+## What is a Provider / Edge Clip?
 
-Provider 是连接协议——通过 ProviderStream 把 Clip 注册到 Hub。
+### Edge Clip
 
-- Edge Clip 自己是 Provider（自实现 ProviderStream）
-- Runtime 作为 Provider 管理 SDK Clip（RuntimeStream 管理生命周期，ProviderStream 注册到 Hub）
+Edge Clip = 设备驱动——直接绑定硬件/OS API 的 Clip。
 
-Provider 和 Runtime 是分开的协议：
-- **ProviderStream**：注册 clip、转发 invoke、heartbeat
-- **RuntimeStream**：install、start、stop clip
+Edge Clip 暴露设备的原始能力：截屏、GPS、Docker、剪贴板、通知、系统信息等。Edge Clip 自己实现 Provider 协议，直接连接 Hub。
 
----
+clip-dock（如 clip-dock-macos）是设备端产品——一装就暴露这台设备的所有 Edge Clip 能力。
 
-## Package Naming
+### Provider
 
-Clip 使用 `@scope/name` 格式标识：
+Provider 是连接协议——通过 ProviderStream 把 Clip 注册到 Hub、转发 invoke、维护心跳。
 
-```
-@scope/name          -> Registry 包（社区发布）
-github/user/repo     -> GitHub 包
-local/name           -> 本地包（仅当前 Hub）
-```
+- Edge Clip 自己是 Provider
+- Runtime Clip（SDK Clip）由 Runtime 管理，Runtime 作为 Provider
 
-安装示例：
+### SDK Clip（Runtime Clip）
 
-```bash
-pinix add @cp/todo                        # Registry
-pinix add github/user/my-clip             # GitHub
-pinix add local/dev-tool --path ./my-clip # 本地
-```
+SDK Clip = 应用/服务——由 Runtime 管理生命周期，通过 `pinix add` 安装，crash recovery。
+
+SDK Clip 不依赖特定硬件，跑在 Runtime 上。示例：twitter clip、todo clip、agent-clip。
 
 ---
 
-## Dependencies and Bindings
+## What is agent-clip?
 
-Clip 通过 slot 机制声明依赖：
+agent-clip 是 Pinix 专属 Agent——围绕 Clip 生态设计的 AI Agent。
 
-```jsonc
-// clip.json
-{
-  "name": "@cp/twitter",
-  "dependencies": {
-    "browser": "@pinixai/browser"   // slot "browser" -> package constraint
-  }
-}
-```
-
-Bindings 存在 Clip 本地的 `bindings.json`，映射 slot 到 Hub 上的实际 alias。CLI/Portal 辅助绑定，用户决定。
-
----
-
-## Protocol Stack
-
-| 层 | 协议 | 用途 |
-|---|---|---|
-| External | Connect-RPC | Provider <-> Hub, Runtime <-> Hub, Client <-> Hub |
-| Internal | IPC v2 NDJSON (stdin/stdout) | Clip <-> Runtime |
-| Registry | REST API | search, publish, auth |
-
----
-
-## Architecture Overview
+### 核心原则：Agent 薄，Clip 厚
 
 ```
-Agent (Claude Code / Cursor / agent-clip / ...)
+agent-clip 的职责：
+  ├── 意图识别 -> 理解用户想做什么
+  ├── Clip 选择 -> 从 manifest（patterns/entities/schema）选对 Clip
+  ├── 调度执行 -> 调对 Command，传对参数
+  ├── 记忆 -> memory clip（跨会话上下文）
+  └── 技能 -> clip 就是 skill，不需要内建任何能力
+
+agent-clip 不做的事：
+  ├── 不做复杂业务逻辑（在 Clip 里）
+  ├── 不做设备操作（在 Edge Clip 里）
+  └── 不需要 SOTA 模型（Sonnet 级别就够，因为只做路由）
+```
+
+### 为什么 Sonnet 级别就够？
+
+Clip 的知识层（manifest）已经告诉了 Agent：我能做什么、什么时候该用我、怎么调用我。Agent 只要读懂 manifest + 匹配意图 + 正确调用，不需要推理复杂逻辑。
+
+**Builder 的智慧编码在 Clip 的知识层，降低了对 Agent 模型能力的要求。**
+
+### 工作流程示例
+
+```
+用户："帮我搜一下推特上 AI 的热门"
   |
-  v
-Hub (pinixd)  <--- Connect-RPC ---> Provider (Edge Clip / Runtime)
-  |                                      |
-  v                                      v
-Clip A (alias: todo-a3f2)           Clip B (alias: browser-b1c9)
+agent-clip：
+  1. 读 manifest -> twitter clip 有 search command，pattern 匹配
+  2. 构造参数 -> {query: "AI", sort: "hot"}
+  3. 调用 twitter.search -> Hub 路由 -> twitter clip 执行
+  4. 返回结果给用户
+  |
+所有复杂逻辑（打开浏览器、滚动、解析）都在 twitter clip 里
+Agent 不需要知道这些
 ```
 
-- Agent 通过 MCP / CLI / HTTP 连接 Hub
-- Hub 路由 invoke 到目标 Clip
-- Clip 执行并返回结果
+---
+
+## Builder vs User
+
+| | Builder | User |
+|---|---|---|
+| 是谁 | 懂 code agent，有领域专长 | 普通人，用普通模型 |
+| 做什么 | 创造 Clip | 通过 Agent + Clip 受益 |
+| 需要什么 | DX、harness、分发、名、利 | 事情被搞定、安装简单、不需要技术知识 |
+
+### Builder 旅程
+
+理解 Clip 概念 -> `pinix create` 脚手架 -> 开发 -> `pinix add` 测试 -> `pinix publish` 发布
+
+### User 旅程
+
+安装 clip-dock（设备能力自动暴露）-> `pinix add` 场景 Clip -> Agent 里说一句话 -> 事情被完成了
+
+**价值转化：Builder 的智慧 -> Clip -> User 的能力。**
