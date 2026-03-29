@@ -734,8 +734,10 @@ func localClipToRegistration(clip ClipConfig) *pinixv2.ClipRegistration {
 		Commands:       internalCommandsToProto(manifest.CommandDetails),
 		HasWeb:         manifest.HasWeb,
 		TokenProtected: clip.Token != "",
-		Dependencies:   dependencySlots(manifest.Dependencies),
-		Patterns:       append([]string(nil), manifest.Patterns...),
-		Entities:       entitiesToProto(manifest.Entities),
+		// ClipRegistration.dependencies is slot-name only today, so local
+		// package/version constraints are flattened until the proto is upgraded.
+		Dependencies: dependencySlots(manifest.Dependencies),
+		Patterns:     append([]string(nil), manifest.Patterns...),
+		Entities:     entitiesToProto(manifest.Entities),
 	}
 }

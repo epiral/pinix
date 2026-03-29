@@ -301,11 +301,6 @@ func (m *ProviderManager) HasClip(name string) bool {
 	return m.lookupClip(strings.TrimSpace(name)) != nil
 }
 
-func (m *ProviderManager) IsAvailable(name string) bool {
-	ref := m.lookupClip(strings.TrimSpace(name))
-	return ref != nil && ref.session.alive()
-}
-
 func (m *ProviderManager) OpenInvoke(clipName, command string, input []byte, clipToken string) (*ProviderInvokeHandle, error) {
 	clipName = strings.TrimSpace(clipName)
 	if clipName == "" {
@@ -981,6 +976,9 @@ func dependencySlotsToSpecs(slots []string) map[string]DependencySpec {
 	if len(slots) == 0 {
 		return nil
 	}
+	// ClipRegistration currently carries dependency slot names only.
+	// Package/version constraints cannot be preserved here until the proto
+	// grows a structured dependency field for provider registrations.
 	result := make(map[string]DependencySpec, len(slots))
 	for _, slot := range slots {
 		slot = strings.TrimSpace(slot)
