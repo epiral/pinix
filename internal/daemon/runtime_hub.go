@@ -187,7 +187,11 @@ func (c *runtimeHubConnector) runProviderSession(parent context.Context) error {
 		slog.Error("hub: failed to build register message", "error", err)
 		return err
 	}
-	slog.Info("hub: sending register message", "provider", c.providerName, "clips", len(register.GetPayload().(*pinixv2.ProviderMessage_Register).Register.GetClips()))
+	regClips := register.GetPayload().(*pinixv2.ProviderMessage_Register).Register.GetClips()
+	slog.Info("hub: sending register message", "provider", c.providerName, "clips", len(regClips))
+	for _, rc := range regClips {
+		slog.Info("hub: registering clip", "alias", rc.GetAlias(), "package", rc.GetPackage(), "has_web", rc.GetHasWeb())
+	}
 	if err := c.sendProvider(stream, register); err != nil {
 		slog.Error("hub: failed to send register message", "error", err)
 		return err

@@ -1151,6 +1151,7 @@ func registeredManifestForClip(clip ClipConfig, manifest *ipc.Manifest) (*Manife
 		Domain:         strings.TrimSpace(manifest.Domain),
 		Description:    strings.TrimSpace(manifest.Description),
 		CommandDetails: parseIPCCommands(manifest.Commands),
+		HasWeb:         manifest.HasWeb,
 		Dependencies:   ipcDependencySpecsToInternal(manifest.Dependencies),
 		Patterns:       normalizeStrings(manifest.Patterns),
 		Entities:       manifest.Entities,
