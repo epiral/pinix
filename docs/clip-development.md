@@ -4,7 +4,7 @@
 
 ## 1. 开发框架
 
-当前 Clip 开发框架是 `@pinixai/core@0.3.0`。
+当前 Clip 开发框架是 `@pinixai/core@0.5.1`。
 
 它把同一个 Clip 暴露成四种运行方式：
 
@@ -17,13 +17,42 @@
 
 ```json
 {
-  "name": "clip-todo",
+  "name": "@yourscope/my-clip",
+  "version": "0.1.0",
   "type": "module",
   "dependencies": {
-    "@pinixai/core": "^0.3.0"
+    "@pinixai/core": "^0.5.0"
   }
 }
 ```
+
+### `clip.json`
+
+如果你打算发布到 Pinix Registry，在项目根目录放一个 `clip.json`：
+
+```json
+{
+  "name": "@yourscope/my-clip",
+  "version": "0.1.0",
+  "description": "My awesome Clip",
+  "runtime": "bun",
+  "main": "index.ts"
+}
+```
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `name` | 是 | 包名，发布时必须是 `@scope/name` 格式 |
+| `version` | 是 | 语义版本号 |
+| `description` | 发布时必填 | 一句话描述 |
+| `runtime` | 否 | 运行时，默认 `bun` |
+| `main` | 否 | 入口文件，默认 `index.ts` |
+| `web` | 否 | Web UI 目录，默认 `web` |
+| `author` | 否 | 作者 |
+| `license` | 否 | 许可证 |
+| `repository` | 否 | 仓库 URL |
+
+如果没有 `clip.json`，`pinix publish` 会从 `package.json` 和运行时 manifest 自动提取信息。
 
 ## 2. `Clip` 类、`@command` 装饰器和 `handler`
 
@@ -302,7 +331,58 @@ Portal 会把 `POST /clips/<clip-name>/api/<command>` 代理到本地 Clip comma
 
 当前实现里，Portal 下的 Clip Web UI 只支持 **安装在本地 `pinixd` 的 Clip**；provider-backed Clip 的 `GetClipWeb` 代理还没有实现。
 
-## 8. 参考实现
+## 8. 发布到 Pinix Registry
+
+### 前置步骤
+
+```bash
+# 注册账号
+pinix register
+
+# 或登录已有账号
+pinix login
+
+# 确认身份
+pinix whoami
+```
+
+### 发布
+
+在 Clip 项目目录下：
+
+```bash
+pinix publish
+```
+
+发布流程：
+
+1. `pinix publish` 读取 `clip.json`（优先）或 `package.json`，构建 manifest。
+2. 如果 `clip.json` 中没有 `commands`，会通过 `bun run index.ts --ipc` 临时启动 Clip 获取运行时 manifest。
+3. 打包项目目录为 tarball（排除 `.git` 和 `node_modules`）。
+4. 上传 manifest + tarball 到 Registry。
+
+发布要求：
+
+- `name` 必须是 `@scope/name` 格式。
+- `version`、`description`、`commands` 必填。
+- 必须先 `pinix login` 获取凭据。
+
+可选参数：
+
+```bash
+pinix publish --tag beta                  # 指定 dist-tag
+pinix publish --registry https://...      # 指定非默认 Registry
+pinix publish /path/to/clip               # 指定目录
+```
+
+### 安装已发布的 Clip
+
+```bash
+pinix add @yourscope/my-clip
+pinix add @yourscope/my-clip@0.1.0        # 指定版本
+```
+
+## 9. 参考实现
 
 ### `clip-todo-web`
 

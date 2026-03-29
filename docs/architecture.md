@@ -136,20 +136,91 @@ macbook (Edge Clip)
 
 `camera` 只是推荐模式，不是本仓库内置的系统 Clip。
 
+## 包标识与来源
+
+Pinix V2 使用三种来源前缀标识 Clip 包：
+
+| 前缀 | 格式 | 示例 | 安装方式 |
+|---|---|---|---|
+| `@scope/` | `@scope/name[@version]` | `@pinixai/todo@0.3.0` | 从 Pinix Registry 下载 tarball |
+| `github/` | `github/user/repo[#branch]` | `github/epiral/clip-todo` | `git clone` + `bun install` |
+| `local/` | `local/name --path /abs/path` | `local/my-clip --path /home/me/clip` | 复制目录 + `bun install` |
+
+### Registry 来源解析
+
+当 CLI 收到 `@scope/name` 格式的来源时：
+
+1. CLI 从 flag `--registry` > 环境变量 `PINIX_REGISTRY` > `~/.pinix/client.json` 中的 `registry` 字段 > 默认值 `https://api.pinix.ai` 解析 Registry URL。
+2. 构造内部规范形式 `registry:<url>#@scope/name[@version]`，发送给 Hub。
+3. Runtime 从 Registry 下载 tarball、校验 shasum、解压、`bun install`。
+
+### 别名（Alias）
+
+Hub 中每个 Clip 都有全局唯一的 **alias**。alias 是 Clip 在 Hub 路由表中的唯一标识。
+
+- 用户可通过 `--alias` 指定。
+- 不指定时，Hub 自动生成 `{base}-{4hex}` 格式（如 `todo-a3f1`）。
+  - `@scope/name` → base 取 `name` 部分。
+  - `github/user/repo` → base 取 `repo`。
+  - `local/name` → base 取 `name`。
+
+### `clip.json`
+
+Clip 项目根目录可选放一个 `clip.json` 文件，用于 Registry 发布时补充元数据：
+
+```json
+{
+  "name": "@pinixai/todo",
+  "version": "0.3.2",
+  "description": "Simple todo list Clip",
+  "runtime": "bun",
+  "main": "index.ts"
+}
+```
+
+发布到 Registry 时，`name` 必须是 `@scope/name` 格式。
+
+## Cloud Hub 连接
+
+Runtime 可以连接到远端 Cloud Hub，通过 `ProviderStream` + `RuntimeStream` 双向流注册本地 Clip。
+
+### 连接配置
+
+```bash
+# 命令行参数
+pinixd --hub https://hub.pinix.ai --hub-token <jwt>
+
+# 环境变量
+PINIX_HUB=https://hub.pinix.ai
+PINIX_HUB_TOKEN=<jwt>
+
+# 持久化配置
+pinix config set hub https://hub.pinix.ai
+pinix config set hub-token <jwt>
+```
+
+优先级：命令行参数 > 环境变量 > `~/.pinix/client.json` 配置文件。
+
+### Registry 配置
+
+```bash
+pinix config set registry https://api.pinix.ai
+```
+
 ## 当前代码里的运行模式
 
 ```text
 pinixd                     = Hub + Runtime + Portal
 pinixd --hub-only          = Hub + Portal
-pinixd --hub http://...    = Runtime Provider
+pinixd --hub http://...    = Runtime Provider (ProviderStream + RuntimeStream)
 pinix                      = CLI + MCP gateway
 ```
 
 当前实现里：
 
-- `pinixd` 默认模式适合单机全包。
-- `pinixd --hub-only` 适合中心 Hub。
-- `pinixd --hub <url>` 适合把本地 Runtime 接到远端 Hub。
+- `pinixd` 默认模式适合单机全包。Hub + Runtime 在同一进程中，Runtime 通过 Connect-RPC 连本地 Hub。
+- `pinixd --hub-only` 适合中心 Hub。不依赖 Bun。
+- `pinixd --hub <url>` 连接外部 Hub，同时建立两条流：`ProviderStream`（注册 Clip、转发 invoke）和 `RuntimeStream`（接受 install/remove 命令）。
 - `bb-browserd` 是 Provider / Edge Clip 的参考实现。
 
 ## 设计记录
