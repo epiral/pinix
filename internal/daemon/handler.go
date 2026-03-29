@@ -6,11 +6,28 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+func readDefaultRegistryURL() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".pinix", "client.json"))
+	if err != nil {
+		return ""
+	}
+	var cfg map[string]string
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(cfg["registry"])
+}
 
 type Handler struct {
 	registry *Registry
@@ -63,6 +80,16 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 	ref, err := parseSource(params.Source)
 	if err != nil {
 		return nil, err
+	}
+
+	// If registry shorthand (@scope/name) without explicit URL, fill from client config
+	if ref.Kind == sourceTypeRegistry && ref.Registry == "" {
+		regURL := readDefaultRegistryURL()
+		if regURL == "" {
+			return nil, daemonError{Code: "internal", Message: "registry URL is required; set with: pinix config set registry <url>"}
+		}
+		ref.Registry = regURL
+		ref.Source = canonicalRegistrySource(regURL, ref.Package, ref.Version)
 	}
 
 	alias := normalizeName(params.RequestedAlias)
