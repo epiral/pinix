@@ -200,40 +200,74 @@ sequenceDiagram
 
 ### 2.5 Clip 安装（pinix add）
 
-**场景**：用户执行 `pinix add clip-todo`，CLI 通过 Hub 发给 Runtime，Runtime 下载、安装、启动 Clip，然后注册到 Hub。
+**场景**：用户执行 `pinix add @pinixai/todo`，CLI 通过 Hub 发给 Runtime，Runtime 下载、安装、启动 Clip，然后注册到 Hub。
+
+#### 2.5.1 本地 Runtime 安装
 
 ```mermaid
 sequenceDiagram
     participant CLI as pinix CLI
     participant Hub as Hub (HubService)
     participant Runtime as pinixd Runtime
-    participant NPM as npm / Pinix Registry
+    participant Registry as Pinix Registry
     participant Clip as clip-todo (Bun)
 
-    CLI->>Hub: RPC AddClip {source:"clip-todo", provider:"pinixd"}
+    CLI->>CLI: normalizeAddSource("@pinixai/todo") → "registry:https://api.pinix.ai#@pinixai/todo"
+    CLI->>Hub: RPC AddClip {source:"registry:https://api.pinix.ai#@pinixai/todo"}
     Hub->>Hub: 校验 super_token (Authorization header)
-    Hub->>Runtime: 本地 handler.handleAdd()
-    Runtime->>Runtime: parseSource("clip-todo") → npm 类型
-    Runtime->>NPM: bun add clip-todo (安装到 ~/.pinix/clips/.staging-todo/)
-    NPM-->>Runtime: 安装完成
-    Runtime->>Runtime: 移动到 ~/.pinix/clips/todo/
+    Hub->>Hub: ReserveAlias → auto-generate "todo-a3f1"
+    Hub->>Runtime: handler.handleAdd()
+    Runtime->>Runtime: parseSource() → registry 类型
+    Runtime->>Registry: GET package doc + download tarball
+    Registry-->>Runtime: tarball + shasum
+    Runtime->>Runtime: verify shasum, extract, bun install
+    Runtime->>Runtime: 移动到 ~/.pinix/clips/todo-a3f1/
     Runtime->>Clip: spawn 进程获取 manifest
     Clip->>Runtime: IPC register {manifest:{...}}
     Runtime->>Clip: IPC registered
     Runtime->>Runtime: 保存到 config.json
     Runtime->>Hub: Clip 可用
-    Hub->>CLI: AddClipResponse {clip: {name:"todo", package:"clip-todo", version:"0.2.0",...}}
-    CLI->>CLI: 输出 "todo 已安装 (0.2.0)"
+    Hub->>CLI: AddClipResponse {clip: {name:"todo-a3f1", package:"@pinixai/todo", version:"0.3.2",...}}
+```
+
+#### 2.5.2 远程 Runtime 安装（RuntimeStream）
+
+当 Hub 没有本地 Runtime（`--hub-only`），或指定了远程 Provider：
+
+```mermaid
+sequenceDiagram
+    participant CLI as pinix CLI
+    participant Hub as Hub (HubService)
+    participant RuntimeMgr as RuntimeManager
+    participant Remote as 远程 pinixd (RuntimeStream)
+
+    CLI->>Hub: RPC AddClip {source:"registry:...#@pinixai/todo", provider:"pinixd-macbook-9001"}
+    Hub->>Hub: 校验 super_token, ReserveAlias
+    Hub->>RuntimeMgr: OpenInstall(provider, source, alias, token)
+    RuntimeMgr->>Remote: HubRuntimeMessage.install_command {request_id, source, alias, clip_token}
+    Remote->>Remote: handler.handleAddTrusted() → 下载、安装、启动
+    Remote->>Hub: ProviderMessage.clip_added {clip registration}
+    Remote->>RuntimeMgr: RuntimeMessage.install_result {request_id, clip info}
+    RuntimeMgr->>Hub: InstallResult
+    Hub->>CLI: AddClipResponse {clip: {...}}
 ```
 
 **支持的 source 格式**：
 
-| 格式 | 示例 | 说明 |
-|---|---|---|
-| npm 包名 | `clip-todo` | 通过 `bun add` 安装 |
-| Pinix Registry | `todo` / `todo:0.2.0` | 从 Pinix Registry 下载 tarball |
-| GitHub | `github:epiral/clip-xhs` | `git clone` + `bun install` |
-| 本地路径 | `./my-clip` | 复制目录 + `bun install` |
+| 前缀 | CLI 输入 | 内部规范形式 | 安装方式 |
+|---|---|---|---|
+| `@scope/` | `@pinixai/todo` | `registry:<url>#@pinixai/todo` | 从 Pinix Registry 下载 tarball |
+| `@scope/@version` | `@pinixai/todo@0.3.0` | `registry:<url>#@pinixai/todo@0.3.0` | 指定版本下载 |
+| `github/` | `github/epiral/clip-todo` | `github/epiral/clip-todo` | `git clone` + `bun install` |
+| `github/#branch` | `github/epiral/clip-todo#main` | `github/epiral/clip-todo#main` | 指定分支 clone |
+| `local/` | `local/my-clip --path /path` | `local/my-clip:/path` | 复制目录 + `bun install` |
+
+**Source 解析流程**：
+
+1. CLI 收到 `@scope/name` → 解析 Registry URL → 构造 `registry:<url>#@scope/name[@version]`
+2. CLI 收到 `github/...` → 直接透传
+3. CLI 收到 `local/...` → 拼接 `--path` 参数 → `local/name:/abs/path`
+4. Hub `AddClip` 收到 source → `parseSource()` 解析 → `installClip()` 按类型分派
 
 ### 2.6 Clip 卸载（pinix remove）
 
@@ -308,6 +342,7 @@ Proto 定义文件：`proto/pinix/v2/hub.proto`
 | RPC | 类型 | 作用 | 认证 |
 |---|---|---|---|
 | `ProviderStream` | bidi-stream | Provider / Edge Clip 接入 Hub | Hub Token |
+| `RuntimeStream` | bidi-stream | Runtime 接入 Hub（接受 install/remove 命令） | Hub Token |
 | `ListClips` | unary | 列出当前可用 Clip | Hub Token |
 | `ListProviders` | unary | 列出当前在线 Provider | Hub Token |
 | `GetManifest` | unary | 获取指定 Clip 的完整 Manifest | Hub Token |
@@ -316,6 +351,9 @@ Proto 定义文件：`proto/pinix/v2/hub.proto`
 | `InvokeStream` | bidi-stream | 双向流调用（音频流、实时会话） | Hub Token + Clip Token |
 | `AddClip` | unary | 安装并注册 Clip | Super Token |
 | `RemoveClip` | unary | 卸载并移除 Clip | Super Token |
+| `GetBindings` | unary | 获取 Clip 的 slot 绑定 | Hub Token |
+| `SetBinding` | unary | 设置 Clip 的 slot 绑定 | Hub Token |
+| `RemoveBinding` | unary | 移除 Clip 的 slot 绑定 | Hub Token |
 
 ### 3.2 认证模型
 
@@ -331,13 +369,13 @@ Proto 定义文件：`proto/pinix/v2/hub.proto`
 
 | 消息 | 用途 | 关键字段 |
 |---|---|---|
-| `RegisterRequest` | 首次注册，携带所有 Clip | `provider_name`, `accepts_manage`, `clips[]` |
+| `RegisterRequest` | 首次注册，携带所有 Clip | `provider_name`, `clips[]` |
 | `ClipAdded` | 运行中新增 Clip | `clip` (ClipRegistration), `request_id` |
 | `ClipRemoved` | 运行中移除 Clip | `name`, `request_id` |
 | `InvokeResult` | 返回调用结果 | `request_id`, `output`, `error`, `done` |
 | `Heartbeat` (ping) | 心跳探测 | `sent_at_unix_ms` |
-| `ManageResult` | add/remove 操作完成确认 | `request_id`, `error` |
 | `GetClipWebResult` | Web 文件内容返回 | `request_id`, `content`, `content_type`, `etag` |
+| `ClipStatusChanged` | Clip 进程状态变更 | `name`, `status`, `message` |
 
 #### Hub -> Provider (`HubMessage`)
 
@@ -346,9 +384,8 @@ Proto 定义文件：`proto/pinix/v2/hub.proto`
 | `RegisterResponse` | 注册成功/失败 | `accepted`, `message` |
 | `InvokeCommand` | Hub 转发调用请求 | `request_id`, `clip_name`, `command`, `input`, `clip_token` |
 | `InvokeInput` | 双向流后续输入 | `request_id`, `data`, `done` |
-| `ManageCommand` | Hub 转发 add/remove | `request_id`, `action` |
 | `Heartbeat` (pong) | 心跳回复 | `sent_at_unix_ms` |
-| `GetClipWebCommand` | 请求读取 Web 文件 | `request_id`, `clip_name`, `path` |
+| `GetClipWebCommand` | 请求读取 Web 文件 | `request_id`, `clip_name`, `path`, `offset`, `length`, `if_none_match` |
 
 ### 3.4 Invoke 三种模式
 
@@ -362,19 +399,21 @@ Proto 定义文件：`proto/pinix/v2/hub.proto`
 
 ```protobuf
 message ClipRegistration {
-  string name = 1;              // 实例名，Hub 内唯一
-  string package = 2;           // 包名，可重复
+  string alias = 1;             // 实例别名，Hub 内唯一
+  string package = 2;           // 包名（如 @pinixai/todo）
   string version = 3;           // 版本号
   string domain = 4;            // 功能领域
   repeated CommandInfo commands = 5;
   bool has_web = 6;             // 是否有 web/ 目录
   repeated string dependencies = 7;
   bool token_protected = 8;     // 是否需要 Clip Token
+  repeated string patterns = 10;       // 推荐调用模式
+  map<string, string> entities = 11;   // 实体 JSON Schema
 }
 
 message ClipInfo {
-  string name = 1;
-  string package = 2;
+  string name = 1;              // alias
+  string package = 2;           // 包名（如 @pinixai/todo）
   string version = 3;
   string provider = 4;          // 所属 Provider 名
   string domain = 5;
@@ -382,8 +421,50 @@ message ClipInfo {
   bool has_web = 7;
   bool token_protected = 8;
   repeated string dependencies = 9;
+  ClipStatus status = 10;       // RUNNING / SLEEPING / ERROR
+  string status_message = 11;
 }
 ```
+
+### 3.6 RuntimeStream 消息
+
+`RuntimeStream` 是 Hub 与远程 Runtime 之间的管理协议，用于远程安装/卸载 Clip。
+
+#### Runtime -> Hub (`RuntimeMessage`)
+
+| 消息 | 用途 | 关键字段 |
+|---|---|---|
+| `RuntimeRegister` | 首次注册 Runtime 信息 | `name`, `hostname`, `os`, `arch`, `supported_runtimes` |
+| `InstallResult` | 安装操作完成 | `request_id`, `error`, `clip` (ClipInfo) |
+| `RemoveResult` | 卸载操作完成 | `request_id`, `error` |
+| `Heartbeat` (ping) | 心跳探测 | `sent_at_unix_ms` |
+
+#### Hub -> Runtime (`HubRuntimeMessage`)
+
+| 消息 | 用途 | 关键字段 |
+|---|---|---|
+| `RuntimeRegisterResponse` | 注册成功/失败 | `accepted`, `message` |
+| `InstallCommand` | Hub 下发安装命令 | `request_id`, `source`, `alias`, `clip_token` |
+| `RemoveCommand` | Hub 下发卸载命令 | `request_id`, `alias` |
+| `Heartbeat` (pong) | 心跳回复 | `sent_at_unix_ms` |
+
+#### InstallCommand / InstallResult 流程
+
+```mermaid
+sequenceDiagram
+    participant Hub as Hub
+    participant Runtime as Remote Runtime (RuntimeStream)
+    participant Provider as Same Runtime (ProviderStream)
+
+    Hub->>Runtime: InstallCommand {request_id:"r1", source:"registry:...#@pinixai/todo", alias:"todo-a3f1"}
+    Runtime->>Runtime: handleAddTrusted → 下载、安装、启动 Clip
+    Runtime->>Provider: ProviderMessage.ClipAdded {clip: ClipRegistration, request_id:"r1"}
+    Note over Hub: Hub 路由表写入新 Clip
+    Runtime->>Hub: InstallResult {request_id:"r1", clip: ClipInfo}
+    Note over Hub: AddClip RPC 返回给 CLI
+```
+
+注意：远程 Runtime 同时维护两条流（`ProviderStream` 和 `RuntimeStream`），安装完成后需要通过 `ProviderStream` 发送 `ClipAdded` 使 Hub 路由表生效，同时通过 `RuntimeStream` 发送 `InstallResult` 通知 Hub 安装操作完成。
 
 ## 4. IPC v2 NDJSON 协议参考
 
@@ -488,7 +569,7 @@ Clip 使用流式输出时，通过 `@pinixai/core` 的 `stream.chunk()` 发送 
 
 ### 4.4 完整链路示例
 
-以 `pinix twitter search -- --query "AI agent"` 为例：
+以 `pinix twitter search --query "AI agent"` 为例：
 
 ```
 用户终端
@@ -519,16 +600,24 @@ Clip 使用流式输出时，通过 `@pinixai/core` 的 `stream.chunk()` 发送 
 
 **连接模式时序**：
 
+Runtime 同时建立两条流连入 Hub：
+
 ```mermaid
 sequenceDiagram
     participant Runtime as pinixd (连接模式)
     participant Hub as 外部 Hub
 
+    Note over Runtime,Hub: ProviderStream（Clip 注册 + invoke 转发）
     Runtime->>Hub: ProviderStream 双向流
-    Runtime->>Hub: register {provider_name:"pinixd-macbook-9000", accepts_manage:true, clips:[todo, twitter]}
+    Runtime->>Hub: register {provider_name:"pinixd-macbook-9001", clips:[todo, twitter]}
     Hub->>Runtime: register_response {accepted:true}
 
-    loop 心跳 (每 15 秒)
+    Note over Runtime,Hub: RuntimeStream（install/remove 管理）
+    Runtime->>Hub: RuntimeStream 双向流
+    Runtime->>Hub: RuntimeRegister {name:"pinixd-macbook-9001", os:"darwin", arch:"arm64"}
+    Hub->>Runtime: RuntimeRegisterResponse {accepted:true}
+
+    loop 心跳 (每 15 秒，两条流各自独立)
         Runtime->>Hub: ping
         Hub->>Runtime: pong
     end
@@ -538,11 +627,11 @@ sequenceDiagram
     Runtime->>Runtime: IPC → clip-todo 进程 → 结果
     Runtime->>Hub: invoke_result {request_id, output:{...}, done:true}
 
-    Note over Hub: 收到 AddClip("clip-xhs")
-    Hub->>Runtime: manage_command {add: {source:"clip-xhs"}}
+    Note over Hub: 收到 AddClip("@pinixai/xhs")
+    Hub->>Runtime: InstallCommand {request_id, source, alias, clip_token}
     Runtime->>Runtime: 安装、启动、获取 manifest
-    Runtime->>Hub: clip_added {clip: {...}, request_id}
-    Runtime->>Hub: manage_result {request_id, error:null}
+    Runtime->>Hub: ProviderStream ClipAdded {clip: {...}, request_id}
+    Runtime->>Hub: RuntimeStream InstallResult {request_id, clip: ClipInfo}
 ```
 
 ## 6. 错误处理
