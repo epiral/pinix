@@ -75,7 +75,7 @@ func (d *Daemon) GetManifest(ctx context.Context, name string) (*ManifestCache, 
 		}
 		if ok {
 			if clip.Manifest != nil {
-				return clip.Manifest, nil
+				return enrichManifestForClip(clip, clip.Manifest), nil
 			}
 
 			manifest, err := d.process.LoadManifest(ctx, clip.Name)
@@ -90,7 +90,7 @@ func (d *Daemon) GetManifest(ctx context.Context, name string) (*ManifestCache, 
 			if err := d.registry.PutClip(clip); err != nil {
 				return nil, daemonError{Code: "internal", Message: fmt.Sprintf("save clip manifest: %v", err)}
 			}
-			return manifest, nil
+			return enrichManifestForClip(clip, manifest), nil
 		}
 	}
 

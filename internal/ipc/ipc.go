@@ -41,6 +41,7 @@ type Manifest struct {
 	Domain       string                         `json:"domain,omitempty"`
 	Description  string                         `json:"description,omitempty"`
 	Commands     json.RawMessage                `json:"commands,omitempty"`
+	HasWeb       bool                           `json:"has_web,omitempty"`
 	Dependencies Dependencies                   `json:"dependencies,omitempty"`
 	Patterns     []string                       `json:"patterns,omitempty"`
 	Entities     map[string]json.RawMessage     `json:"entities,omitempty"`
