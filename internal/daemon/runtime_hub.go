@@ -587,9 +587,21 @@ func (c *runtimeHubConnector) handleInstallCommand(ctx context.Context, stream *
 		return
 	}
 
+	requestedAlias := strings.TrimSpace(command.GetAlias())
+	if requestedAlias == "" {
+		// Auto-generate alias from source (same logic as local AddClip)
+		alias, err := c.daemon.provider.ReserveAlias("", command.GetSource(), c.providerName)
+		if err != nil {
+			_ = c.sendInstallResult(stream, &pinixv2.InstallResult{RequestId: requestID, Error: responseErrorToHubError(responseErrorFromErr(err))})
+			return
+		}
+		requestedAlias = alias
+		defer c.daemon.provider.ReleaseAlias(alias, c.providerName)
+	}
+
 	result, err := c.daemon.handler.handleAddTrusted(ctx, AddParams{
 		Source:         command.GetSource(),
-		RequestedAlias: command.GetAlias(),
+		RequestedAlias: requestedAlias,
 		Token:          command.GetClipToken(),
 	})
 	if err != nil {
