@@ -61,9 +61,12 @@ func New(serverURL string) (*Client, error) {
 
 	transport := &http2.Transport{
 		AllowHTTP: true,
-		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
-			var dialer net.Dialer
-			return dialer.DialContext(ctx, network, addr)
+		DialTLSContext: func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
+			if cfg != nil {
+				return tls.DialWithDialer(&net.Dialer{}, network, addr, cfg)
+			}
+			var d net.Dialer
+			return d.DialContext(ctx, network, addr)
 		},
 	}
 	httpClient := &http.Client{Transport: transport}
