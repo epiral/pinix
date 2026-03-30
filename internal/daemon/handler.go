@@ -161,11 +161,11 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 		Package: strings.TrimSpace(ref.Package),
 		Version: strings.TrimSpace(ref.Version),
 		Source:  ref.Source,
-		Path:    clipPath,
+		Path:    finalPath,
 		Token:   params.Token,
 	})
 	if err != nil {
-		slog.Error("addClip: inspect failed", "path", clipPath, "error", err)
+		slog.Error("addClip: inspect failed", "path", finalPath, "error", err)
 		cleanup()
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip manifest: %v", err)}
 	}
