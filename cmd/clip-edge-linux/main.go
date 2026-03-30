@@ -1,18 +1,16 @@
 // Role:    Edge Clip Provider binary that connects to a remote Hub registering Linux system capabilities
-// Depends: context, crypto/tls, errors, flag, fmt, io, log, net, net/http, os, os/signal, strings, sync, syscall, time, connectrpc, pinix v2, pinixv2connect, edgelinux, http2
+// Depends: context, errors, flag, fmt, io, log, net/http, os, os/signal, strings, sync, syscall, time, connectrpc, pinix v2, pinixv2connect, edgelinux
 // Exports: main
 
 package main
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -25,7 +23,6 @@ import (
 	pinixv2 "github.com/epiral/pinix/gen/go/pinix/v2"
 	"github.com/epiral/pinix/gen/go/pinix/v2/pinixv2connect"
 	"github.com/epiral/pinix/internal/edgelinux"
-	"golang.org/x/net/http2"
 )
 
 const (
@@ -70,14 +67,12 @@ func main() {
 }
 
 func runProvider(parent context.Context, hubURL, providerName string) error {
-	transport := &http2.Transport{
-		AllowHTTP: true,
-		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
-			var dialer net.Dialer
-			return dialer.DialContext(ctx, network, addr)
-		},
+	var protocols http.Protocols
+	protocols.SetHTTP2(true)
+	protocols.SetUnencryptedHTTP2(true)
+	httpClient := &http.Client{
+		Transport: &http.Transport{Protocols: &protocols},
 	}
-	httpClient := &http.Client{Transport: transport}
 
 	client := pinixv2connect.NewHubServiceClient(httpClient, hubURL, connect.WithGRPC())
 

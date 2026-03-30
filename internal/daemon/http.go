@@ -1,5 +1,5 @@
 // Role:    Embedded HTTP server for the Pinix portal, Connect-RPC, clip web files, and JSON errors
-// Depends: bytes, context, encoding/json, errors, fmt, io, net, net/http, strings, time, connectrpc, pinix v2, pinixv2connect, github.com/epiral/pinix/web, http2, h2c
+// Depends: bytes, context, encoding/json, errors, fmt, io, net, net/http, strings, time, connectrpc, pinix v2, pinixv2connect, github.com/epiral/pinix/web
 // Exports: Daemon.ServeHTTP
 
 package daemon
@@ -21,8 +21,6 @@ import (
 	pinixv2 "github.com/epiral/pinix/gen/go/pinix/v2"
 	"github.com/epiral/pinix/gen/go/pinix/v2/pinixv2connect"
 	portalweb "github.com/epiral/pinix/web"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 )
 
 func (d *Daemon) ServeHTTP(ctx context.Context, addr string) error {
@@ -35,9 +33,14 @@ func (d *Daemon) ServeHTTP(ctx context.Context, addr string) error {
 		return fmt.Errorf("listen on %s: %w", addr, err)
 	}
 
+	var protocols http.Protocols
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
+
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           h2c.NewHandler(d.httpMux(), &http2.Server{}),
+		Handler:           d.httpMux(),
+		Protocols:         &protocols,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		BaseContext: func(net.Listener) context.Context {
