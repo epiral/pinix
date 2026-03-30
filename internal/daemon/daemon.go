@@ -20,9 +20,10 @@ type Daemon struct {
 	runtime  *RuntimeManager
 	handler  *Handler
 
-	mu         sync.Mutex
-	httpServer *http.Server
-	closed     bool
+	mu          sync.Mutex
+	httpServer  *http.Server
+	closed      bool
+	spaFallback http.HandlerFunc
 }
 
 func NewDaemon(registry *Registry, process *ProcessManager) (*Daemon, error) {

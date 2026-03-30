@@ -79,13 +79,13 @@ func (d *Daemon) httpMux() http.Handler {
 	// Serve Vite build output from embedded dist/ directory
 	distFS, err := portalweb.DistFS()
 	if err != nil {
-		// Fallback: if dist/ cannot be resolved, serve a plain error
-		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		d.spaFallback = func(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, daemonError{Code: "internal", Message: "portal assets not available"})
-		})
+		}
+		mux.HandleFunc("/", d.spaFallback)
 	} else {
 		fileServer := http.FileServer(http.FS(distFS))
-		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		d.spaFallback = func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodGet {
 				writeMethodNotAllowed(w, http.MethodGet)
 				return
@@ -97,7 +97,8 @@ func (d *Daemon) httpMux() http.Handler {
 				return
 			}
 			fileServer.ServeHTTP(w, r)
-		})
+		}
+		mux.HandleFunc("/", d.spaFallback)
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -110,10 +111,19 @@ func (d *Daemon) httpMux() http.Handler {
 	})
 }
 
+func (d *Daemon) serveSPAFallback(w http.ResponseWriter, r *http.Request) {
+	if d.spaFallback != nil {
+		d.spaFallback(w, r)
+		return
+	}
+	http.NotFound(w, r)
+}
+
 func (d *Daemon) handleClipWeb(w http.ResponseWriter, r *http.Request) {
 	clipName, filePath, ok := parseClipWebPath(r.URL.Path)
 	if !ok {
-		http.NotFound(w, r)
+		// No clip name (e.g. "/clips/" itself) — serve SPA fallback
+		d.serveSPAFallback(w, r)
 		return
 	}
 
