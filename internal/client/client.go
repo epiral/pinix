@@ -1,17 +1,15 @@
 // Role:    Connect-RPC HubService client used by pinix CLI and mock providers
-// Depends: context, crypto/tls, encoding/json, errors, fmt, io, net, net/http, strings, connectrpc, pinix v2, pinixv2connect, http2, pidfile
+// Depends: context, encoding/json, errors, fmt, io, net/http, strings, connectrpc, pinix v2, pinixv2connect, pidfile
 // Exports: Client, HubError, FallbackServerURL, DefaultServerURL, New
 
 package client
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 
@@ -19,7 +17,6 @@ import (
 	pinixv2 "github.com/epiral/pinix/gen/go/pinix/v2"
 	"github.com/epiral/pinix/gen/go/pinix/v2/pinixv2connect"
 	"github.com/epiral/pinix/internal/pidfile"
-	"golang.org/x/net/http2"
 )
 
 const FallbackServerURL = "http://127.0.0.1:9000"
@@ -59,17 +56,12 @@ func New(serverURL string) (*Client, error) {
 		serverURL = DefaultServerURL()
 	}
 
-	transport := &http2.Transport{
-		AllowHTTP: true,
-		DialTLSContext: func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
-			if cfg != nil {
-				return tls.DialWithDialer(&net.Dialer{}, network, addr, cfg)
-			}
-			var d net.Dialer
-			return d.DialContext(ctx, network, addr)
-		},
+	var protocols http.Protocols
+	protocols.SetHTTP2(true)
+	protocols.SetUnencryptedHTTP2(true)
+	httpClient := &http.Client{
+		Transport: &http.Transport{Protocols: &protocols},
 	}
-	httpClient := &http.Client{Transport: transport}
 
 	return &Client{
 		baseURL: strings.TrimRight(serverURL, "/"),

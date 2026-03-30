@@ -62,7 +62,7 @@ func newSearchCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := reg.Search(cmd.Context(), args[0], domain, packageType)
+			resp, err := reg.Search(cmd.Context(), args[0], domain, packageType, 0, 0)
 			if err != nil {
 				return err
 			}

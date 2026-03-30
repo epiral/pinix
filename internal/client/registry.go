@@ -67,8 +67,9 @@ func (d *RegistryPackageDocument) mergeDistTags() {
 }
 
 type RegistrySearchResponse struct {
-	Results []RegistrySearchResult `json:"results"`
-	Total   int                    `json:"total"`
+	Results  []RegistrySearchResult `json:"results"`
+	Packages []RegistrySearchResult `json:"packages"`
+	Total    int                    `json:"total"`
 }
 
 type RegistrySearchResult struct {
@@ -208,7 +209,7 @@ func (d *RegistryPackageDocument) ResolveVersion(requested string) (string, *Reg
 	return requested, &copy, nil
 }
 
-func (c *RegistryClient) Search(ctx context.Context, query, domain, packageType string) (*RegistrySearchResponse, error) {
+func (c *RegistryClient) Search(ctx context.Context, query, domain, packageType string, limit, offset int) (*RegistrySearchResponse, error) {
 	values := url.Values{}
 	values.Set("q", strings.TrimSpace(query))
 	if strings.TrimSpace(domain) != "" {
@@ -217,10 +218,21 @@ func (c *RegistryClient) Search(ctx context.Context, query, domain, packageType 
 	if strings.TrimSpace(packageType) != "" {
 		values.Set("type", strings.TrimSpace(packageType))
 	}
+	if limit > 0 {
+		values.Set("limit", fmt.Sprintf("%d", limit))
+	}
+	if offset > 0 {
+		values.Set("offset", fmt.Sprintf("%d", offset))
+	}
 	var resp RegistrySearchResponse
 	if err := c.getJSON(ctx, "/search?"+values.Encode(), &resp); err != nil {
 		return nil, err
 	}
+	// Merge packages into results for compatibility with commercial registry.
+	if len(resp.Packages) > 0 && len(resp.Results) == 0 {
+		resp.Results = resp.Packages
+	}
+	resp.Packages = nil
 	return &resp, nil
 }
 
