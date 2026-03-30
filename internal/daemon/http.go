@@ -245,7 +245,8 @@ func (d *Daemon) serveClipWebFile(w http.ResponseWriter, r *http.Request, clipNa
 		return
 	}
 
-	resp, err := NewHubService(d).GetClipWeb(r.Context(), connect.NewRequest(&pinixv2.GetClipWebRequest{
+	hub := NewHubService(d)
+	resp, err := hub.GetClipWeb(r.Context(), connect.NewRequest(&pinixv2.GetClipWebRequest{
 		ClipName:    clipName,
 		Path:        filePath,
 		Offset:      rangeReq.Offset,
@@ -255,11 +256,27 @@ func (d *Daemon) serveClipWebFile(w http.ResponseWriter, r *http.Request, clipNa
 	if err != nil {
 		err = daemonErrorFromConnect(err)
 		if isDaemonCode(err, "not_found") {
-			http.NotFound(w, r)
+			// SPA fallback: if the requested file is not found and it's not
+			// a file with an extension (likely a client-side route), serve index.html.
+			if filePath != "" && !strings.Contains(filepath.Base(filePath), ".") {
+				fallback, fbErr := hub.GetClipWeb(r.Context(), connect.NewRequest(&pinixv2.GetClipWebRequest{
+					ClipName:    clipName,
+					Path:        "index.html",
+					IfNoneMatch: r.Header.Get("If-None-Match"),
+				}))
+				if fbErr == nil {
+					resp = fallback
+					err = nil
+				}
+			}
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+		} else {
+			writeJSONError(w, err)
 			return
 		}
-		writeJSONError(w, err)
-		return
 	}
 
 	result := resp.Msg
