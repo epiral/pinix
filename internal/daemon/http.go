@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"path/filepath"
@@ -123,13 +122,6 @@ func (d *Daemon) handleClipWeb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.Method == http.MethodPost {
-		if command, ok := parseClipAPIPath(filePath); ok {
-			d.handleClipWebInvoke(w, r, clipName, command)
-			return
-		}
-	}
-
 	if r.Method != http.MethodGet {
 		writeMethodNotAllowed(w, http.MethodGet)
 		return
@@ -159,83 +151,6 @@ func (d *Daemon) redirectClipWebRoot(w http.ResponseWriter, r *http.Request, cli
 		location += "?" + r.URL.RawQuery
 	}
 	http.Redirect(w, r, location, http.StatusMovedPermanently)
-}
-
-func (d *Daemon) handleClipWebInvoke(w http.ResponseWriter, r *http.Request, clipName, command string) {
-	input, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeJSONError(w, daemonError{Code: "internal", Message: fmt.Sprintf("read invoke body: %v", err)})
-		return
-	}
-	input = bytes.TrimSpace(input)
-	if len(input) == 0 {
-		input = []byte(`{}`)
-	}
-	if !json.Valid(input) {
-		writeJSONError(w, daemonError{Code: "invalid_argument", Message: "request body must be valid JSON"})
-		return
-	}
-
-	// Check if client wants SSE streaming
-	accept := r.Header.Get("Accept")
-	if strings.Contains(accept, "text/event-stream") {
-		d.handleClipWebInvokeSSE(w, r, clipName, command, json.RawMessage(input))
-		return
-	}
-
-	hub := NewHubService(d)
-	output, err := hub.invokeCollect(r.Context(), clipName, command, input)
-	if err != nil {
-		writeJSONError(w, err)
-		return
-	}
-	writeJSONBytes(w, http.StatusOK, output)
-}
-
-func (d *Daemon) handleClipWebInvokeSSE(w http.ResponseWriter, r *http.Request, clipName, command string, input json.RawMessage) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		writeJSONError(w, daemonError{Code: "internal", Message: "streaming not supported"})
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.WriteHeader(http.StatusOK)
-	flusher.Flush()
-
-	hub := NewHubService(d)
-	err := hub.invokeWithCallback(r.Context(), clipName, command, input, func(chunk json.RawMessage) {
-		// If chunk is a JSON string (e.g. "\"...\n\""), unwrap it into raw lines
-		// and emit each JSONL line as a separate SSE event
-		raw := bytes.TrimSpace(chunk)
-		if len(raw) > 0 && raw[0] == '"' {
-			var s string
-			if json.Unmarshal(raw, &s) == nil {
-				for _, line := range strings.Split(strings.TrimSpace(s), "\n") {
-					line = strings.TrimSpace(line)
-					if line != "" {
-						fmt.Fprintf(w, "data: %s\n\n", line)
-					}
-				}
-				flusher.Flush()
-				return
-			}
-		}
-		fmt.Fprintf(w, "data: %s\n\n", raw)
-		flusher.Flush()
-	})
-
-	if err != nil {
-		errJSON, _ := json.Marshal(map[string]string{"error": err.Error()})
-		fmt.Fprintf(w, "data: %s\n\n", errJSON)
-		flusher.Flush()
-		return
-	}
-
-	fmt.Fprintf(w, "event: done\ndata: {}\n\n")
-	flusher.Flush()
 }
 
 func (d *Daemon) serveClipWebFile(w http.ResponseWriter, r *http.Request, clipName, filePath string) {
@@ -334,22 +249,6 @@ func parseClipWebPath(requestPath string) (clipName, filePath string, ok bool) {
 		filePath = parts[1]
 	}
 	return clipName, filePath, true
-}
-
-func parseClipAPIPath(filePath string) (command string, ok bool) {
-	trimmed := strings.Trim(strings.TrimSpace(filePath), "/")
-	if trimmed == "" {
-		return "", false
-	}
-	parts := strings.Split(trimmed, "/")
-	if len(parts) != 2 || parts[0] != "api" {
-		return "", false
-	}
-	command = strings.TrimSpace(parts[1])
-	if command == "" {
-		return "", false
-	}
-	return command, true
 }
 
 func isWithinDir(path, base string) bool {
