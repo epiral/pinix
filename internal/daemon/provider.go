@@ -189,17 +189,18 @@ func (m *ProviderManager) reserveAlias(alias, owner string) error {
 	if exists, err := m.localClipExists(alias); err != nil {
 		return err
 	} else if exists && !isLocalProvider(owner) {
-		// Local clip exists but a remote provider is trying to claim it — reject.
-		// When the local provider re-adds the same alias, allow it so addClip
-		// can perform an in-place upgrade (stop old process, swap files, restart).
 		return daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", alias)}
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if _, exists := m.clips[alias]; exists {
-		return daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", alias)}
+	if ref, exists := m.clips[alias]; exists {
+		// Allow the same provider (or local provider upgrading its own clip)
+		// to re-reserve an existing alias for upgrade.
+		if ref.session != nil && ref.session.name != owner && !isLocalProvider(owner) {
+			return daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", alias)}
+		}
 	}
 	if reservation, exists := m.reserved[alias]; exists && reservation.owner != owner {
 		return daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", alias)}
