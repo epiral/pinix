@@ -29,6 +29,38 @@ type sourceRef struct {
 	Type     string // "clip" or "edge-clip", populated during registry install
 }
 
+// SplitPackageVersion splits a package specifier like "@scope/name@1.2.3" into
+// its package name and version components. Returns ("@scope/name", "1.2.3").
+// If no version is present, version is empty.
+func SplitPackageVersion(spec string) (string, string) {
+	return splitPackageVersion(spec)
+}
+
+// NormalizeAddSourceWithVersion behaves like NormalizeAddSource but uses the
+// given version instead of whatever is (or isn't) embedded in source.
+func NormalizeAddSourceWithVersion(source, registryURL, version string) (string, error) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return "", daemonError{Code: "invalid_argument", Message: "source is required"}
+	}
+	if !strings.HasPrefix(source, "@") {
+		return "", daemonError{Code: "invalid_argument", Message: "NormalizeAddSourceWithVersion requires @scope/name source"}
+	}
+	registryURL = normalizeRegistryURL(registryURL)
+	if registryURL == "" {
+		return "", daemonError{Code: "invalid_argument", Message: "registry URL is required"}
+	}
+	if !isRegistryURL(registryURL) {
+		return "", daemonError{Code: "invalid_argument", Message: fmt.Sprintf("invalid registry URL %q", registryURL)}
+	}
+	pkg, _ := splitPackageVersion(source)
+	if pkg == "" {
+		return "", daemonError{Code: "invalid_argument", Message: fmt.Sprintf("invalid registry source %q", source)}
+	}
+	version = strings.TrimSpace(version)
+	return canonicalRegistrySource(registryURL, pkg, version), nil
+}
+
 func NormalizeAddSource(source, registryURL string) (string, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
