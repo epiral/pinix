@@ -188,7 +188,10 @@ func (m *ProviderManager) reserveAlias(alias, owner string) error {
 
 	if exists, err := m.localClipExists(alias); err != nil {
 		return err
-	} else if exists {
+	} else if exists && !isLocalProvider(owner) {
+		// Local clip exists but a remote provider is trying to claim it — reject.
+		// When the local provider re-adds the same alias, allow it so addClip
+		// can perform an in-place upgrade (stop old process, swap files, restart).
 		return daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", alias)}
 	}
 
