@@ -123,12 +123,31 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 
 	slog.Info("addClip: installed", "path", clipPath, "package", ref.Package, "version", ref.Version, "type", ref.Type)
 
-	if _, exists, err := h.registry.GetClip(alias); err != nil {
+	// Check if the clip already exists — if so, perform an upgrade instead of
+	// rejecting.  The new code has already been staged so we can stop the old
+	// process, swap the files, and start the new version.
+	existingClip, exists, err := h.registry.GetClip(alias)
+	if err != nil {
 		cleanup()
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("check existing clip: %v", err)}
-	} else if exists {
-		cleanup()
-		return nil, daemonError{Code: "already_exists", Message: fmt.Sprintf("clip %q already exists", alias)}
+	}
+
+	if exists {
+		slog.Info("addClip: upgrading existing clip", "alias", alias,
+			"oldVersion", existingClip.Version, "newVersion", ref.Version)
+
+		// Stop the running process before replacing files.
+		if err := h.process.StopClip(alias); err != nil {
+			slog.Error("addClip: stop old clip failed", "alias", alias, "error", err)
+			cleanup()
+			return nil, daemonError{Code: "internal", Message: fmt.Sprintf("stop old clip: %v", err)}
+		}
+
+		// Remove the old installation directory (but not data).
+		if err := removeInstalledPath(existingClip); err != nil {
+			slog.Error("addClip: remove old clip path failed", "alias", alias, "error", err)
+			// Non-fatal: moveInstalledClip below will overwrite anyway.
+		}
 	}
 
 	finalPath := filepath.Join(h.registry.ClipsDir(), alias)
@@ -196,7 +215,9 @@ func (h *Handler) addClip(ctx context.Context, params AddParams) (*AddResult, er
 	}
 
 	if err := h.process.StartClip(alias); err != nil {
-		_, _, _ = h.registry.RemoveClip(alias)
+		if !exists {
+			_, _, _ = h.registry.RemoveClip(alias)
+		}
 		cleanup()
 		return nil, daemonError{Code: "internal", Message: fmt.Sprintf("start clip: %v", err)}
 	}
