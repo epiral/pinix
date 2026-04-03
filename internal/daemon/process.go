@@ -498,6 +498,12 @@ func (m *ProcessManager) handleMessage(proc *clipProcess, message *ipc.Message) 
 		}
 		m.handleClipInvoke(proc, *message)
 		return nil
+	case ipc.MessageTypeListClips:
+		if strings.TrimSpace(message.ID) == "" {
+			return fmt.Errorf("ipc list_clips id is required")
+		}
+		go m.handleListClips(proc, message.ID)
+		return nil
 	case ipc.MessageTypeResult, ipc.MessageTypeError, ipc.MessageTypeChunk, ipc.MessageTypeDone:
 		if strings.TrimSpace(message.ID) == "" {
 			return fmt.Errorf("ipc %s id is required", message.Type)
@@ -527,6 +533,46 @@ func (m *ProcessManager) handleRegister(proc *clipProcess, message *ipc.Message)
 	}
 	proc.signalReady()
 	return nil
+}
+
+func (m *ProcessManager) handleListClips(proc *clipProcess, requestID string) {
+	clips, err := m.registry.ListClips()
+	if err != nil {
+		_ = proc.send(&ipc.Message{
+			ID:    requestID,
+			Type:  ipc.MessageTypeError,
+			Error: fmt.Sprintf("list clips: %v", err),
+		})
+		return
+	}
+
+	infos := make([]ipc.ListClipInfo, 0, len(clips))
+	for _, clip := range clips {
+		manifest := enrichManifestForClip(clip, clip.Manifest)
+		commands := make([]ipc.ListCommandInfo, 0, len(manifest.CommandDetails))
+		for _, cmd := range manifest.CommandDetails {
+			commands = append(commands, ipc.ListCommandInfo{
+				Name:        cmd.Name,
+				Description: cmd.Description,
+			})
+		}
+		infos = append(infos, ipc.ListClipInfo{
+			Name:     clip.Name,
+			Package:  manifest.Package,
+			Version:  manifest.Version,
+			Commands: commands,
+		})
+	}
+
+	sort.Slice(infos, func(i, j int) bool {
+		return infos[i].Name < infos[j].Name
+	})
+
+	_ = proc.send(&ipc.Message{
+		ID:    requestID,
+		Type:  ipc.MessageTypeListClipsResult,
+		Clips: infos,
+	})
 }
 
 func (m *ProcessManager) handleClipInvoke(proc *clipProcess, message ipc.Message) {

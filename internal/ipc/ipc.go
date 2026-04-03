@@ -14,13 +14,15 @@ import (
 var ErrClosed = errors.New("ipc client closed")
 
 const (
-	MessageTypeRegister   = "register"
-	MessageTypeRegistered = "registered"
-	MessageTypeInvoke     = "invoke"
-	MessageTypeResult     = "result"
-	MessageTypeError      = "error"
-	MessageTypeChunk      = "chunk"
-	MessageTypeDone       = "done"
+	MessageTypeRegister       = "register"
+	MessageTypeRegistered     = "registered"
+	MessageTypeInvoke         = "invoke"
+	MessageTypeResult         = "result"
+	MessageTypeError          = "error"
+	MessageTypeChunk          = "chunk"
+	MessageTypeDone           = "done"
+	MessageTypeListClips      = "list_clips"
+	MessageTypeListClipsResult = "list_clips_result"
 )
 
 type Message struct {
@@ -33,6 +35,19 @@ type Message struct {
 	Output   json.RawMessage `json:"output,omitempty"`
 	Error    string          `json:"error,omitempty"`
 	Manifest *Manifest       `json:"manifest,omitempty"`
+	Clips    []ListClipInfo  `json:"clips,omitempty"`
+}
+
+type ListClipInfo struct {
+	Name     string            `json:"name"`
+	Package  string            `json:"package,omitempty"`
+	Version  string            `json:"version,omitempty"`
+	Commands []ListCommandInfo `json:"commands,omitempty"`
+}
+
+type ListCommandInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
 }
 
 type Manifest struct {
