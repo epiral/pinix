@@ -554,6 +554,8 @@ func (m *ProcessManager) handleListClips(proc *clipProcess, requestID string) {
 			commands = append(commands, ipc.ListCommandInfo{
 				Name:        cmd.Name,
 				Description: cmd.Description,
+				Input:       cmd.Input,
+				Output:      cmd.Output,
 			})
 		}
 		infos = append(infos, ipc.ListClipInfo{

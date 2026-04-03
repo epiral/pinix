@@ -48,6 +48,8 @@ type ListClipInfo struct {
 type ListCommandInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+	Input       string `json:"input,omitempty"`
+	Output      string `json:"output,omitempty"`
 }
 
 type Manifest struct {
