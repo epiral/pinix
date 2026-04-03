@@ -113,8 +113,20 @@ func ReadPIDFile(customPath ...string) (*PIDFile, error) {
 		return nil, nil
 	}
 
-	// Check if process is still alive
-	if err := syscall.Kill(pf.PID, 0); err != nil {
+	// If the recorded PID is our own, the file is stale from a previous run
+	// that happened to get the same PID (common after crash + fast restart).
+	if pf.PID == os.Getpid() {
+		_ = os.Remove(path)
+		return nil, nil
+	}
+
+	// Check if process is still alive (signal 0 = no-op, just checks existence).
+	proc, err := os.FindProcess(pf.PID)
+	if err != nil {
+		_ = os.Remove(path)
+		return nil, nil
+	}
+	if err := proc.Signal(syscall.Signal(0)); err != nil {
 		// Process is dead — remove stale file
 		_ = os.Remove(path)
 		return nil, nil
