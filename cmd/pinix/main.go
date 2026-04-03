@@ -173,7 +173,7 @@ func newAddCommand(serverURL, hubToken *string) *cobra.Command {
 		Short: "Install and register a Clip (@scope/name, github/user/repo, or local/name)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			source, err := normalizeAddSource(args[0], registryURL)
+			source, err := normalizeAddSource(cmd.Context(), args[0], registryURL)
 			if err != nil {
 				return err
 			}

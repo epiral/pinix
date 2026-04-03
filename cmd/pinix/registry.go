@@ -130,8 +130,11 @@ func newPublishCommand() *cobra.Command {
 }
 
 // normalizeAddSource validates the three source prefixes and constructs
-// the internal canonical source string for the daemon.
-func normalizeAddSource(source, registryURL string) (string, error) {
+// the internal canonical source string for the daemon. For registry
+// sources (@scope/name) without an explicit version, it fetches the
+// package metadata from the Registry and resolves the version via
+// dist_tags.latest so the daemon always receives a pinned version.
+func normalizeAddSource(ctx context.Context, source, registryURL string) (string, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
 		return "", fmt.Errorf("source is required")
@@ -141,7 +144,23 @@ func normalizeAddSource(source, registryURL string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return daemonpkg.NormalizeAddSource(source, reg.BaseURL())
+		pkg, version := daemonpkg.SplitPackageVersion(source)
+		if pkg == "" {
+			return "", fmt.Errorf("invalid registry source %q", source)
+		}
+		// When no version is specified, resolve from Registry dist_tags.latest
+		if version == "" {
+			doc, err := reg.GetPackage(ctx, pkg)
+			if err != nil {
+				return "", fmt.Errorf("fetch package %q from registry: %w", pkg, err)
+			}
+			resolved, _, err := doc.ResolveVersion("")
+			if err != nil {
+				return "", fmt.Errorf("resolve latest version for %q: %w", pkg, err)
+			}
+			version = resolved
+		}
+		return daemonpkg.NormalizeAddSourceWithVersion(source, reg.BaseURL(), version)
 	}
 	return daemonpkg.NormalizeAddSource(source, "")
 }
