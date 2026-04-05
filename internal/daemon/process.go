@@ -536,34 +536,67 @@ func (m *ProcessManager) handleRegister(proc *clipProcess, message *ipc.Message)
 }
 
 func (m *ProcessManager) handleListClips(proc *clipProcess, requestID string) {
-	clips, err := m.registry.ListClips()
-	if err != nil {
-		_ = proc.send(&ipc.Message{
-			ID:    requestID,
-			Type:  ipc.MessageTypeError,
-			Error: fmt.Sprintf("list clips: %v", err),
-		})
-		return
-	}
+	var infos []ipc.ListClipInfo
 
-	infos := make([]ipc.ListClipInfo, 0, len(clips))
-	for _, clip := range clips {
-		manifest := enrichManifestForClip(clip, clip.Manifest)
-		commands := make([]ipc.ListCommandInfo, 0, len(manifest.CommandDetails))
-		for _, cmd := range manifest.CommandDetails {
-			commands = append(commands, ipc.ListCommandInfo{
-				Name:        cmd.Name,
-				Description: cmd.Description,
-				Input:       cmd.Input,
-				Output:      cmd.Output,
+	if m.hub != nil {
+		// Query the Hub to discover ALL clips across all providers.
+		clips, err := m.hub.ListClips(context.Background(), m.hubToken)
+		if err != nil {
+			_ = proc.send(&ipc.Message{
+				ID:    requestID,
+				Type:  ipc.MessageTypeError,
+				Error: fmt.Sprintf("list clips from hub: %v", err),
+			})
+			return
+		}
+		infos = make([]ipc.ListClipInfo, 0, len(clips))
+		for _, clip := range clips {
+			commands := make([]ipc.ListCommandInfo, 0, len(clip.GetCommands()))
+			for _, cmd := range clip.GetCommands() {
+				commands = append(commands, ipc.ListCommandInfo{
+					Name:        cmd.GetName(),
+					Description: cmd.GetDescription(),
+					Input:       cmd.GetInput(),
+					Output:      cmd.GetOutput(),
+				})
+			}
+			infos = append(infos, ipc.ListClipInfo{
+				Name:     clip.GetName(),
+				Package:  clip.GetPackage(),
+				Version:  clip.GetVersion(),
+				Commands: commands,
 			})
 		}
-		infos = append(infos, ipc.ListClipInfo{
-			Name:     clip.Name,
-			Package:  manifest.Package,
-			Version:  manifest.Version,
-			Commands: commands,
-		})
+	} else {
+		// Fallback to local registry when Hub client is not available.
+		clips, err := m.registry.ListClips()
+		if err != nil {
+			_ = proc.send(&ipc.Message{
+				ID:    requestID,
+				Type:  ipc.MessageTypeError,
+				Error: fmt.Sprintf("list clips: %v", err),
+			})
+			return
+		}
+		infos = make([]ipc.ListClipInfo, 0, len(clips))
+		for _, clip := range clips {
+			manifest := enrichManifestForClip(clip, clip.Manifest)
+			commands := make([]ipc.ListCommandInfo, 0, len(manifest.CommandDetails))
+			for _, cmd := range manifest.CommandDetails {
+				commands = append(commands, ipc.ListCommandInfo{
+					Name:        cmd.Name,
+					Description: cmd.Description,
+					Input:       cmd.Input,
+					Output:      cmd.Output,
+				})
+			}
+			infos = append(infos, ipc.ListClipInfo{
+				Name:     clip.Name,
+				Package:  manifest.Package,
+				Version:  manifest.Version,
+				Commands: commands,
+			})
+		}
 	}
 
 	sort.Slice(infos, func(i, j int) bool {
