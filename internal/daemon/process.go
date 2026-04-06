@@ -1,5 +1,5 @@
 // Role:    Bun Clip process lifecycle, IPC registration handshake, and Clip invocation router
-// Depends: bufio, context, encoding/json, errors, fmt, io, os, os/exec, path/filepath, sort, strconv, strings, sync, sync/atomic, syscall, time, connectrpc, internal/client, internal/ipc
+// Depends: bufio, context, crypto/rand, encoding/hex, encoding/json, errors, fmt, io, log/slog, os, os/exec, path/filepath, sort, strconv, strings, sync, sync/atomic, syscall, time, connectrpc, internal/client, internal/ipc
 // Exports: ProcessManager, NewProcessManager
 
 package daemon
@@ -7,10 +7,13 @@ package daemon
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -439,7 +442,7 @@ func (m *ProcessManager) startLocked(clip ClipConfig) (*clipProcess, error) {
 		pending: make(map[string]chan processInvokeEvent),
 	}
 
-	go drain(stderr)
+	go newClipLogWriter(m.registry.RootDir(), clip.Name, stderr)
 	go m.readLoop(proc, stdout)
 	go m.waitLoop(proc)
 
@@ -610,6 +613,12 @@ func (m *ProcessManager) handleListClips(proc *clipProcess, requestID string) {
 	})
 }
 
+func generateTraceID() string {
+	b := make([]byte, 4)
+	_, _ = rand.Read(b)
+	return "t-" + hex.EncodeToString(b)
+}
+
 func (m *ProcessManager) handleClipInvoke(proc *clipProcess, message ipc.Message) {
 	request := ipc.Message{
 		ID:      strings.TrimSpace(message.ID),
@@ -619,14 +628,16 @@ func (m *ProcessManager) handleClipInvoke(proc *clipProcess, message ipc.Message
 		Input:   cloneJSON(message.Input),
 	}
 
+	traceID := generateTraceID()
+
 	go func() {
-		if err := m.routeClipInvoke(proc, request); err != nil && !errors.Is(err, context.Canceled) {
+		if err := m.routeClipInvoke(proc, request, traceID); err != nil && !errors.Is(err, context.Canceled) {
 			proc.abort(fmt.Errorf("route clip invoke %s: %w", request.ID, err))
 		}
 	}()
 }
 
-func (m *ProcessManager) routeClipInvoke(proc *clipProcess, request ipc.Message) error {
+func (m *ProcessManager) routeClipInvoke(proc *clipProcess, request ipc.Message, traceID string) error {
 	if request.ID == "" {
 		return fmt.Errorf("ipc invoke id is required")
 	}
@@ -637,6 +648,14 @@ func (m *ProcessManager) routeClipInvoke(proc *clipProcess, request ipc.Message)
 		return proc.sendInvokeError(request.ID, daemonError{Code: "invalid_argument", Message: "command is required"})
 	}
 
+	slog.Info("invoke: start",
+		"trace_id", traceID,
+		"caller", proc.clip.Name,
+		"target", request.Clip,
+		"command", request.Command,
+		"route", "pending",
+	)
+
 	ctx, cancel := contextForProcess(proc)
 	defer cancel()
 
@@ -645,25 +664,40 @@ func (m *ProcessManager) routeClipInvoke(proc *clipProcess, request ipc.Message)
 		return proc.sendInvokeError(request.ID, daemonError{Code: "internal", Message: fmt.Sprintf("load clip %q: %v", request.Clip, err)})
 	}
 	if local {
-		return m.routeLocalInvoke(ctx, proc, request)
+		slog.Info("invoke: routed", "trace_id", traceID, "target", request.Clip, "route", "local")
+		return m.routeLocalInvoke(ctx, proc, request, traceID)
 	}
 	if m.provider != nil && m.provider.HasClip(request.Clip) {
-		return m.routeProviderInvoke(ctx, proc, request)
+		slog.Info("invoke: routed", "trace_id", traceID, "target", request.Clip, "route", "provider")
+		return m.routeProviderInvoke(ctx, proc, request, traceID)
 	}
 	if m.hub != nil {
-		return m.routeHubInvoke(ctx, proc, request)
+		slog.Info("invoke: routed", "trace_id", traceID, "target", request.Clip, "route", "hub")
+		return m.routeHubInvoke(ctx, proc, request, traceID)
 	}
 	return proc.sendInvokeError(request.ID, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", request.Clip)})
 }
 
-func (m *ProcessManager) routeLocalInvoke(ctx context.Context, caller *clipProcess, request ipc.Message) error {
+func (m *ProcessManager) routeLocalInvoke(ctx context.Context, caller *clipProcess, request ipc.Message, traceID string) error {
+	start := time.Now()
+
 	proc, err := m.ensureProcess(request.Clip)
 	if err != nil {
+		slog.Error("invoke: error",
+			"trace_id", traceID, "caller", caller.clip.Name, "target", request.Clip,
+			"command", request.Command, "route", "local",
+			"duration_ms", time.Since(start).Milliseconds(), "error", err,
+		)
 		return caller.sendInvokeError(request.ID, err)
 	}
 
 	handle, err := proc.openInvoke(request.Command, normalizeInvokeInput(request.Input))
 	if err != nil {
+		slog.Error("invoke: error",
+			"trace_id", traceID, "caller", caller.clip.Name, "target", request.Clip,
+			"command", request.Command, "route", "local",
+			"duration_ms", time.Since(start).Milliseconds(), "error", err,
+		)
 		return caller.sendInvokeError(request.ID, err)
 	}
 	defer handle.Close()
@@ -671,19 +705,39 @@ func (m *ProcessManager) routeLocalInvoke(ctx context.Context, caller *clipProce
 	for {
 		event, err := handle.Receive(ctx)
 		if err != nil {
+			slog.Error("invoke: error",
+				"trace_id", traceID, "caller", caller.clip.Name, "target", request.Clip,
+				"command", request.Command, "route", "local",
+				"duration_ms", time.Since(start).Milliseconds(), "error", err,
+			)
 			return caller.sendInvokeError(request.ID, err)
 		}
 
 		switch event.typ {
 		case ipc.MessageTypeResult:
 			if event.err != nil {
+				slog.Error("invoke: error",
+					"trace_id", traceID, "caller", caller.clip.Name, "target", request.Clip,
+					"command", request.Command, "route", "local",
+					"duration_ms", time.Since(start).Milliseconds(), "error", event.err,
+				)
 				return caller.sendInvokeError(request.ID, event.err)
 			}
+			slog.Info("invoke: done",
+				"trace_id", traceID, "caller", caller.clip.Name, "target", request.Clip,
+				"command", request.Command, "route", "local",
+				"duration_ms", time.Since(start).Milliseconds(),
+			)
 			return caller.send(&ipc.Message{ID: request.ID, Type: ipc.MessageTypeResult, Output: ensureOutput(event.output)})
 		case ipc.MessageTypeError:
 			if event.err == nil {
 				event.err = &ipc.Error{Message: "invoke failed"}
 			}
+			slog.Error("invoke: error",
+				"trace_id", traceID, "caller", caller.clip.Name, "target", request.Clip,
+				"command", request.Command, "route", "local",
+				"duration_ms", time.Since(start).Milliseconds(), "error", event.err,
+			)
 			return caller.send(&ipc.Message{ID: request.ID, Type: ipc.MessageTypeError, Error: strings.TrimSpace(event.err.Message)})
 		case ipc.MessageTypeChunk:
 			if len(event.output) == 0 {
@@ -693,6 +747,11 @@ func (m *ProcessManager) routeLocalInvoke(ctx context.Context, caller *clipProce
 				return err
 			}
 		case ipc.MessageTypeDone:
+			slog.Info("invoke: done",
+				"trace_id", traceID, "caller", caller.clip.Name, "target", request.Clip,
+				"command", request.Command, "route", "local",
+				"duration_ms", time.Since(start).Milliseconds(),
+			)
 			return caller.send(&ipc.Message{ID: request.ID, Type: ipc.MessageTypeDone})
 		default:
 			return caller.sendInvokeError(request.ID, fmt.Errorf("unsupported ipc response type %q", event.typ))
@@ -700,9 +759,16 @@ func (m *ProcessManager) routeLocalInvoke(ctx context.Context, caller *clipProce
 	}
 }
 
-func (m *ProcessManager) routeProviderInvoke(ctx context.Context, caller *clipProcess, request ipc.Message) error {
+func (m *ProcessManager) routeProviderInvoke(ctx context.Context, caller *clipProcess, request ipc.Message, traceID string) error {
+	start := time.Now()
+
 	handle, err := m.provider.OpenInvoke(request.Clip, request.Command, normalizeInvokeInput(request.Input), "")
 	if err != nil {
+		slog.Error("invoke: error",
+			"trace_id", traceID, "caller", caller.clip.Name, "target", request.Clip,
+			"command", request.Command, "route", "provider",
+			"duration_ms", time.Since(start).Milliseconds(), "error", err,
+		)
 		return caller.sendInvokeError(request.ID, err)
 	}
 	defer handle.Close()
@@ -711,9 +777,19 @@ func (m *ProcessManager) routeProviderInvoke(ctx context.Context, caller *clipPr
 	for {
 		chunk, err := handle.Receive(ctx)
 		if err != nil {
+			slog.Error("invoke: error",
+				"trace_id", traceID, "caller", caller.clip.Name, "target", request.Clip,
+				"command", request.Command, "route", "provider",
+				"duration_ms", time.Since(start).Milliseconds(), "error", err,
+			)
 			return caller.sendInvokeError(request.ID, err)
 		}
 		if chunk.err != nil {
+			slog.Error("invoke: error",
+				"trace_id", traceID, "caller", caller.clip.Name, "target", request.Clip,
+				"command", request.Command, "route", "provider",
+				"duration_ms", time.Since(start).Milliseconds(), "error", chunk.err,
+			)
 			return caller.send(&ipc.Message{ID: request.ID, Type: ipc.MessageTypeError, Error: strings.TrimSpace(chunk.err.Message)})
 		}
 
@@ -729,6 +805,12 @@ func (m *ProcessManager) routeProviderInvoke(ctx context.Context, caller *clipPr
 			continue
 		}
 
+		slog.Info("invoke: done",
+			"trace_id", traceID, "caller", caller.clip.Name, "target", request.Clip,
+			"command", request.Command, "route", "provider",
+			"duration_ms", time.Since(start).Milliseconds(),
+		)
+
 		if sentChunk {
 			if len(payload) > 0 {
 				if err := caller.send(&ipc.Message{ID: request.ID, Type: ipc.MessageTypeChunk, Output: payload}); err != nil {
@@ -742,13 +824,20 @@ func (m *ProcessManager) routeProviderInvoke(ctx context.Context, caller *clipPr
 	}
 }
 
-func (m *ProcessManager) routeHubInvoke(ctx context.Context, caller *clipProcess, request ipc.Message) error {
+func (m *ProcessManager) routeHubInvoke(ctx context.Context, caller *clipProcess, request ipc.Message, traceID string) error {
+	start := time.Now()
+
 	if m.hub == nil {
 		return caller.sendInvokeError(request.ID, daemonError{Code: "internal", Message: "hub client is not configured"})
 	}
 
 	stream, err := m.hub.OpenInvoke(ctx, request.Clip, request.Command, normalizeInvokeInput(request.Input), "", m.hubToken)
 	if err != nil {
+		slog.Error("invoke: error",
+			"trace_id", traceID, "caller", caller.clip.Name, "target", request.Clip,
+			"command", request.Command, "route", "hub",
+			"duration_ms", time.Since(start).Milliseconds(), "error", err,
+		)
 		return caller.sendInvokeError(request.ID, err)
 	}
 	defer stream.Close()
@@ -762,6 +851,11 @@ func (m *ProcessManager) routeHubInvoke(ctx context.Context, caller *clipProcess
 	for stream.Receive() {
 		msg := stream.Msg()
 		if hubErr := msg.GetError(); hubErr != nil {
+			slog.Error("invoke: error",
+				"trace_id", traceID, "caller", caller.clip.Name, "target", request.Clip,
+				"command", request.Command, "route", "hub",
+				"duration_ms", time.Since(start).Milliseconds(), "error", hubErr.GetMessage(),
+			)
 			return caller.send(&ipc.Message{ID: request.ID, Type: ipc.MessageTypeError, Error: strings.TrimSpace(hubErr.GetMessage())})
 		}
 
@@ -780,6 +874,11 @@ func (m *ProcessManager) routeHubInvoke(ctx context.Context, caller *clipProcess
 			err = nil
 		}
 		if err != nil {
+			slog.Error("invoke: error",
+				"trace_id", traceID, "caller", caller.clip.Name, "target", request.Clip,
+				"command", request.Command, "route", "hub",
+				"duration_ms", time.Since(start).Milliseconds(), "error", err,
+			)
 			var connectErr *connect.Error
 			if errors.As(err, &connectErr) {
 				return caller.sendInvokeError(request.ID, errors.New(strings.TrimSpace(connectErr.Message())))
@@ -787,6 +886,12 @@ func (m *ProcessManager) routeHubInvoke(ctx context.Context, caller *clipProcess
 			return caller.sendInvokeError(request.ID, err)
 		}
 	}
+
+	slog.Info("invoke: done",
+		"trace_id", traceID, "caller", caller.clip.Name, "target", request.Clip,
+		"command", request.Command, "route", "hub",
+		"duration_ms", time.Since(start).Milliseconds(),
+	)
 
 	if receivedCount == 0 {
 		return caller.send(&ipc.Message{ID: request.ID, Type: ipc.MessageTypeResult, Output: json.RawMessage(`{}`)})
@@ -1127,11 +1232,6 @@ func isRegularFile(path string) bool {
 	}
 	return info.Mode().IsRegular()
 }
-
-func drain(r io.Reader) {
-	_, _ = io.Copy(io.Discard, r)
-}
-
 func collectInvokeResult(ctx context.Context, handle *processInvokeHandle) (json.RawMessage, error) {
 	outputs := make([]json.RawMessage, 0, 4)
 
