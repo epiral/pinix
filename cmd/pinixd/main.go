@@ -1,5 +1,5 @@
 // Role:    pinixd daemon entrypoint for Hub, Runtime, and Portal modes
-// Depends: context, flag, fmt, net, os, os/signal, strings, sync, syscall, time, internal/config, internal/daemon, internal/pidfile
+// Depends: context, flag, fmt, log/slog, net, os, os/signal, path/filepath, strings, sync, syscall, time, internal/config, internal/daemon, internal/logging, internal/pidfile
 // Exports: main
 
 package main
@@ -8,9 +8,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -18,6 +20,7 @@ import (
 
 	configpkg "github.com/epiral/pinix/internal/config"
 	"github.com/epiral/pinix/internal/daemon"
+	"github.com/epiral/pinix/internal/logging"
 	"github.com/epiral/pinix/internal/pidfile"
 )
 
@@ -31,6 +34,7 @@ func main() {
 		port       int
 		pidPath    string
 		hubOnly    bool
+		logLevel   string
 	)
 
 	flag.StringVar(&superToken, "super-token", "", "super token required for protected add/remove operations")
@@ -41,7 +45,23 @@ func main() {
 	flag.BoolVar(&hubOnly, "hub-only", false, "run Hub + Portal only, without a local runtime")
 	flag.IntVar(&port, "port", 9000, "http port for the embedded portal UI; used in provider identity for --hub mode")
 	flag.StringVar(&pidPath, "pid", "", "custom path to PID file (default: ~/.pinix/pinixd.pid)")
+	flag.StringVar(&logLevel, "log-level", "info", "log level: debug, info, warn, error")
 	flag.Parse()
+
+	// Setup structured JSON logging to stderr + file
+	home, err := os.UserHomeDir()
+	if err != nil {
+		slog.Error("failed to get home directory for logging", "error", err)
+	} else {
+		logDir := filepath.Join(home, ".pinix", "logs")
+		cleanup, err := logging.Setup(logDir, logging.ParseLevel(logLevel))
+		if err != nil {
+			slog.Error("failed to setup file logging", "error", err)
+			// Continue with default stderr logging
+		} else {
+			defer cleanup()
+		}
+	}
 
 	clientConfig := loadClientConfig()
 
@@ -69,6 +89,9 @@ func main() {
 	registry, err := daemon.NewRegistry(configPath)
 	if err != nil {
 		exitErr(err)
+	}
+	if err := daemon.EnsureLogsDir(registry.RootDir()); err != nil {
+		exitErr(fmt.Errorf("create logs directory: %w", err))
 	}
 	if superToken != "" {
 		if err := registry.SetSuperToken(superToken); err != nil {

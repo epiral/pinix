@@ -45,6 +45,7 @@ func execute() error {
 		"config":     {},
 		"update":     {},
 		"dist-tag":   {},
+		"logs":       {},
 		"help":       {},
 		"completion": {},
 	}
@@ -161,6 +162,7 @@ func newRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newUpdateCommand(&serverURL, &hubToken))
 	rootCmd.AddCommand(newConfigCommand())
 	rootCmd.AddCommand(newDistTagCommand())
+	rootCmd.AddCommand(newLogsCommand())
 	return rootCmd
 }
 

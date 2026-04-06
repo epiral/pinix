@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -175,6 +176,9 @@ func clipWebResultToProto(result *clipWebReadResult) *pinixv2.GetClipWebResponse
 }
 
 func (h *HubService) Invoke(ctx context.Context, req *connect.Request[pinixv2.InvokeRequest], stream *connect.ServerStream[pinixv2.InvokeResponse]) error {
+	traceID := generateTraceID()
+	start := time.Now()
+
 	clipName := strings.TrimSpace(req.Msg.GetClipName())
 	command := strings.TrimSpace(req.Msg.GetCommand())
 	if clipName == "" {
@@ -184,19 +188,52 @@ func (h *HubService) Invoke(ctx context.Context, req *connect.Request[pinixv2.In
 		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("command is required"))
 	}
 
+	slog.Info("hub.invoke: start",
+		"trace_id", traceID,
+		"target", clipName,
+		"command", command,
+		"route", "pending",
+	)
+
 	if h.daemon != nil && h.daemon.hasLocalRuntime() {
 		clip, ok, err := h.daemon.registry.GetClip(clipName)
 		if err != nil {
 			return connectErrorFromErr(daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)})
 		}
 		if ok {
-			return h.invokeLocalClip(ctx, clip, command, req.Msg.GetInput(), req.Msg.GetClipToken(), stream)
+			slog.Info("hub.invoke: routed", "trace_id", traceID, "target", clipName, "route", "local")
+			err := h.invokeLocalClip(ctx, clip, command, req.Msg.GetInput(), req.Msg.GetClipToken(), stream)
+			if err != nil {
+				slog.Error("hub.invoke: error",
+					"trace_id", traceID, "target", clipName, "command", command,
+					"route", "local", "duration_ms", time.Since(start).Milliseconds(), "error", err,
+				)
+			} else {
+				slog.Info("hub.invoke: done",
+					"trace_id", traceID, "target", clipName, "command", command,
+					"route", "local", "duration_ms", time.Since(start).Milliseconds(),
+				)
+			}
+			return err
 		}
 	}
 	if h.daemon.provider == nil || !h.daemon.provider.HasClip(clipName) {
 		return connect.NewError(connect.CodeNotFound, fmt.Errorf("clip %q not found", clipName))
 	}
-	return h.invokeProviderClip(ctx, clipName, command, req.Msg.GetInput(), req.Msg.GetClipToken(), stream)
+	slog.Info("hub.invoke: routed", "trace_id", traceID, "target", clipName, "route", "provider")
+	err := h.invokeProviderClip(ctx, clipName, command, req.Msg.GetInput(), req.Msg.GetClipToken(), stream)
+	if err != nil {
+		slog.Error("hub.invoke: error",
+			"trace_id", traceID, "target", clipName, "command", command,
+			"route", "provider", "duration_ms", time.Since(start).Milliseconds(), "error", err,
+		)
+	} else {
+		slog.Info("hub.invoke: done",
+			"trace_id", traceID, "target", clipName, "command", command,
+			"route", "provider", "duration_ms", time.Since(start).Milliseconds(),
+		)
+	}
+	return err
 }
 
 func (h *HubService) InvokeStream(ctx context.Context, stream *connect.BidiStream[pinixv2.InvokeStreamMessage, pinixv2.InvokeResponse]) error {
