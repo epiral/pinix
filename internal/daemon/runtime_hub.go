@@ -80,29 +80,46 @@ func (c *runtimeHubConnector) run(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
 
-	errCh := make(chan error, 2)
-	go func() {
-		errCh <- c.runProviderLoop(runCtx)
-	}()
-	go func() {
-		errCh <- c.runRuntimeLoop(runCtx)
-	}()
+	for {
+		runCtx, cancel := context.WithCancel(ctx)
 
-	var firstErr error
-	for i := 0; i < 2; i++ {
-		err := <-errCh
-		if err != nil && firstErr == nil && ctx.Err() == nil {
-			firstErr = err
-			cancel()
+		errCh := make(chan error, 2)
+		go func() {
+			errCh <- c.runProviderLoop(runCtx)
+		}()
+		go func() {
+			errCh <- c.runRuntimeLoop(runCtx)
+		}()
+
+		// Wait for both loops to finish.
+		var firstErr error
+		for i := 0; i < 2; i++ {
+			err := <-errCh
+			if err != nil && firstErr == nil && ctx.Err() == nil {
+				firstErr = err
+				cancel()
+			}
+		}
+		cancel()
+
+		if ctx.Err() != nil {
+			return nil
+		}
+
+		// Both loops exited — log and restart after delay.
+		if firstErr != nil {
+			slog.Error("hub: connection lost, reconnecting", "error", firstErr)
+		} else {
+			slog.Warn("hub: connection closed, reconnecting")
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(5 * time.Second):
 		}
 	}
-	if ctx.Err() != nil {
-		return nil
-	}
-	return firstErr
 }
 
 func (c *runtimeHubConnector) runProviderLoop(ctx context.Context) error {
@@ -115,24 +132,24 @@ func (c *runtimeHubConnector) runProviderLoop(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		if err == nil {
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-time.After(runtimeHubReconnectDelay):
-			}
-			continue
-		}
 
-		var rejected registerRejectedError
-		if errors.As(err, &rejected) {
-			return err
+		delay := runtimeHubReconnectDelay
+		if err != nil {
+			var rejected registerRejectedError
+			if errors.As(err, &rejected) {
+				slog.Error("hub: provider registration rejected, retrying with backoff", "error", err)
+				delay = 30 * time.Second
+			} else {
+				slog.Warn("hub: provider session ended, reconnecting", "error", err)
+			}
+		} else {
+			slog.Info("hub: provider session closed, reconnecting")
 		}
 
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(runtimeHubReconnectDelay):
+		case <-time.After(delay):
 		}
 	}
 }
@@ -147,24 +164,24 @@ func (c *runtimeHubConnector) runRuntimeLoop(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		if err == nil {
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-time.After(runtimeHubReconnectDelay):
-			}
-			continue
-		}
 
-		var rejected registerRejectedError
-		if errors.As(err, &rejected) {
-			return err
+		delay := runtimeHubReconnectDelay
+		if err != nil {
+			var rejected registerRejectedError
+			if errors.As(err, &rejected) {
+				slog.Error("hub: runtime registration rejected, retrying with backoff", "error", err)
+				delay = 30 * time.Second
+			} else {
+				slog.Warn("hub: runtime session ended, reconnecting", "error", err)
+			}
+		} else {
+			slog.Info("hub: runtime session closed, reconnecting")
 		}
 
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(runtimeHubReconnectDelay):
+		case <-time.After(delay):
 		}
 	}
 }
