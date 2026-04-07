@@ -290,6 +290,8 @@ func (c *runtimeHubConnector) runProviderSession(parent context.Context) error {
 				return
 			case <-ticker.C:
 				if err := c.sendProvider(stream, &pinixv2.ProviderMessage{Payload: &pinixv2.ProviderMessage_Ping{Ping: &pinixv2.Heartbeat{SentAtUnixMs: time.Now().UnixMilli()}}}); err != nil {
+					slog.Warn("hub: provider heartbeat failed, closing session", "error", err)
+					cancel()
 					return
 				}
 			}
@@ -300,15 +302,20 @@ func (c *runtimeHubConnector) runProviderSession(parent context.Context) error {
 		<-heartbeatDone
 	}()
 
+	slog.Info("hub: provider session ready, waiting for commands")
+
 	for {
 		message, err := stream.Receive()
 		if err != nil {
 			if parent.Err() != nil || sessionCtx.Err() != nil {
+				slog.Info("hub: provider session closed")
 				return nil
 			}
 			if errors.Is(err, io.EOF) {
+				slog.Warn("hub: provider stream EOF")
 				return err
 			}
+			slog.Error("hub: provider stream receive error", "error", err)
 			return fmt.Errorf("receive hub message: %w", err)
 		}
 
@@ -402,6 +409,8 @@ func (c *runtimeHubConnector) runRuntimeSession(parent context.Context) error {
 				return
 			case <-ticker.C:
 				if err := c.sendRuntime(stream, &pinixv2.RuntimeMessage{Payload: &pinixv2.RuntimeMessage_Ping{Ping: &pinixv2.Heartbeat{SentAtUnixMs: time.Now().UnixMilli()}}}); err != nil {
+					slog.Warn("hub: runtime heartbeat failed, closing session", "error", err)
+					cancel()
 					return
 				}
 			}
