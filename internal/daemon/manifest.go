@@ -253,7 +253,6 @@ func readPackageJSONMetadata(workdir string) (*projectMetadata, error) {
 	}
 	meta := &projectMetadata{
 		Package:     strings.TrimSpace(raw.Name),
-		Version:     strings.TrimSpace(raw.Version),
 		Description: strings.TrimSpace(raw.Description),
 		Main:        firstNonEmpty(strings.TrimSpace(raw.Main), packageJSONBin(raw)),
 	}
