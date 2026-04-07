@@ -17,19 +17,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
-      - run: go vet ./...
+      - uses: bufbuild/buf-setup-action@v1
+      - name: Generate proto
+        run: buf generate
       - run: go build ./cmd/pinixd
       - run: go build ./cmd/pinix
+      - run: go vet ./...
       - run: go test ./...
-
-  lint:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.25"
-      - uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
