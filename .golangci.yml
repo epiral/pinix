@@ -1,0 +1,29 @@
+run:
+  timeout: 3m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  disable:
+    - depguard
+
+linters-settings:
+  errcheck:
+    exclude-functions:
+      - (*connectrpc.com/connect.BidiStreamForClient).CloseRequest
+      - (*connectrpc.com/connect.BidiStreamForClient).CloseResponse
+
+issues:
+  exclude-dirs:
+    - gen
+  exclude-rules:
+    - linters: [errcheck]
+      text: "Error return value of `.*close.*` is not checked"
+    - linters: [errcheck]
+      text: "Error return value of `syscall.Flock` is not checked"
+    - linters: [unused]
+      path: internal/daemon/connect.go
