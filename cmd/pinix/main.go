@@ -19,6 +19,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Set at build time via -ldflags.
+var version = "dev"
+
 func main() {
 	if err := execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -139,6 +142,7 @@ func newRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:           "pinix",
 		Short:         "Pinix CLI for managing Clips through pinixd HubService",
+		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
