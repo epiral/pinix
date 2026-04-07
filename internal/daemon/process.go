@@ -1328,7 +1328,7 @@ func registeredManifestForClip(clip ClipConfig, manifest *ipc.Manifest) (*Manife
 	registered := &ManifestCache{
 		Name:           strings.TrimSpace(clip.Name),
 		Package:        firstNonEmpty(strings.TrimSpace(clip.Package), strings.TrimSpace(manifest.Package)),
-		Version:        firstNonEmpty(strings.TrimSpace(manifest.Version), strings.TrimSpace(clip.Version)),
+		Version:        firstNonEmpty(strings.TrimSpace(clip.Version), strings.TrimSpace(manifest.Version)),
 		Domain:         strings.TrimSpace(manifest.Domain),
 		Description:    strings.TrimSpace(manifest.Description),
 		CommandDetails: parseIPCCommands(manifest.Commands),
