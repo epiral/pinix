@@ -24,17 +24,21 @@ import (
 	"github.com/epiral/pinix/internal/pidfile"
 )
 
+// Set at build time via -ldflags.
+var version = "dev"
+
 func main() {
 	var (
-		superToken string
-		configPath string
-		bunPath    string
-		hubURL     string
-		hubToken   string
-		port       int
-		pidPath    string
-		hubOnly    bool
-		logLevel   string
+		superToken  string
+		configPath  string
+		bunPath     string
+		hubURL      string
+		hubToken    string
+		port        int
+		pidPath     string
+		hubOnly     bool
+		logLevel    string
+		showVersion bool
 	)
 
 	flag.StringVar(&superToken, "super-token", "", "super token required for protected add/remove operations")
@@ -46,7 +50,13 @@ func main() {
 	flag.IntVar(&port, "port", 9000, "http port for the embedded portal UI; used in provider identity for --hub mode")
 	flag.StringVar(&pidPath, "pid", "", "custom path to PID file (default: ~/.pinix/pinixd.pid)")
 	flag.StringVar(&logLevel, "log-level", "info", "log level: debug, info, warn, error")
+	flag.BoolVar(&showVersion, "version", false, "print version and exit")
 	flag.Parse()
+
+	if showVersion {
+		fmt.Println("pinixd", version)
+		return
+	}
 
 	// Setup structured JSON logging to stderr + file
 	home, err := os.UserHomeDir()
