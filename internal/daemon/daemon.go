@@ -74,6 +74,17 @@ func (d *Daemon) GetManifest(ctx context.Context, name string) (*ManifestCache, 
 			return nil, daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)}
 		}
 		if ok {
+			// Local clips: always re-inspect since source files may have changed.
+			if strings.HasPrefix(clip.Source, "local/") {
+				manifest, err := d.process.LoadManifest(ctx, clip.Name)
+				if err == nil && manifest != nil {
+					clip.Manifest = manifest
+					_ = d.registry.PutClip(clip)
+					return enrichManifestForClip(clip, manifest), nil
+				}
+				// Fall through to cached manifest if re-inspect fails.
+			}
+
 			if clip.Manifest != nil {
 				return enrichManifestForClip(clip, clip.Manifest), nil
 			}
