@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -19,7 +18,6 @@ type PIDFile struct {
 	PID       int    `json:"pid"`
 	Port      int    `json:"port"`
 	StartedAt string `json:"startedAt"`
-	HubURL    string `json:"hubURL"`
 }
 
 // defaultPIDFilePath returns the default path ~/.pinix/pinixd.pid.
@@ -40,10 +38,9 @@ func resolvePIDPath(customPath string) (string, error) {
 }
 
 // WritePIDFile writes the PID file with current process info.
-// hubURL defaults to the local Hub URL when empty.
 // If customPath is provided, uses that path instead of the default.
 // Returns a cleanup function that removes the file.
-func WritePIDFile(port int, hubURL string, customPath ...string) (cleanup func(), err error) {
+func WritePIDFile(port int, customPath ...string) (cleanup func(), err error) {
 	cp := ""
 	if len(customPath) > 0 {
 		cp = customPath[0]
@@ -58,16 +55,10 @@ func WritePIDFile(port int, hubURL string, customPath ...string) (cleanup func()
 		return nil, fmt.Errorf("create pid file directory: %w", err)
 	}
 
-	hubURL = strings.TrimSpace(hubURL)
-	if hubURL == "" {
-		hubURL = fmt.Sprintf("http://127.0.0.1:%d", port)
-	}
-
 	pf := PIDFile{
 		PID:       os.Getpid(),
 		Port:      port,
 		StartedAt: time.Now().UTC().Format(time.RFC3339),
-		HubURL:    hubURL,
 	}
 
 	data, err := json.MarshalIndent(pf, "", "  ")

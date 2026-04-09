@@ -116,7 +116,7 @@ func main() {
 	if err := pidfile.CheckExistingPIDFile(port, pidPath); err != nil {
 		exitErr(err)
 	}
-	pidCleanup, err := pidfile.WritePIDFile(port, hubURL, pidPath)
+	pidCleanup, err := pidfile.WritePIDFile(port, pidPath)
 	if err != nil {
 		exitErr(fmt.Errorf("write pid file: %w", err))
 	}

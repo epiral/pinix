@@ -1,5 +1,5 @@
 // Role:    Hub subcommand group — manage Clips through a Pinix Hub
-// Depends: fmt, os, strings, internal/client, internal/config, internal/pidfile, cobra
+// Depends: fmt, os, strings, internal/client, internal/config, cobra
 // Exports: newHubCommand, defaultHubURL, defaultHubToken
 
 package main
@@ -11,16 +11,11 @@ import (
 
 	"github.com/epiral/pinix/internal/client"
 	configpkg "github.com/epiral/pinix/internal/config"
-	"github.com/epiral/pinix/internal/pidfile"
 	"github.com/spf13/cobra"
 )
 
-// defaultHubURL resolves the Hub URL from: PID file > client.json > fallback.
+// defaultHubURL resolves the Hub URL from: client.json > fallback (localhost:9000).
 func defaultHubURL() string {
-	pf, err := pidfile.ReadPIDFile()
-	if err == nil && pf != nil {
-		return pf.HubURL
-	}
 	cfg, err := configpkg.ReadClientConfig()
 	if err == nil && strings.TrimSpace(cfg.Hub) != "" {
 		return strings.TrimSpace(cfg.Hub)
