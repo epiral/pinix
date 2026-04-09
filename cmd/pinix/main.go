@@ -1,17 +1,15 @@
-// Role:    pinix CLI entrypoint for HubService-backed Clip management and invocation
-// Depends: encoding/json, fmt, os, path/filepath, strconv, strings, internal/client, pinix v2, cobra
+// Role:    pinix CLI entrypoint — routes to invoke, hub, registry, and config subcommands
+// Depends: encoding/json, fmt, os, path/filepath, sort, strings, internal/client, pinix v2, cobra
 // Exports: main
 
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	pinixv2 "github.com/epiral/pinix/gen/go/pinix/v2"
@@ -30,143 +28,25 @@ func main() {
 }
 
 func execute() error {
-	known := map[string]struct{}{
-		"add":        {},
-		"mcp":        {},
-		"remove":     {},
-		"list":       {},
-		"register":   {},
-		"login":      {},
-		"logout":     {},
-		"whoami":     {},
-		"bind":       {},
-		"unbind":     {},
-		"bindings":   {},
-		"search":     {},
-		"publish":    {},
-		"info":       {},
-		"config":     {},
-		"update":     {},
-		"dist-tag":   {},
-		"logs":       {},
-		"help":       {},
-		"completion": {},
-	}
-
-	globals, rest := splitGlobalArgs(os.Args[1:])
-	if len(rest) > 0 {
-		if _, ok := known[rest[0]]; !ok {
-			return executeInvoke(globals, rest)
-		}
-	}
-
 	cmd := newRootCommand()
 	cmd.SetArgs(os.Args[1:])
 	return cmd.Execute()
 }
 
-// executeInvoke bypasses cobra to avoid flag interception. Global flags
-// (--server, --auth-token, --clip-token) are already extracted by
-// splitGlobalArgs; everything in rest belongs to the clip command.
-func executeInvoke(globals, rest []string) error {
-	if len(rest) < 2 {
-		return fmt.Errorf("usage: pinix [flags] <clip> <command> [--key value ...]")
-	}
-
-	serverURL, hubToken, clipToken := parseGlobalFlags(globals)
-
-	clipName := rest[0]
-	command := rest[1]
-	invokeArgs := rest[2:]
-
-	input, err := parseInvokeInput(invokeArgs)
-	if err != nil {
-		return err
-	}
-
-	cli, err := client.New(serverURL)
-	if err != nil {
-		return err
-	}
-
-	ctx := context.Background()
-	result, err := cli.Invoke(ctx, clipName, command, input, clipToken, hubToken)
-	if err != nil {
-		return err
-	}
-	if len(result) == 0 {
-		return nil
-	}
-	if result[0] == '"' {
-		var value string
-		if err := json.Unmarshal(result, &value); err == nil {
-			fmt.Println(value)
-			return nil
-		}
-	}
-	fmt.Println(string(result))
-	return nil
-}
-
-// parseGlobalFlags extracts --server, --auth-token, and --clip-token values
-// from the globals slice produced by splitGlobalArgs.
-func parseGlobalFlags(globals []string) (serverURL, hubToken, clipToken string) {
-	serverURL = client.DefaultServerURL()
-	hubToken = os.Getenv("PINIX_TOKEN")
-	for i := 0; i < len(globals); i++ {
-		switch globals[i] {
-		case "--server":
-			if i+1 < len(globals) {
-				serverURL = globals[i+1]
-				i++
-			}
-		case "--auth-token":
-			if i+1 < len(globals) {
-				hubToken = globals[i+1]
-				i++
-			}
-		case "--clip-token":
-			if i+1 < len(globals) {
-				clipToken = globals[i+1]
-				i++
-			}
-		}
-	}
-	return
-}
-
 func newRootCommand() *cobra.Command {
-	var serverURL string
-	var hubToken string
-
 	rootCmd := &cobra.Command{
 		Use:           "pinix",
-		Short:         "Pinix CLI for managing Clips through pinixd HubService",
+		Short:         "Pinix CLI for managing Clips and invoking commands",
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	rootCmd.PersistentFlags().StringVar(&serverURL, "server", client.DefaultServerURL(), "pinixd HubService base URL")
-	rootCmd.PersistentFlags().StringVar(&hubToken, "auth-token", os.Getenv("PINIX_TOKEN"), "hub auth token for protected add/remove operations")
 
-	rootCmd.AddCommand(newAddCommand(&serverURL, &hubToken))
-	rootCmd.AddCommand(newMCPCommand(&serverURL, &hubToken))
-	rootCmd.AddCommand(newRemoveCommand(&serverURL, &hubToken))
-	rootCmd.AddCommand(newListCommand(&serverURL, &hubToken))
-	rootCmd.AddCommand(newRegisterCommand())
-	rootCmd.AddCommand(newLoginCommand())
-	rootCmd.AddCommand(newLogoutCommand())
-	rootCmd.AddCommand(newWhoAmICommand())
-	rootCmd.AddCommand(newBindCommand(&serverURL, &hubToken))
-	rootCmd.AddCommand(newUnbindCommand(&serverURL, &hubToken))
-	rootCmd.AddCommand(newBindingsCommand(&serverURL, &hubToken))
-	rootCmd.AddCommand(newSearchCommand())
-	rootCmd.AddCommand(newPublishCommand())
-	rootCmd.AddCommand(newInfoCommand(&serverURL, &hubToken))
-	rootCmd.AddCommand(newUpdateCommand(&serverURL, &hubToken))
+	rootCmd.AddCommand(newInvokeCommand())
+	rootCmd.AddCommand(newHubCommand())
+	rootCmd.AddCommand(newRegistryGroupCommand())
 	rootCmd.AddCommand(newConfigCommand())
-	rootCmd.AddCommand(newDistTagCommand())
-	rootCmd.AddCommand(newLogsCommand())
+
 	return rootCmd
 }
 
@@ -435,78 +315,6 @@ func clipCommandNames(clip *pinixv2.ClipInfo) []string {
 		result = append(result, command.GetName())
 	}
 	return result
-}
-
-func splitGlobalArgs(args []string) ([]string, []string) {
-	globals := make([]string, 0, len(args))
-	i := 0
-	for i < len(args) {
-		arg := args[i]
-		if arg == "--" {
-			return globals, args[i+1:]
-		}
-		if !strings.HasPrefix(arg, "-") {
-			return globals, args[i:]
-		}
-		globals = append(globals, arg)
-		if arg == "--server" || arg == "--auth-token" || arg == "--clip-token" {
-			if i+1 < len(args) {
-				globals = append(globals, args[i+1])
-				i += 2
-				continue
-			}
-		}
-		i++
-	}
-	return globals, nil
-}
-
-func parseInvokeInput(args []string) (json.RawMessage, error) {
-	if len(args) == 0 {
-		return json.RawMessage(`{}`), nil
-	}
-	input := make(map[string]any)
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		if !strings.HasPrefix(arg, "--") {
-			return nil, fmt.Errorf("unexpected argument %q; expected --key value", arg)
-		}
-		key := strings.TrimPrefix(arg, "--")
-		if key == "" {
-			return nil, fmt.Errorf("invalid empty option")
-		}
-		value := "true"
-		if strings.Contains(key, "=") {
-			parts := strings.SplitN(key, "=", 2)
-			key = parts[0]
-			value = parts[1]
-		} else if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
-			i++
-			value = args[i]
-		}
-		input[key] = coerceValue(value)
-	}
-	data, err := json.Marshal(input)
-	if err != nil {
-		return nil, fmt.Errorf("marshal invoke input: %w", err)
-	}
-	return data, nil
-}
-
-func coerceValue(value string) any {
-	if value == "true" {
-		return true
-	}
-	if value == "false" {
-		return false
-	}
-	if number, err := strconv.ParseInt(value, 10, 64); err == nil {
-		return number
-	}
-	if number, err := strconv.ParseFloat(value, 64); err == nil {
-		return number
-	}
-	return value
 }
 
 func firstNonEmpty(values ...string) string {
