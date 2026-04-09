@@ -88,7 +88,7 @@ Hub 的代码路径只关心三件事：
 ### 用户调用本地 Clip
 
 ```text
-pinix twitter search
+pinix invoke twitter search
   -> Hub
   -> pinixd local runtime
   -> twitter Bun process
