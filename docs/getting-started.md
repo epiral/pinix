@@ -215,10 +215,10 @@ Cursor 的 MCP 配置界面使用同样的 `command` 和 `args` 即可。
 ### 注册 / 登录
 
 ```bash
-./pinix register            # 注册新账号
-./pinix login               # 登录
-./pinix whoami              # 查看当前用户
-./pinix logout              # 登出
+./pinix registry register            # 注册新账号
+./pinix registry login               # 登录
+./pinix registry whoami              # 查看当前用户
+./pinix registry logout              # 登出
 ```
 
 凭据保存在 `~/.pinix/credentials.json`。可通过 `--registry` 指定非默认 Registry。
@@ -226,8 +226,8 @@ Cursor 的 MCP 配置界面使用同样的 `command` 和 `args` 即可。
 ### 搜索
 
 ```bash
-./pinix search todo
-./pinix search todo --domain productivity
+./pinix registry search todo
+./pinix registry search todo --domain productivity
 ```
 
 ### 发布
@@ -235,13 +235,13 @@ Cursor 的 MCP 配置界面使用同样的 `command` 和 `args` 即可。
 在 Clip 目录下：
 
 ```bash
-./pinix publish
-./pinix publish --tag beta
+./pinix registry publish
+./pinix registry publish --tag beta
 ```
 
 发布要求：
 - 项目中需要 `clip.json` 或 `package.json` 提供 `name`（`@scope/name` 格式）、`version`、`description`。
-- 必须先 `pinix login`。
+- 必须先 `pinix registry login`。
 
 ## 8. 连接 Cloud Hub
 

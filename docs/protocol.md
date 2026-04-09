@@ -87,7 +87,7 @@ sequenceDiagram
 
 ### 2.2 命令调用（CLI -> Hub -> Clip）
 
-**场景**：用户在终端执行 `pinix todo list`，CLI 通过 Hub 路由调用到 clip-todo 进程。
+**场景**：用户在终端执行 `pinix invoke todo list`，CLI 通过 Hub 路由调用到 clip-todo 进程。
 
 #### 2.2.1 普通调用（Unary）
 
@@ -569,7 +569,7 @@ Clip 使用流式输出时，通过 `@pinixai/core` 的 `stream.chunk()` 发送 
 
 ### 4.4 完整链路示例
 
-以 `pinix twitter search --query "AI agent"` 为例：
+以 `pinix invoke twitter search --query "AI agent"` 为例：
 
 ```
 用户终端
