@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"strconv"
 	"strings"
 
@@ -52,6 +54,25 @@ func runInvoke(args []string) error {
 	input, err := parseInvokeInput(rest[2:])
 	if err != nil {
 		return err
+	}
+
+	// If stdin is piped (not a terminal), read it and inject as "stdin" field.
+	if fi, _ := os.Stdin.Stat(); fi != nil && (fi.Mode()&os.ModeCharDevice) == 0 {
+		stdinBytes, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return fmt.Errorf("read stdin: %w", err)
+		}
+		if len(stdinBytes) > 0 {
+			var obj map[string]any
+			if err := json.Unmarshal(input, &obj); err != nil {
+				obj = make(map[string]any)
+			}
+			obj["stdin"] = string(stdinBytes)
+			input, err = json.Marshal(obj)
+			if err != nil {
+				return fmt.Errorf("marshal stdin input: %w", err)
+			}
+		}
 	}
 
 	cli, err := client.New(serverURL)
