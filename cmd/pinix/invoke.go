@@ -133,6 +133,15 @@ func parseInvokeInput(args []string) (json.RawMessage, error) {
 	if len(args) == 0 {
 		return json.RawMessage(`{}`), nil
 	}
+
+	// Single argument that looks like JSON: pass through directly.
+	if len(args) == 1 && len(args[0]) > 0 && (args[0][0] == '{' || args[0][0] == '[') {
+		var parsed json.RawMessage
+		if err := json.Unmarshal([]byte(args[0]), &parsed); err == nil {
+			return parsed, nil
+		}
+	}
+
 	input := make(map[string]any)
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -148,11 +157,23 @@ func parseInvokeInput(args []string) (json.RawMessage, error) {
 			parts := strings.SplitN(key, "=", 2)
 			key = parts[0]
 			value = parts[1]
-		} else if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+		} else if i+1 < len(args) {
 			i++
 			value = args[i]
 		}
-		input[key] = coerceValue(value)
+
+		coerced := coerceValue(value)
+
+		// Repeated keys build an array.
+		if existing, ok := input[key]; ok {
+			if arr, ok := existing.([]any); ok {
+				input[key] = append(arr, coerced)
+			} else {
+				input[key] = []any{existing, coerced}
+			}
+		} else {
+			input[key] = coerced
+		}
 	}
 	data, err := json.Marshal(input)
 	if err != nil {
@@ -173,6 +194,13 @@ func coerceValue(value string) any {
 	}
 	if number, err := strconv.ParseFloat(value, 64); err == nil {
 		return number
+	}
+	// Try JSON object or array
+	if len(value) > 0 && (value[0] == '{' || value[0] == '[') {
+		var parsed any
+		if err := json.Unmarshal([]byte(value), &parsed); err == nil {
+			return parsed
+		}
 	}
 	return value
 }
