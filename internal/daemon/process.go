@@ -563,13 +563,28 @@ func (m *ProcessManager) handleListClips(proc *clipProcess, requestID string) {
 					Output:      cmd.GetOutput(),
 				})
 			}
-			infos = append(infos, ipc.ListClipInfo{
+			info := ipc.ListClipInfo{
 				Name:     clip.GetName(),
 				Package:  clip.GetPackage(),
 				Version:  clip.GetVersion(),
 				Domain:   clip.GetDomain(),
 				Commands: commands,
-			})
+			}
+			// Enrich with local manifest data (patterns, description) if available
+			if m.registry != nil {
+				if local, ok, _ := m.registry.GetClip(clip.GetName()); ok && local.Manifest != nil {
+					if info.Domain == "" {
+						info.Domain = strings.TrimSpace(local.Manifest.Domain)
+					}
+					if info.Description == "" {
+						info.Description = strings.TrimSpace(local.Manifest.Description)
+					}
+					if len(info.Patterns) == 0 {
+						info.Patterns = local.Manifest.Patterns
+					}
+				}
+			}
+			infos = append(infos, info)
 		}
 	} else {
 		// Fallback to local registry when Hub client is not available.
