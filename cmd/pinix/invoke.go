@@ -19,13 +19,13 @@ import (
 
 func newInvokeCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "invoke <clip> <command> [--key value ...]",
+		Use:   "invoke <clip> <command> [subcommand] [--key value ...]",
 		Short: "Invoke a Clip command",
 		Long: `Invoke a command on a Clip registered with the Hub.
 
-Arguments after <clip> <command> are passed as key-value input:
+Arguments after <clip> are the command path (supports sub-commands):
   pinix invoke todo add --title "Buy milk"
-  pinix invoke search query --q "AI agents"
+  pinix invoke memex schema list --topLevel true
 
 Flags --server, --auth-token, and --clip-token must come before <clip>.`,
 		DisableFlagParsing: true,
@@ -50,8 +50,11 @@ func runInvoke(args []string) error {
 	}
 
 	clipName := rest[0]
-	command := rest[1]
-	input, err := parseInvokeInput(rest[2:])
+	command, flagArgs := parseCommandPath(rest[1:])
+	if command == "" {
+		return fmt.Errorf("usage: pinix invoke <clip> <command> [--key value ...]")
+	}
+	input, err := parseInvokeInput(flagArgs)
 	if err != nil {
 		return err
 	}
@@ -148,6 +151,20 @@ func parseInvokeFlags(globals []string) (serverURL, hubToken, clipToken string) 
 		}
 	}
 	return
+}
+
+// parseCommandPath extracts the command name from args.
+// Non-flag tokens (before the first --flag) are joined with spaces to form the command.
+// Example: ["schema", "list", "--type", "meeting"] → ("schema list", ["--type", "meeting"])
+func parseCommandPath(args []string) (string, []string) {
+	var parts []string
+	for i, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			return strings.Join(parts, " "), args[i:]
+		}
+		parts = append(parts, arg)
+	}
+	return strings.Join(parts, " "), nil
 }
 
 func parseInvokeInput(args []string) (json.RawMessage, error) {
