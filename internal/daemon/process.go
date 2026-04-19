@@ -567,6 +567,7 @@ func (m *ProcessManager) handleListClips(proc *clipProcess, requestID string) {
 				Name:     clip.GetName(),
 				Package:  clip.GetPackage(),
 				Version:  clip.GetVersion(),
+				Domain:   clip.GetDomain(),
 				Commands: commands,
 			})
 		}
@@ -594,10 +595,13 @@ func (m *ProcessManager) handleListClips(proc *clipProcess, requestID string) {
 				})
 			}
 			infos = append(infos, ipc.ListClipInfo{
-				Name:     clip.Name,
-				Package:  manifest.Package,
-				Version:  manifest.Version,
-				Commands: commands,
+				Name:        clip.Name,
+				Package:     manifest.Package,
+				Version:     manifest.Version,
+				Domain:      manifest.Domain,
+				Description: manifest.Description,
+				Patterns:    manifest.Patterns,
+				Commands:    commands,
 			})
 		}
 	}
