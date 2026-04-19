@@ -182,6 +182,14 @@ func printManifest(clipName string, m *pinixv2.ClipManifest) {
 		fmt.Printf("  Description: %s\n", desc)
 	}
 
+	if patterns := m.GetPatterns(); len(patterns) > 0 {
+		fmt.Println()
+		fmt.Println("  Patterns:")
+		for _, p := range patterns {
+			fmt.Printf("    %s\n", strings.TrimSpace(p))
+		}
+	}
+
 	commands := m.GetCommands()
 	if len(commands) == 0 {
 		return
