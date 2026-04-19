@@ -39,10 +39,13 @@ type Message struct {
 }
 
 type ListClipInfo struct {
-	Name     string            `json:"name"`
-	Package  string            `json:"package,omitempty"`
-	Version  string            `json:"version,omitempty"`
-	Commands []ListCommandInfo `json:"commands,omitempty"`
+	Name        string            `json:"name"`
+	Package     string            `json:"package,omitempty"`
+	Version     string            `json:"version,omitempty"`
+	Domain      string            `json:"domain,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Patterns    []string          `json:"patterns,omitempty"`
+	Commands    []ListCommandInfo `json:"commands,omitempty"`
 }
 
 type ListCommandInfo struct {
