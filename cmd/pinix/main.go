@@ -202,41 +202,78 @@ func printManifest(clipName string, m *pinixv2.ClipManifest) {
 		}
 	}
 
-	fmt.Println()
-	fmt.Println("  Commands:")
+	// Separate top-level commands from sub-commands (names containing spaces)
+	groups := make(map[string][]*pinixv2.CommandInfo) // group prefix → sub-commands
+	var topLevel []*pinixv2.CommandInfo
 	for _, c := range sorted {
 		name := c.GetName()
-		desc := strings.TrimSpace(c.GetDescription())
-		fmt.Printf("    %-*s   %s\n", maxCmdLen, name, desc)
-
-		// Parse input schema to show parameters
-		params := parseSchemaProperties(c.GetInput())
-		if len(params) == 0 {
-			continue
+		if idx := strings.Index(name, " "); idx > 0 {
+			prefix := name[:idx]
+			groups[prefix] = append(groups[prefix], c)
+		} else {
+			topLevel = append(topLevel, c)
 		}
+	}
 
-		// Compute max param display width for alignment
-		maxParamLen := 0
-		for _, p := range params {
-			display := "--" + p.name + " " + p.typ
-			if p.required {
-				display += " (required)"
-			}
-			if len(display) > maxParamLen {
-				maxParamLen = len(display)
-			}
+	fmt.Println()
+	fmt.Println("  Commands:")
+
+	// Print top-level commands first
+	for _, c := range topLevel {
+		printCommandInfo(c, maxCmdLen, "    ")
+	}
+
+	// Print groups with sub-commands
+	groupNames := make([]string, 0, len(groups))
+	for name := range groups {
+		groupNames = append(groupNames, name)
+	}
+	sort.Strings(groupNames)
+	for _, groupName := range groupNames {
+		cmds := groups[groupName]
+		fmt.Printf("    %s\n", groupName)
+		for _, c := range cmds {
+			subName := strings.TrimPrefix(c.GetName(), groupName+" ")
+			desc := strings.TrimSpace(c.GetDescription())
+			fmt.Printf("      %-*s   %s\n", maxCmdLen-2, subName, desc)
+			printCommandParams(c, "        ")
 		}
+	}
+}
 
-		for _, p := range params {
-			display := "--" + p.name + " " + p.typ
-			if p.required {
-				display += " (required)"
-			}
-			if p.description != "" {
-				fmt.Printf("      %-*s    %s\n", maxParamLen, display, p.description)
-			} else {
-				fmt.Printf("      %s\n", display)
-			}
+func printCommandInfo(c *pinixv2.CommandInfo, maxCmdLen int, indent string) {
+	name := c.GetName()
+	desc := strings.TrimSpace(c.GetDescription())
+	fmt.Printf("%s%-*s   %s\n", indent, maxCmdLen, name, desc)
+	printCommandParams(c, indent+"  ")
+}
+
+func printCommandParams(c *pinixv2.CommandInfo, indent string) {
+	params := parseSchemaProperties(c.GetInput())
+	if len(params) == 0 {
+		return
+	}
+
+	maxParamLen := 0
+	for _, p := range params {
+		display := "--" + p.name + " " + p.typ
+		if p.required {
+			display += " (required)"
+		}
+		if len(display) > maxParamLen {
+			maxParamLen = len(display)
+		}
+	}
+
+	for _, p := range params {
+		display := "--" + p.name + " " + p.typ
+		if p.required {
+			display += " (required)"
+		}
+		if p.description != "" {
+			fmt.Printf("%s%-*s    %s\n", indent, maxParamLen, display, p.description)
+		} else {
+			fmt.Printf("%s%s\n", indent, display)
 		}
 	}
 }
