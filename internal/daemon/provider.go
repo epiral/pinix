@@ -60,6 +60,14 @@ type ProviderClipWebHandle struct {
 	closeOnce sync.Once
 }
 
+type ProviderDataHandle struct {
+	session   *providerSession
+	requestID string
+	responses chan providerDataEvent
+
+	closeOnce sync.Once
+}
+
 type providerSession struct {
 	manager     *ProviderManager
 	name        string
@@ -71,6 +79,7 @@ type providerSession struct {
 	pendingMu      sync.Mutex
 	pendingInvokes map[string]chan providerInvokeChunk
 	pendingClipWeb map[string]chan providerClipWebEvent
+	pendingData    map[string]chan providerDataEvent
 
 	closeOnce sync.Once
 	closed    chan struct{}
@@ -106,6 +115,12 @@ type providerClipWebEvent struct {
 	notModified bool
 	err         *ResponseError
 	done        bool
+}
+
+type providerDataEvent struct {
+	response *pinixv2.DataResponse
+	err      *ResponseError
+	done     bool
 }
 
 func NewProviderManager(registry *Registry) *ProviderManager {
@@ -384,6 +399,41 @@ func (m *ProviderManager) OpenClipWeb(clipName, path string, offset, length int6
 	return handle, nil
 }
 
+func (m *ProviderManager) OpenData(clipName, operation, dataPath string, content []byte, mimeType string) (*ProviderDataHandle, error) {
+	clipName = strings.TrimSpace(clipName)
+	if clipName == "" {
+		return nil, daemonError{Code: "invalid_argument", Message: "clip is required"}
+	}
+
+	ref := m.lookupClip(clipName)
+	if ref == nil {
+		return nil, daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", clipName)}
+	}
+
+	handle := &ProviderDataHandle{
+		session:   ref.session,
+		requestID: fmt.Sprintf("req-%d", m.nextID.Add(1)),
+		responses: make(chan providerDataEvent, 1),
+	}
+	if err := ref.session.registerData(handle.requestID, handle.responses); err != nil {
+		return nil, daemonError{Code: "internal", Message: err.Error()}
+	}
+
+	message := &pinixv2.HubMessage{Payload: &pinixv2.HubMessage_DataCommand{DataCommand: &pinixv2.DataCommand{
+		RequestId: handle.requestID,
+		ClipName:  clipName,
+		Operation: strings.TrimSpace(operation),
+		Path:      strings.TrimSpace(dataPath),
+		Content:   cloneBytes(content),
+		Mime:      strings.TrimSpace(mimeType),
+	}}}
+	if err := ref.session.send(message); err != nil {
+		handle.Close()
+		return nil, daemonError{Code: "internal", Message: err.Error()}
+	}
+	return handle, nil
+}
+
 func (m *ProviderManager) Close() error {
 	m.mu.RLock()
 	sessions := make([]*providerSession, 0, len(m.providers))
@@ -444,6 +494,7 @@ func (m *ProviderManager) registerSession(register *pinixv2.RegisterRequest, str
 		stream:         stream,
 		pendingInvokes: make(map[string]chan providerInvokeChunk),
 		pendingClipWeb: make(map[string]chan providerClipWebEvent),
+		pendingData:    make(map[string]chan providerDataEvent),
 		closed:         make(chan struct{}),
 		clips:          make(map[string]*providerClip, len(clips)),
 	}
@@ -616,6 +667,30 @@ func (h *ProviderClipWebHandle) Close() {
 	})
 }
 
+func (h *ProviderDataHandle) Receive(ctx context.Context) (providerDataEvent, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	select {
+	case event := <-h.responses:
+		return event, nil
+	case <-h.session.closed:
+		return providerDataEvent{}, h.session.err()
+	case <-ctx.Done():
+		return providerDataEvent{}, ctx.Err()
+	}
+}
+
+func (h *ProviderDataHandle) Close() {
+	if h == nil || h.session == nil {
+		return
+	}
+	h.closeOnce.Do(func() {
+		h.session.unregisterData(h.requestID)
+	})
+}
+
 func (s *providerSession) readLoop() error {
 	for {
 		message, err := s.stream.Receive()
@@ -639,6 +714,8 @@ func (s *providerSession) readLoop() error {
 			s.handleInvokeResult(payload.InvokeResult)
 		case *pinixv2.ProviderMessage_GetClipWebResult:
 			s.handleClipWebResult(payload.GetClipWebResult)
+		case *pinixv2.ProviderMessage_DataResult:
+			s.handleDataResult(payload.DataResult)
 		case *pinixv2.ProviderMessage_Ping:
 			if err := s.send(&pinixv2.HubMessage{Payload: &pinixv2.HubMessage_Pong{Pong: &pinixv2.Heartbeat{SentAtUnixMs: payload.Ping.GetSentAtUnixMs()}}}); err != nil {
 				s.closeWithError(err)
@@ -716,6 +793,22 @@ func (s *providerSession) handleClipWebResult(message *pinixv2.GetClipWebResult)
 		notModified: message.GetNotModified(),
 		err:         hubErrorToResponseError(message.GetError()),
 		done:        true,
+	})
+}
+
+func (s *providerSession) handleDataResult(message *pinixv2.DataResult) {
+	if message == nil {
+		return
+	}
+	resp := dataResultToResponse(message)
+	var respErr *ResponseError
+	if hubErr := message.GetError(); hubErr != nil {
+		respErr = hubErrorToResponseError(hubErr)
+	}
+	s.dispatchData(strings.TrimSpace(message.GetRequestId()), providerDataEvent{
+		response: resp,
+		err:      respErr,
+		done:     true,
 	})
 }
 
@@ -812,6 +905,44 @@ func (s *providerSession) dispatchClipWeb(requestID string, event providerClipWe
 	}
 }
 
+func (s *providerSession) registerData(requestID string, ch chan providerDataEvent) error {
+	select {
+	case <-s.closed:
+		return s.err()
+	default:
+	}
+
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	if _, exists := s.pendingData[requestID]; exists {
+		return fmt.Errorf("duplicate provider data request id: %s", requestID)
+	}
+	s.pendingData[requestID] = ch
+	return nil
+}
+
+func (s *providerSession) unregisterData(requestID string) {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	delete(s.pendingData, requestID)
+}
+
+func (s *providerSession) dispatchData(requestID string, event providerDataEvent) {
+	if requestID == "" {
+		return
+	}
+	s.pendingMu.Lock()
+	ch, ok := s.pendingData[requestID]
+	s.pendingMu.Unlock()
+	if !ok {
+		return
+	}
+	select {
+	case ch <- event:
+	default:
+	}
+}
+
 func (s *providerSession) closeWithError(err error) error {
 	s.closeOnce.Do(func() {
 		if err == nil {
@@ -827,8 +958,10 @@ func (s *providerSession) closeWithError(err error) error {
 		s.pendingMu.Lock()
 		pendingInvokes := s.pendingInvokes
 		pendingClipWeb := s.pendingClipWeb
+		pendingData := s.pendingData
 		s.pendingInvokes = make(map[string]chan providerInvokeChunk)
 		s.pendingClipWeb = make(map[string]chan providerClipWebEvent)
+		s.pendingData = make(map[string]chan providerDataEvent)
 		s.pendingMu.Unlock()
 
 		respErr := &ResponseError{Code: "closed", Message: err.Error()}
@@ -842,6 +975,13 @@ func (s *providerSession) closeWithError(err error) error {
 		for id, ch := range pendingClipWeb {
 			select {
 			case ch <- providerClipWebEvent{err: respErr, done: true}:
+			default:
+				_ = id
+			}
+		}
+		for id, ch := range pendingData {
+			select {
+			case ch <- providerDataEvent{err: respErr, done: true}:
 			default:
 				_ = id
 			}

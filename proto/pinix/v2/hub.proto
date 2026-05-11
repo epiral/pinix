@@ -30,6 +30,7 @@ service HubService {
   rpc GetClipWeb(GetClipWebRequest) returns (GetClipWebResponse);
   rpc Invoke(InvokeRequest) returns (stream InvokeResponse);
   rpc InvokeStream(stream InvokeStreamMessage) returns (stream InvokeResponse);
+  rpc Data(DataRequest) returns (DataResponse);
   rpc AddClip(AddClipRequest) returns (AddClipResponse);
   rpc RemoveClip(RemoveClipRequest) returns (RemoveClipResponse);
   rpc GetBindings(GetBindingsRequest) returns (GetBindingsResponse);
@@ -121,6 +122,7 @@ message ProviderMessage {
     Heartbeat ping = 5;
     GetClipWebResult get_clip_web_result = 7;
     ClipStatusChanged clip_status_changed = 8;
+    DataResult data_result = 9;
   }
 }
 
@@ -131,6 +133,7 @@ message HubMessage {
     InvokeInput invoke_input = 3;
     Heartbeat pong = 5;
     GetClipWebCommand get_clip_web_command = 6;
+    DataCommand data_command = 7;
   }
 }
 
@@ -370,3 +373,59 @@ message RemoveBindingRequest {
 }
 
 message RemoveBindingResponse {}
+
+// ============================================================
+//  Clip Data — per-clip file namespace
+// ============================================================
+
+// Client → Hub
+message DataRequest {
+  string clip_name = 1;
+  string operation = 2;   // "read" | "write" | "list" | "delete" | "stat"
+  string path = 3;
+  bytes content = 4;      // write only
+  string mime = 5;        // write only
+  string clip_token = 6;
+}
+
+message DataResponse {
+  bytes content = 1;           // read only
+  string uri = 2;              // write returns pinix://{clip}/{path}
+  repeated DataEntry entries = 3; // list only
+  DataStat stat = 4;           // stat only
+  HubError error = 5;
+}
+
+message DataEntry {
+  string name = 1;
+  string path = 2;       // pinix:// URI
+  string type = 3;       // "file" | "directory"
+  int64 size = 4;
+  string mime = 5;
+}
+
+message DataStat {
+  int64 size = 1;
+  string mime = 2;
+  string modified = 3;   // ISO 8601
+}
+
+// Hub → Provider (via ProviderStream)
+message DataCommand {
+  string request_id = 1;
+  string clip_name = 2;
+  string operation = 3;
+  string path = 4;
+  bytes content = 5;
+  string mime = 6;
+}
+
+// Provider → Hub (via ProviderStream)
+message DataResult {
+  string request_id = 1;
+  bytes content = 2;
+  string uri = 3;
+  repeated DataEntry entries = 4;
+  DataStat stat = 5;
+  HubError error = 6;
+}
