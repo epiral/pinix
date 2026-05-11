@@ -324,6 +324,8 @@ func (c *runtimeHubConnector) runProviderSession(parent context.Context) error {
 			go c.handleInvokeCommand(sessionCtx, stream, message.GetInvokeCommand())
 		case message.GetGetClipWebCommand() != nil:
 			go c.handleGetClipWebCommand(stream, message.GetGetClipWebCommand())
+		case message.GetDataCommand() != nil:
+			go c.handleDataCommand(stream, message.GetDataCommand())
 		case message.GetPong() != nil:
 			continue
 		default:
@@ -603,6 +605,27 @@ func (c *runtimeHubConnector) handleGetClipWebCommand(stream *connect.BidiStream
 
 func (c *runtimeHubConnector) sendClipWebResult(stream *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage], result *pinixv2.GetClipWebResult) error {
 	return c.sendProvider(stream, &pinixv2.ProviderMessage{Payload: &pinixv2.ProviderMessage_GetClipWebResult{GetClipWebResult: result}})
+}
+
+func (c *runtimeHubConnector) handleDataCommand(stream *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage], command *pinixv2.DataCommand) {
+	requestID := strings.TrimSpace(command.GetRequestId())
+	if requestID == "" {
+		return
+	}
+
+	clipName := strings.TrimSpace(command.GetClipName())
+	if clipName == "" {
+		_ = c.sendDataResult(stream, &pinixv2.DataResult{RequestId: requestID, Error: &pinixv2.HubError{Code: "invalid_argument", Message: "clip_name is required"}})
+		return
+	}
+
+	resp := handleDataOperation(c.daemon.registry, clipName, command.GetOperation(), command.GetPath(), command.GetContent(), command.GetMime())
+	result := dataResponseToResult(requestID, resp)
+	_ = c.sendDataResult(stream, result)
+}
+
+func (c *runtimeHubConnector) sendDataResult(stream *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage], result *pinixv2.DataResult) error {
+	return c.sendProvider(stream, &pinixv2.ProviderMessage{Payload: &pinixv2.ProviderMessage_DataResult{DataResult: result}})
 }
 
 func (c *runtimeHubConnector) handleInstallCommand(ctx context.Context, stream *connect.BidiStreamForClient[pinixv2.RuntimeMessage, pinixv2.HubRuntimeMessage], command *pinixv2.InstallCommand) {

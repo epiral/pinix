@@ -43,6 +43,7 @@ func newRootCommand() *cobra.Command {
 	}
 
 	rootCmd.AddCommand(newInvokeCommand())
+	rootCmd.AddCommand(newDataCommand())
 	rootCmd.AddCommand(newHubCommand())
 	rootCmd.AddCommand(newRegistryGroupCommand())
 	rootCmd.AddCommand(newConfigCommand())

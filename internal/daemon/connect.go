@@ -273,6 +273,64 @@ func (h *HubService) InvokeStream(ctx context.Context, stream *connect.BidiStrea
 	return h.invokeStreamProviderClip(ctx, start, stream)
 }
 
+func (h *HubService) Data(ctx context.Context, req *connect.Request[pinixv2.DataRequest]) (*connect.Response[pinixv2.DataResponse], error) {
+	clipName := strings.TrimSpace(req.Msg.GetClipName())
+	if clipName == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("clip_name is required"))
+	}
+	operation := strings.TrimSpace(req.Msg.GetOperation())
+	if operation == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("operation is required"))
+	}
+
+	// Try local clip first — handle file I/O directly.
+	if h.daemon != nil && h.daemon.hasLocalRuntime() {
+		_, ok, err := h.daemon.registry.GetClip(clipName)
+		if err != nil {
+			return nil, connectErrorFromErr(daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)})
+		}
+		if ok {
+			resp := handleDataOperation(h.daemon.registry, clipName, operation, req.Msg.GetPath(), req.Msg.GetContent(), req.Msg.GetMime())
+			if resp.GetError() != nil {
+				// Return as a successful response with embedded error (like invoke).
+				return connect.NewResponse(resp), nil
+			}
+			return connect.NewResponse(resp), nil
+		}
+	}
+
+	// Fall back to provider-backed clip.
+	if h.daemon.provider == nil || !h.daemon.provider.HasClip(clipName) {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("clip %q not found", clipName))
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	resp, err := h.dataViaProvider(ctx, clipName, req.Msg)
+	if err != nil {
+		return nil, connectErrorFromErr(err)
+	}
+	return connect.NewResponse(resp), nil
+}
+
+func (h *HubService) dataViaProvider(ctx context.Context, clipName string, req *pinixv2.DataRequest) (*pinixv2.DataResponse, error) {
+	handle, err := h.daemon.provider.OpenData(clipName, req.GetOperation(), req.GetPath(), req.GetContent(), req.GetMime())
+	if err != nil {
+		return nil, err
+	}
+	defer handle.Close()
+
+	event, err := handle.Receive(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if event.err != nil {
+		return &pinixv2.DataResponse{Error: responseErrorToHubError(event.err)}, nil
+	}
+	return event.response, nil
+}
+
 func (h *HubService) AddClip(ctx context.Context, req *connect.Request[pinixv2.AddClipRequest]) (*connect.Response[pinixv2.AddClipResponse], error) {
 	if strings.TrimSpace(req.Msg.GetSource()) == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("source is required"))
