@@ -166,6 +166,23 @@ func (c *Client) RemoveBinding(ctx context.Context, clipName, slot, hubToken str
 	return err
 }
 
+func (c *Client) Data(ctx context.Context, clipName, operation, path string, content []byte, mimeType, clipToken, hubToken string) (*pinixv2.DataResponse, error) {
+	req := connect.NewRequest(&pinixv2.DataRequest{
+		ClipName:  strings.TrimSpace(clipName),
+		Operation: strings.TrimSpace(operation),
+		Path:      strings.TrimSpace(path),
+		Content:   content,
+		Mime:      strings.TrimSpace(mimeType),
+		ClipToken: strings.TrimSpace(clipToken),
+	})
+	setAuthHeader(req.Header(), hubToken)
+	resp, err := c.hub.Data(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
 func (c *Client) Invoke(ctx context.Context, clipName, command string, input json.RawMessage, clipToken, hubToken string) (json.RawMessage, error) {
 	if len(input) == 0 {
 		input = json.RawMessage(`{}`)
