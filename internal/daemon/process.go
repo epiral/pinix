@@ -513,6 +513,12 @@ func (m *ProcessManager) handleMessage(proc *clipProcess, message *ipc.Message) 
 		}
 		proc.dispatchInvokeEvent(message)
 		return nil
+	case ipc.MessageTypeData:
+		if strings.TrimSpace(message.ID) == "" {
+			return fmt.Errorf("ipc data id is required")
+		}
+		go m.handleClipData(proc, *message)
+		return nil
 	case ipc.MessageTypeRegistered:
 		return fmt.Errorf("registered message is only sent by pinixd")
 	default:
@@ -536,6 +542,52 @@ func (m *ProcessManager) handleRegister(proc *clipProcess, message *ipc.Message)
 	}
 	proc.signalReady()
 	return nil
+}
+
+func (m *ProcessManager) handleClipData(proc *clipProcess, message ipc.Message) {
+	clipName := strings.TrimSpace(message.Clip)
+	if clipName == "" {
+		clipName = proc.clip.Name
+	}
+
+	var content []byte
+	if message.Content != "" {
+		var err error
+		content, err = base64Decode(message.Content)
+		if err != nil {
+			_ = proc.send(&ipc.Message{
+				ID:    message.ID,
+				Type:  ipc.MessageTypeDataResult,
+				Error: fmt.Sprintf("invalid base64 content: %v", err),
+			})
+			return
+		}
+	}
+
+	resp := handleDataOperation(m.registry, clipName, message.Operation, message.Path, content, message.Mime)
+
+	result := &ipc.Message{
+		ID:   message.ID,
+		Type: ipc.MessageTypeDataResult,
+	}
+	if resp.Error != nil {
+		result.Error = resp.Error.Message
+	}
+	if resp.Uri != "" {
+		result.Uri = resp.Uri
+	}
+	if len(resp.Content) > 0 {
+		result.Content = base64Encode(resp.Content)
+	}
+	if resp.Entries != nil {
+		entriesJSON, _ := json.Marshal(resp.Entries)
+		result.Entries = entriesJSON
+	}
+	if resp.Stat != nil {
+		statJSON, _ := json.Marshal(resp.Stat)
+		result.Stat = statJSON
+	}
+	_ = proc.send(result)
 }
 
 func (m *ProcessManager) handleListClips(proc *clipProcess, requestID string) {
