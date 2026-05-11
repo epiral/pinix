@@ -5,6 +5,7 @@
 package daemon
 
 import (
+	"encoding/base64"
 	"fmt"
 	"mime"
 	"os"
@@ -192,6 +193,14 @@ func mimeFromExtension(name string) string {
 		return "application/octet-stream"
 	}
 	return mimeType
+}
+
+func base64Encode(data []byte) string {
+	return base64.StdEncoding.EncodeToString(data)
+}
+
+func base64Decode(s string) ([]byte, error) {
+	return base64.StdEncoding.DecodeString(s)
 }
 
 func dataErrorResponse(code, message string) *pinixv2.DataResponse {

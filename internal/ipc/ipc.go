@@ -23,6 +23,8 @@ const (
 	MessageTypeDone           = "done"
 	MessageTypeListClips      = "list_clips"
 	MessageTypeListClipsResult = "list_clips_result"
+	MessageTypeData           = "data"
+	MessageTypeDataResult     = "data_result"
 )
 
 type Message struct {
@@ -36,6 +38,15 @@ type Message struct {
 	Error    string          `json:"error,omitempty"`
 	Manifest *Manifest       `json:"manifest,omitempty"`
 	Clips    []ListClipInfo  `json:"clips,omitempty"`
+
+	// Data IPC fields (clip ↔ pinixd)
+	Operation string          `json:"operation,omitempty"`
+	Path      string          `json:"path,omitempty"`
+	Content   string          `json:"content,omitempty"`
+	Mime      string          `json:"mime,omitempty"`
+	Uri       string          `json:"uri,omitempty"`
+	Entries   json.RawMessage `json:"entries,omitempty"`
+	Stat      json.RawMessage `json:"stat,omitempty"`
 }
 
 type ListClipInfo struct {
