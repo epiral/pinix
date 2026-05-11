@@ -25,6 +25,7 @@ import (
 const (
 	runtimeHubHeartbeatInterval = 15 * time.Second
 	runtimeHubReconnectDelay    = 2 * time.Second
+	clipWebChunkSize            = 256 << 10 // 256 KB
 )
 
 type runtimeHubConnector struct {
@@ -589,18 +590,46 @@ func (c *runtimeHubConnector) handleGetClipWebCommand(stream *connect.BidiStream
 		IfNoneMatch: command.GetIfNoneMatch(),
 	})
 	if err != nil {
-		_ = c.sendClipWebResult(stream, &pinixv2.GetClipWebResult{RequestId: requestID, Error: invokeErrorToHubError(err)})
+		_ = c.sendClipWebResult(stream, &pinixv2.GetClipWebResult{RequestId: requestID, Error: invokeErrorToHubError(err), Done: true})
 		return
 	}
 
-	_ = c.sendClipWebResult(stream, &pinixv2.GetClipWebResult{
-		RequestId:   requestID,
-		Content:     cloneBytes(result.Content),
-		ContentType: result.ContentType,
-		Etag:        result.ETag,
-		TotalSize:   result.TotalSize,
-		NotModified: result.NotModified,
-	})
+	if result.NotModified || len(result.Content) <= clipWebChunkSize {
+		_ = c.sendClipWebResult(stream, &pinixv2.GetClipWebResult{
+			RequestId:   requestID,
+			Content:     cloneBytes(result.Content),
+			ContentType: result.ContentType,
+			Etag:        result.ETag,
+			TotalSize:   result.TotalSize,
+			NotModified: result.NotModified,
+			Done:        true,
+		})
+		return
+	}
+
+	data := result.Content
+	for offset := 0; offset < len(data); {
+		end := offset + clipWebChunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		isLast := end >= len(data)
+		msg := &pinixv2.GetClipWebResult{
+			RequestId: requestID,
+			Content:   cloneBytes(data[offset:end]),
+			Offset:    int64(offset),
+			TotalSize: result.TotalSize,
+			Done:      isLast,
+		}
+		if offset == 0 {
+			msg.ContentType = result.ContentType
+			msg.Etag = result.ETag
+		}
+		if err := c.sendClipWebResult(stream, msg); err != nil {
+			return
+		}
+		offset = end
+	}
 }
 
 func (c *runtimeHubConnector) sendClipWebResult(stream *connect.BidiStreamForClient[pinixv2.ProviderMessage, pinixv2.HubMessage], result *pinixv2.GetClipWebResult) error {

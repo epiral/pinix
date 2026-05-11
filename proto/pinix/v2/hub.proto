@@ -208,6 +208,8 @@ message GetClipWebResult {
   int64 total_size = 5;
   bool not_modified = 6;
   HubError error = 7;
+  int64 offset = 8;
+  bool done = 9;
 }
 
 message RegisterResponse {
