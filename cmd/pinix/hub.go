@@ -5,9 +5,12 @@
 package main
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/epiral/pinix/internal/client"
 	configpkg "github.com/epiral/pinix/internal/config"
@@ -65,6 +68,8 @@ func newHubCommand() *cobra.Command {
 
 func newHubLoginCommand(serverURL *string) *cobra.Command {
 	var registryURL string
+	var username string
+	var password string
 
 	cmd := &cobra.Command{
 		Use:   "login",
@@ -75,15 +80,27 @@ func newHubLoginCommand(serverURL *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			prompter := newInteractivePrompter(cmd.InOrStdin(), cmd.ErrOrStderr())
-			username, err := prompter.readRequired("Username", true)
-			if err != nil {
-				return err
+
+			switch {
+			case username != "" && password != "":
+				// non-interactive: both flags provided
+			case username == "" && password == "":
+				if !isStdinTerminal() {
+					return fmt.Errorf("non-interactive mode requires --username and --password flags")
+				}
+				prompter := newInteractivePrompter(cmd.InOrStdin(), cmd.ErrOrStderr())
+				username, err = prompter.readRequired("Username", true)
+				if err != nil {
+					return err
+				}
+				password, err = prompter.readRequired("Password", false)
+				if err != nil {
+					return err
+				}
+			default:
+				return fmt.Errorf("both --username and --password must be provided together")
 			}
-			password, err := prompter.readRequired("Password", false)
-			if err != nil {
-				return err
-			}
+
 			resp, err := reg.Login(cmd.Context(), username, password)
 			if err != nil {
 				return err
@@ -112,8 +129,18 @@ func newHubLoginCommand(serverURL *string) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&username, "username", "", "Username (for non-interactive login)")
+	cmd.Flags().StringVar(&password, "password", "", "Password (for non-interactive login)")
 	cmd.Flags().StringVar(&registryURL, "registry", "", "Registry URL for authentication (default: from config or https://api.pinix.ai)")
 	return cmd
+}
+
+func isStdinTerminal() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
 }
 
 func newHubLogoutCommand() *cobra.Command {
@@ -139,7 +166,7 @@ func newHubLogoutCommand() *cobra.Command {
 func newHubWhoAmICommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "whoami",
-		Short: "Show the current Hub user",
+		Short: "Show the current Hub user and token status",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := configpkg.ReadClientConfig()
@@ -150,13 +177,23 @@ func newHubWhoAmICommand() *cobra.Command {
 			if token == "" {
 				return fmt.Errorf("not logged in; run \"pinix hub login\"")
 			}
+
+			if exp, err := parseJWTExpiry(token); err == nil {
+				remaining := time.Until(exp)
+				if remaining <= 0 {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: token expired %s ago\n", (-remaining).Truncate(time.Minute))
+				} else if remaining < 7*24*time.Hour {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: token expires in %s\n", remaining.Truncate(time.Minute))
+				}
+			}
+
 			reg, err := requireRegistryClient("")
 			if err != nil {
 				return err
 			}
 			resp, err := reg.WhoAmI(cmd.Context(), token)
 			if err != nil {
-				return err
+				return wrapAuthError(err)
 			}
 			username := strings.TrimSpace(resp.GetUsername())
 			if username == "" {
@@ -166,4 +203,35 @@ func newHubWhoAmICommand() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func parseJWTExpiry(token string) (time.Time, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return time.Time{}, fmt.Errorf("not a JWT")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return time.Time{}, err
+	}
+	var claims struct {
+		Exp int64 `json:"exp"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return time.Time{}, err
+	}
+	if claims.Exp == 0 {
+		return time.Time{}, fmt.Errorf("no exp claim")
+	}
+	return time.Unix(claims.Exp, 0), nil
+}
+
+func wrapAuthError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if client.IsAuthError(err) {
+		return fmt.Errorf("%w\n\nHint: your token may be expired or invalid. Run \"pinix hub login\" to refresh it.", err)
+	}
+	return err
 }
