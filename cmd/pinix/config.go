@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"text/tabwriter"
 
+	"github.com/epiral/pinix/internal/client"
 	configpkg "github.com/epiral/pinix/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -20,6 +22,7 @@ func newConfigCommand() *cobra.Command {
 	}
 	cmd.AddCommand(newConfigSetCommand())
 	cmd.AddCommand(newConfigGetCommand())
+	cmd.AddCommand(newConfigListCommand())
 	return cmd
 }
 
@@ -85,6 +88,45 @@ func newConfigGetCommand() *cobra.Command {
 				return fmt.Errorf("unknown config key %q; supported keys: registry, hub, hub-token", key)
 			}
 			return nil
+		},
+	}
+}
+
+func newConfigListCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List all config keys and current values",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := configpkg.ReadClientConfig()
+			if err != nil {
+				return err
+			}
+
+			registry := cfg.Registry
+			if registry == "" {
+				registry = configpkg.DefaultRegistryURL + " (default)"
+			}
+
+			hub := cfg.Hub
+			if hub == "" {
+				hub = client.FallbackServerURL + " (default)"
+			}
+
+			hubToken := "(not set)"
+			if t := strings.TrimSpace(cfg.HubToken); t != "" {
+				if len(t) > 8 {
+					hubToken = t[:8] + "..."
+				} else {
+					hubToken = "***"
+				}
+			}
+
+			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+			fmt.Fprintf(w, "registry\t%s\n", registry)
+			fmt.Fprintf(w, "hub\t%s\n", hub)
+			fmt.Fprintf(w, "hub-token\t%s\n", hubToken)
+			return w.Flush()
 		},
 	}
 }

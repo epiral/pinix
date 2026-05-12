@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -410,6 +411,25 @@ func (c *RegistryClient) doJSON(ctx context.Context, method, path string, body i
 	return nil
 }
 
+// RegistryHTTPError represents an API error with HTTP status code preserved.
+type RegistryHTTPError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *RegistryHTTPError) Error() string {
+	return e.Message
+}
+
+// IsAuthError checks whether an error represents an authentication/authorization failure.
+func IsAuthError(err error) bool {
+	var httpErr *RegistryHTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.StatusCode == 401 || httpErr.StatusCode == 403
+	}
+	return false
+}
+
 func (c *RegistryClient) decodeAPIError(resp *http.Response, action string) error {
 	if resp == nil {
 		return fmt.Errorf("%s: empty response", action)
@@ -423,5 +443,8 @@ func (c *RegistryClient) decodeAPIError(resp *http.Response, action string) erro
 	if message == "" {
 		message = http.StatusText(resp.StatusCode)
 	}
-	return fmt.Errorf("%s: %s", action, message)
+	return &RegistryHTTPError{
+		StatusCode: resp.StatusCode,
+		Message:    fmt.Sprintf("%s: %s", action, message),
+	}
 }
