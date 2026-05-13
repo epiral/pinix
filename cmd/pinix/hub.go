@@ -14,14 +14,21 @@ import (
 
 	"github.com/epiral/pinix/internal/client"
 	configpkg "github.com/epiral/pinix/internal/config"
+	"github.com/epiral/pinix/internal/pidfile"
 	"github.com/spf13/cobra"
 )
 
-// defaultHubURL resolves the Hub URL from: client.json > fallback (localhost:9000).
+// defaultHubURL resolves the Hub URL from: client.json > pidfile > fallback (localhost:9000).
 func defaultHubURL() string {
 	cfg, err := configpkg.ReadClientConfig()
 	if err == nil && strings.TrimSpace(cfg.Hub) != "" {
 		return strings.TrimSpace(cfg.Hub)
+	}
+	if pf, err := pidfile.ReadPIDFile(); err == nil && pf != nil {
+		if strings.TrimSpace(pf.Hub) != "" {
+			return strings.TrimSpace(pf.Hub)
+		}
+		return fmt.Sprintf("http://127.0.0.1:%d", pf.Port)
 	}
 	return client.FallbackServerURL
 }
