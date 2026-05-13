@@ -17,6 +17,7 @@ import (
 type PIDFile struct {
 	PID       int    `json:"pid"`
 	Port      int    `json:"port"`
+	Hub       string `json:"hub,omitempty"`
 	StartedAt string `json:"startedAt"`
 }
 
@@ -37,15 +38,20 @@ func resolvePIDPath(customPath string) (string, error) {
 	return defaultPIDFilePath()
 }
 
+// WritePIDFileOptions configures WritePIDFile.
+type WritePIDFileOptions struct {
+	Hub        string
+	CustomPath string
+}
+
 // WritePIDFile writes the PID file with current process info.
-// If customPath is provided, uses that path instead of the default.
 // Returns a cleanup function that removes the file.
-func WritePIDFile(port int, customPath ...string) (cleanup func(), err error) {
-	cp := ""
-	if len(customPath) > 0 {
-		cp = customPath[0]
+func WritePIDFile(port int, opts ...WritePIDFileOptions) (cleanup func(), err error) {
+	var o WritePIDFileOptions
+	if len(opts) > 0 {
+		o = opts[0]
 	}
-	path, err := resolvePIDPath(cp)
+	path, err := resolvePIDPath(o.CustomPath)
 	if err != nil {
 		return nil, err
 	}
@@ -58,6 +64,7 @@ func WritePIDFile(port int, customPath ...string) (cleanup func(), err error) {
 	pf := PIDFile{
 		PID:       os.Getpid(),
 		Port:      port,
+		Hub:       o.Hub,
 		StartedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 
@@ -77,14 +84,9 @@ func WritePIDFile(port int, customPath ...string) (cleanup func(), err error) {
 }
 
 // ReadPIDFile reads and validates the PID file.
-// If customPath is provided, uses that path instead of the default.
 // Returns nil, nil if the file doesn't exist or the process is dead (stale file is auto-cleaned).
 func ReadPIDFile(customPath ...string) (*PIDFile, error) {
-	cp := ""
-	if len(customPath) > 0 {
-		cp = customPath[0]
-	}
-	path, err := resolvePIDPath(cp)
+	path, err := resolvePIDPath(firstString(customPath))
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +129,6 @@ func ReadPIDFile(customPath ...string) (*PIDFile, error) {
 }
 
 // CheckExistingPIDFile checks if another pinixd is already running.
-// If customPath is provided, checks that specific PID file.
 // Returns an error if a live process is found.
 func CheckExistingPIDFile(port int, customPath ...string) error {
 	pf, err := ReadPIDFile(customPath...)
@@ -138,4 +139,11 @@ func CheckExistingPIDFile(port int, customPath ...string) error {
 		return nil
 	}
 	return fmt.Errorf("pinixd is already running (pid %d, port %d)", pf.PID, pf.Port)
+}
+
+func firstString(ss []string) string {
+	if len(ss) > 0 {
+		return ss[0]
+	}
+	return ""
 }
