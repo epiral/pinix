@@ -27,7 +27,14 @@ Arguments after <clip> are the command path (supports sub-commands):
   pinix invoke todo add --title "Buy milk"
   pinix invoke memex schema list --topLevel true
 
-Flags --server, --auth-token, and --clip-token must come before <clip>.`,
+Connection flags can appear anywhere in the command:
+  pinix invoke todo list --server https://hub.pinix.ai --auth-token <token>
+  pinix invoke --server https://hub.pinix.ai todo list
+
+Flags:
+  --server       Hub URL (default: auto-discover)
+  --auth-token   Hub auth token
+  --clip-token   Clip-specific auth token`,
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			for _, arg := range args {
@@ -103,29 +110,34 @@ func runInvoke(args []string) error {
 }
 
 // splitInvokeArgs separates global flags (--server, --auth-token, --clip-token)
-// from the clip command arguments.
+// from the clip command arguments. Global flags are recognized at any position.
 func splitInvokeArgs(args []string) ([]string, []string) {
-	globals := make([]string, 0, len(args))
+	globals := make([]string, 0)
+	rest := make([]string, 0, len(args))
 	i := 0
 	for i < len(args) {
 		arg := args[i]
 		if arg == "--" {
-			return globals, args[i+1:]
+			rest = append(rest, args[i+1:]...)
+			break
 		}
-		if !strings.HasPrefix(arg, "-") {
-			return globals, args[i:]
-		}
-		globals = append(globals, arg)
-		if arg == "--server" || arg == "--auth-token" || arg == "--clip-token" {
+		if isInvokeGlobalFlag(arg) {
+			globals = append(globals, arg)
 			if i+1 < len(args) {
 				globals = append(globals, args[i+1])
 				i += 2
 				continue
 			}
+		} else {
+			rest = append(rest, arg)
 		}
 		i++
 	}
-	return globals, nil
+	return globals, rest
+}
+
+func isInvokeGlobalFlag(arg string) bool {
+	return arg == "--server" || arg == "--auth-token" || arg == "--clip-token"
 }
 
 func parseInvokeFlags(globals []string) (serverURL, hubToken, clipToken string) {
