@@ -825,6 +825,7 @@ func localClipToRegistration(clip ClipConfig) *pinixv2.ClipRegistration {
 		Package:        manifest.Package,
 		Version:        manifest.Version,
 		Domain:         manifest.Domain,
+		Description:    manifest.Description,
 		Commands:       internalCommandsToProto(manifest.CommandDetails),
 		HasWeb:         manifest.HasWeb,
 		TokenProtected: clip.Token != "",

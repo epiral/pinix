@@ -999,6 +999,7 @@ func clipToClipInfo(clip ClipConfig, providerName string) *pinixv2.ClipInfo {
 		Version:        manifest.Version,
 		Provider:       strings.TrimSpace(providerName),
 		Domain:         manifest.Domain,
+		Description:    manifest.Description,
 		Commands:       internalCommandsToProto(manifest.CommandDetails),
 		HasWeb:         manifest.HasWeb,
 		TokenProtected: clip.Token != "",
