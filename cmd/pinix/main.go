@@ -42,6 +42,9 @@ func newRootCommand() *cobra.Command {
 		SilenceErrors: true,
 	}
 
+	rootCmd.AddCommand(newAuthLoginCommand())
+	rootCmd.AddCommand(newAuthLogoutCommand())
+	rootCmd.AddCommand(newAuthWhoAmICommand())
 	rootCmd.AddCommand(newInvokeCommand())
 	rootCmd.AddCommand(newDataCommand())
 	rootCmd.AddCommand(newHubCommand())
