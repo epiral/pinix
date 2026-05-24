@@ -79,8 +79,10 @@ func main() {
 	if hubToken == "" {
 		hubToken = strings.TrimSpace(os.Getenv("PINIX_HUB_TOKEN"))
 	}
-	if hubToken == "" {
+	autoConnect := false
+	if hubToken == "" && strings.TrimSpace(clientConfig.HubToken) != "" {
 		hubToken = strings.TrimSpace(clientConfig.HubToken)
+		autoConnect = true
 	}
 
 	// Resolve hub: flag > env > config file
@@ -88,9 +90,16 @@ func main() {
 	if hubURL == "" {
 		if v := strings.TrimSpace(os.Getenv("PINIX_HUB")); v != "" {
 			hubURL = v
-		} else {
-			hubURL = strings.TrimSpace(clientConfig.Hub)
+		} else if v := strings.TrimSpace(clientConfig.Hub); v != "" {
+			hubURL = v
+		} else if hubToken != "" {
+			// Have token but no hub URL — default to Cloud Hub
+			hubURL = "https://hub.pinix.ai"
 		}
+	}
+
+	if autoConnect && hubURL != "" {
+		slog.Info("hub: auto-connecting from config", "hub", hubURL)
 	}
 	if hubOnly && hubURL != "" {
 		exitErr(fmt.Errorf("--hub and --hub-only cannot be used together"))
