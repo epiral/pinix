@@ -149,6 +149,17 @@ func (m *ProviderManager) ReserveAlias(requestedAlias, source, owner string) (st
 	}
 
 	base := aliasBaseFromSource(source)
+
+	// Try the clean base name first (no suffix).
+	if clean := normalizeName(base); clean != "" {
+		if err := m.reserveAlias(clean, owner); err == nil {
+			return clean, nil
+		} else if !isDaemonCode(err, "already_exists") {
+			return "", err
+		}
+	}
+
+	// Base name occupied — fall back to random suffix.
 	for attempts := 0; attempts < 256; attempts++ {
 		suffix, err := randomAliasSuffix()
 		if err != nil {
@@ -318,6 +329,39 @@ func (m *ProviderManager) Manifest(name string) (*ManifestCache, bool) {
 
 func (m *ProviderManager) HasClip(name string) bool {
 	return m.lookupClip(strings.TrimSpace(name)) != nil
+}
+
+// ResolveByPackageShortName searches provider-backed clips whose package name
+// short name (the "name" part of "@scope/name") matches the given shortName.
+// It returns the matching alias(es). Callers use this for fallback resolution
+// when an exact alias lookup fails.
+func (m *ProviderManager) ResolveByPackageShortName(shortName string) []string {
+	shortName = normalizeName(shortName)
+	if shortName == "" {
+		return nil
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var matches []string
+	for alias, ref := range m.clips {
+		if ref.clip == nil || ref.clip.registration == nil {
+			continue
+		}
+		pkg := strings.TrimSpace(ref.clip.registration.GetPackage())
+		if pkg == "" {
+			continue
+		}
+		_, name, ok := splitScopedPackage(pkg)
+		if !ok {
+			name = pkg
+		}
+		if normalizeName(name) == shortName {
+			matches = append(matches, alias)
+		}
+	}
+	sort.Strings(matches)
+	return matches
 }
 
 func (m *ProviderManager) OpenInvoke(clipName, command string, input []byte, clipToken string) (*ProviderInvokeHandle, error) {
