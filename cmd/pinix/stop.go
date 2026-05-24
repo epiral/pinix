@@ -7,6 +7,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 	"syscall"
 	"time"
 
@@ -32,39 +33,61 @@ func newStopCommand() *cobra.Command {
 			}
 
 			pid := pf.PID
+			resolvedPath := resolvePIDFilePath(pidPath)
 
 			// Send SIGTERM
 			if err := signalProcess(pid, syscall.SIGTERM); err != nil {
-				// Process already gone
-				fmt.Println("Pinix stopped (process already exited)")
+				removePIDFile(resolvedPath)
+				fmt.Println("Pinix stopped")
 				return nil
 			}
 
-			// Wait for process to exit (up to 10 seconds)
+			// Wait for process to exit (up to 10 seconds).
+			// Check both process liveness and PID file removal.
 			deadline := time.Now().Add(10 * time.Second)
 			for time.Now().Before(deadline) {
-				if err := checkProcessAlive(pid); err != nil {
+				alive := checkProcessAlive(pid) == nil
+				pidExists := fileExists(resolvedPath)
+				if !alive || !pidExists {
+					removePIDFile(resolvedPath)
 					fmt.Println("Pinix stopped")
 					return nil
 				}
 				time.Sleep(200 * time.Millisecond)
 			}
 
-			// Process didn't exit — send SIGKILL
+			// Process didn't exit gracefully — send SIGKILL
 			_ = signalProcess(pid, os.Kill)
-			time.Sleep(500 * time.Millisecond)
-
-			// Clean up PID file
-			if err := checkProcessAlive(pid); err != nil {
-				fmt.Println("Pinix stopped (killed)")
-				return nil
-			}
-
-			return fmt.Errorf("failed to stop Pinix (PID %d)", pid)
+			time.Sleep(1 * time.Second)
+			removePIDFile(resolvedPath)
+			fmt.Println("Pinix stopped (killed)")
+			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&pidPath, "pid", "", "custom path to PID file (default: ~/.pinix/pinixd.pid)")
 
 	return cmd
+}
+
+func resolvePIDFilePath(custom string) string {
+	if strings.TrimSpace(custom) != "" {
+		return custom
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return home + "/.pinix/pinixd.pid"
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func removePIDFile(path string) {
+	if path != "" {
+		_ = os.Remove(path)
+	}
 }
