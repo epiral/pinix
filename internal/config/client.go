@@ -1,6 +1,6 @@
 // Role:    Shared client.json persistence for pinix CLI and pinixd
 // Depends: encoding/json, fmt, os, path/filepath, strings
-// Exports: ClientConfig, DefaultRegistryURL, DefaultClientConfigPath, ReadClientConfig, WriteClientConfig
+// Exports: ClientConfig, UserInfo, DefaultRegistryURL, DefaultAuthServerURL, DefaultClientConfigPath, ReadClientConfig, WriteClientConfig
 
 package config
 
@@ -13,11 +13,18 @@ import (
 )
 
 const DefaultRegistryURL = "https://api.pinix.ai"
+const DefaultAuthServerURL = "https://api.pinix.ai"
+
+type UserInfo struct {
+	Username string `json:"username,omitempty"`
+	Scope    string `json:"scope,omitempty"`
+}
 
 type ClientConfig struct {
-	Registry string `json:"registry,omitempty"`
-	Hub      string `json:"hub,omitempty"`
-	HubToken string `json:"hub_token,omitempty"`
+	Registry string    `json:"registry,omitempty"`
+	Hub      string    `json:"hub,omitempty"`
+	HubToken string    `json:"hub_token,omitempty"`
+	User     *UserInfo `json:"user,omitempty"`
 }
 
 func DefaultClientConfigPath() (string, error) {
