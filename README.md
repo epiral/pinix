@@ -29,6 +29,14 @@ Human / Agent / CLI
   → device / app / web / SaaS / workflow
 ```
 
+## Install
+
+```bash
+curl -fsSL https://pinix-blobs-1251447449.cos.ap-beijing.myqcloud.com/install.sh | bash
+```
+
+Requires [Bun](https://bun.sh) for running Clips.
+
 ## Get Started
 
 ```bash
