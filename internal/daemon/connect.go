@@ -179,13 +179,17 @@ func (h *HubService) Invoke(ctx context.Context, req *connect.Request[pinixv2.In
 	traceID := generateTraceID()
 	start := time.Now()
 
-	clipName := strings.TrimSpace(req.Msg.GetClipName())
 	command := strings.TrimSpace(req.Msg.GetCommand())
-	if clipName == "" {
+	if strings.TrimSpace(req.Msg.GetClipName()) == "" {
 		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("clip_name is required"))
 	}
 	if command == "" {
 		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("command is required"))
+	}
+
+	clipName, err := h.resolveClipName(req.Msg.GetClipName())
+	if err != nil {
+		return connectErrorFromErr(err)
 	}
 
 	slog.Info("hub.invoke: start",
@@ -221,7 +225,7 @@ func (h *HubService) Invoke(ctx context.Context, req *connect.Request[pinixv2.In
 		return connect.NewError(connect.CodeNotFound, fmt.Errorf("clip %q not found", clipName))
 	}
 	slog.Info("hub.invoke: routed", "trace_id", traceID, "target", clipName, "route", "provider")
-	err := h.invokeProviderClip(ctx, clipName, command, req.Msg.GetInput(), req.Msg.GetClipToken(), stream)
+	err = h.invokeProviderClip(ctx, clipName, command, req.Msg.GetInput(), req.Msg.GetClipToken(), stream)
 	if err != nil {
 		slog.Error("hub.invoke: error",
 			"trace_id", traceID, "target", clipName, "command", command,
@@ -249,13 +253,17 @@ func (h *HubService) InvokeStream(ctx context.Context, stream *connect.BidiStrea
 		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("first invoke stream message must be start"))
 	}
 
-	clipName := strings.TrimSpace(start.GetClipName())
 	command := strings.TrimSpace(start.GetCommand())
-	if clipName == "" {
+	if strings.TrimSpace(start.GetClipName()) == "" {
 		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("clip_name is required"))
 	}
 	if command == "" {
 		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("command is required"))
+	}
+
+	clipName, err := h.resolveClipName(start.GetClipName())
+	if err != nil {
+		return connectErrorFromErr(err)
 	}
 
 	if h.daemon != nil && h.daemon.hasLocalRuntime() {
@@ -693,14 +701,19 @@ func isDaemonCode(err error, code string) bool {
 // and collects all output chunks into a single aggregated JSON result.
 // Used by handleClipWebInvoke for non-streaming HTTP responses.
 func (h *HubService) invokeCollect(ctx context.Context, clipName, command string, input []byte) (json.RawMessage, error) {
-	clipName = strings.TrimSpace(clipName)
 	command = strings.TrimSpace(command)
-	if clipName == "" {
+	if strings.TrimSpace(clipName) == "" {
 		return nil, daemonError{Code: "invalid_argument", Message: "clip_name is required"}
 	}
 	if command == "" {
 		return nil, daemonError{Code: "invalid_argument", Message: "command is required"}
 	}
+
+	resolved, err := h.resolveClipName(clipName)
+	if err != nil {
+		return nil, err
+	}
+	clipName = resolved
 
 	if h.daemon != nil && h.daemon.hasLocalRuntime() {
 		clip, ok, err := h.daemon.registry.GetClip(clipName)
@@ -760,14 +773,19 @@ func (h *HubService) invokeProviderClipCollect(ctx context.Context, clipName, co
 // and calls onChunk for each streaming output chunk.
 // Used by handleClipWebInvokeSSE for SSE streaming.
 func (h *HubService) invokeWithCallback(ctx context.Context, clipName, command string, input []byte, onChunk func(json.RawMessage)) error {
-	clipName = strings.TrimSpace(clipName)
 	command = strings.TrimSpace(command)
-	if clipName == "" {
+	if strings.TrimSpace(clipName) == "" {
 		return daemonError{Code: "invalid_argument", Message: "clip_name is required"}
 	}
 	if command == "" {
 		return daemonError{Code: "invalid_argument", Message: "command is required"}
 	}
+
+	resolved, err := h.resolveClipName(clipName)
+	if err != nil {
+		return err
+	}
+	clipName = resolved
 
 	if h.daemon != nil && h.daemon.hasLocalRuntime() {
 		clip, ok, err := h.daemon.registry.GetClip(clipName)
@@ -999,6 +1017,7 @@ func clipToClipInfo(clip ClipConfig, providerName string) *pinixv2.ClipInfo {
 		Version:        manifest.Version,
 		Provider:       strings.TrimSpace(providerName),
 		Domain:         manifest.Domain,
+		Description:    manifest.Description,
 		Commands:       internalCommandsToProto(manifest.CommandDetails),
 		HasWeb:         manifest.HasWeb,
 		TokenProtected: clip.Token != "",
@@ -1210,4 +1229,90 @@ func requestAuthHeader(header http.Header) string {
 func makeETag(data []byte) string {
 	sum := sha256.Sum256(data)
 	return fmt.Sprintf("\"%x\"", sum[:])
+}
+
+// resolveClipName resolves a user-supplied clip identifier to the actual alias
+// stored in the registry or provider manager. Resolution order:
+//  1. Exact alias match in local registry.
+//  2. Exact alias match in provider clips.
+//  3. Package-name short-name match across local + provider clips.
+//     If exactly one clip matches, return its alias.
+//     If multiple match, return an ambiguous error listing the matches.
+//     If none match, return a not-found error.
+func (h *HubService) resolveClipName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", daemonError{Code: "invalid_argument", Message: "clip_name is required"}
+	}
+
+	// 1. Exact alias — local registry.
+	if h.daemon != nil && h.daemon.registry != nil {
+		if _, ok, err := h.daemon.registry.GetClip(name); err != nil {
+			return "", daemonError{Code: "internal", Message: fmt.Sprintf("load clip: %v", err)}
+		} else if ok {
+			return name, nil
+		}
+	}
+
+	// 2. Exact alias — provider clips.
+	if h.daemon.provider != nil && h.daemon.provider.HasClip(name) {
+		return name, nil
+	}
+
+	// 3. Fallback: package-name short-name match.
+	shortName := normalizeName(name)
+	if shortName == "" {
+		return "", daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", name)}
+	}
+
+	var matches []string
+
+	// 3a. Scan local registry clips.
+	if h.daemon != nil && h.daemon.registry != nil {
+		if clips, err := h.daemon.registry.ListClips(); err == nil {
+			for _, clip := range clips {
+				pkg := clip.Package
+				if pkg == "" && clip.Manifest != nil {
+					pkg = clip.Manifest.Package
+				}
+				if pkg == "" {
+					continue
+				}
+				_, pkgName, ok := splitScopedPackage(pkg)
+				if !ok {
+					pkgName = pkg
+				}
+				if normalizeName(pkgName) == shortName {
+					matches = append(matches, clip.Name)
+				}
+			}
+		}
+	}
+
+	// 3b. Scan provider clips.
+	if h.daemon.provider != nil {
+		matches = append(matches, h.daemon.provider.ResolveByPackageShortName(shortName)...)
+	}
+
+	// Deduplicate (a clip could theoretically appear in both).
+	sort.Strings(matches)
+	deduped := matches[:0]
+	for i, m := range matches {
+		if i == 0 || m != matches[i-1] {
+			deduped = append(deduped, m)
+		}
+	}
+	matches = deduped
+
+	switch len(matches) {
+	case 0:
+		return "", daemonError{Code: "not_found", Message: fmt.Sprintf("clip %q not found", name)}
+	case 1:
+		return matches[0], nil
+	default:
+		return "", daemonError{
+			Code:    "invalid_argument",
+			Message: fmt.Sprintf("ambiguous clip name %q matches multiple clips: %s; use the full alias instead", name, strings.Join(matches, ", ")),
+		}
+	}
 }

@@ -71,6 +71,7 @@ message ClipInfo {
   repeated string dependencies = 9;
   ClipStatus status = 10;
   string status_message = 11;
+  string description = 12;
 }
 
 message DependencySlot {
@@ -172,6 +173,7 @@ message ClipRegistration {
   string name = 9 [deprecated = true];
   repeated string patterns = 10;
   map<string, string> entities = 11;
+  string description = 12;
 }
 
 message ClipAdded {
