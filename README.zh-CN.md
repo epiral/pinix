@@ -32,22 +32,23 @@ Pinix 把设备、应用、网页、服务和工作流封装成 **Clip** — 独
 ## 快速开始
 
 ```bash
-pinixd                                          # 启动 Pinix
+pinix start                                     # 启动 Pinix daemon
 pinix login                                     # 连接 pinix.ai
 pinix hub add @pinix/todo                       # 安装一个 Clip
 pinix invoke todo add --title "Hello Pinix"     # 使用
 pinix invoke todo list                          # 查看结果
 open http://localhost:9000                       # 打开 Console
+pinix stop                                      # 停止 daemon
 ```
 
 `pinix login` 后，你的本地 Clips 通过 pinix.ai Cloud Hub 在任何设备上都可以访问。
 
 ## 启动后你得到什么
 
-`pinixd` 启动后，你拥有一个完整的本地能力栈：
+`pinix start` 后，你拥有一个完整的本地能力栈：
 
 ```
-pinixd
+pinix start
   ├── Hub        路由 invoke 到正确的 Clip
   ├── Runtime    管理本地 Bun/TS Clip 进程
   ├── Registry   从 pinix.ai 安装 Clips
@@ -78,7 +79,8 @@ $ pinix hub list
 - [x] **Registry** — 搜索、安装、发布 Clips 到 pinix.ai
 - [x] **pinix.ai Cloud Hub** — 跨网络路由，从任何设备访问 Clips
 - [x] **`pinix login`** — device code flow，一条命令连接
-- [x] **自动连接** — `pinixd` 读取已保存 token，自动连 Cloud Hub
+- [x] **单一 binary** — 一个 `pinix`：`start`、`stop`、`status`、`login`、`invoke`
+- [x] **自动连接** — 读取已保存 token，自动连 Cloud Hub
 - [ ] **`@pinix/agent`** — 默认单人 Agent Clip（开发中）
 - [ ] **Pinix Desktop** — 本地 Shell + OS Edge Clips（开发中）
 - [ ] **`install.sh`** — 一键安装（开发中）
@@ -140,9 +142,8 @@ pinix login
 # 需要 Go 1.22+ 和 Bun
 git clone https://github.com/epiral/pinix.git
 cd pinix
-go build -o pinixd ./cmd/pinixd
-go build -o pinix  ./cmd/pinix
-./pinixd
+go build -o pinix ./cmd/pinix
+./pinix start
 ```
 
 ## 文档
