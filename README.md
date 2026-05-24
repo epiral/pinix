@@ -32,22 +32,23 @@ Human / Agent / CLI
 ## Get Started
 
 ```bash
-pinixd                                          # start Pinix
+pinix start                                     # start Pinix daemon
 pinix login                                     # connect to pinix.ai
 pinix hub add @pinix/todo                       # install a Clip
 pinix invoke todo add --title "Hello Pinix"     # use it
 pinix invoke todo list                          # see results
 open http://localhost:9000                       # open Console
+pinix stop                                      # stop daemon
 ```
 
 After `pinix login`, your local Clips are accessible from any device through pinix.ai Cloud Hub.
 
 ## What You Get
 
-When `pinixd` starts, you get a complete local capability stack:
+When `pinix start` runs, you get a complete local capability stack:
 
 ```
-pinixd
+pinix start
   ├── Hub        routes invoke calls to the right Clip
   ├── Runtime    manages local Bun/TS Clip processes
   ├── Registry   installs Clips from pinix.ai
@@ -78,7 +79,8 @@ Your browser's login sessions, cookies, SSO, and intranet access work out of the
 - [x] **Registry** — search, install, publish Clips to pinix.ai
 - [x] **pinix.ai Cloud Hub** — cross-network routing, access Clips from any device
 - [x] **`pinix login`** — device code flow, one command to connect
-- [x] **Auto-connect** — `pinixd` reads saved token, connects to Cloud Hub automatically
+- [x] **Single binary** — one `pinix` binary: `start`, `stop`, `status`, `login`, `invoke`
+- [x] **Auto-connect** — reads saved token, connects to Cloud Hub automatically
 - [ ] **`@pinix/agent`** — default single-user Agent Clip (coming soon)
 - [ ] **Pinix Desktop** — local shell + OS Edge Clips (coming soon)
 - [ ] **`install.sh`** — one-line installer (coming soon)
@@ -140,9 +142,8 @@ Opens your browser for device code confirmation. After login:
 # Requires Go 1.22+ and Bun
 git clone https://github.com/epiral/pinix.git
 cd pinix
-go build -o pinixd ./cmd/pinixd
-go build -o pinix  ./cmd/pinix
-./pinixd
+go build -o pinix ./cmd/pinix
+./pinix start
 ```
 
 ## Documentation
