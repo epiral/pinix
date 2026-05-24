@@ -92,7 +92,7 @@ func newAddCommand(serverURL, hubToken *string) *cobra.Command {
 	cmd.Flags().StringVar(&clipToken, "token", "", "clip token required for invoking this Clip")
 	cmd.Flags().StringVar(&alias, "alias", "", "explicit clip alias")
 	cmd.Flags().StringVar(&provider, "provider", "", "target provider for add/remove operations")
-	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinix.ai)")
+	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinixai.com)")
 	cmd.Flags().StringVar(&localPath, "path", "", "local directory path for local/ sources")
 	return cmd
 }
