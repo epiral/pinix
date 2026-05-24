@@ -69,7 +69,7 @@ func newRegisterCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinix.ai)")
+	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinixai.com)")
 	return cmd
 }
 
@@ -106,7 +106,7 @@ func newLoginCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinix.ai)")
+	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinixai.com)")
 	return cmd
 }
 
@@ -135,7 +135,7 @@ func newLogoutCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinix.ai)")
+	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinixai.com)")
 	return cmd
 }
 
@@ -167,7 +167,7 @@ func newWhoAmICommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinix.ai)")
+	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinixai.com)")
 	return cmd
 }
 
