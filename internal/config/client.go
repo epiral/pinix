@@ -12,8 +12,8 @@ import (
 	"strings"
 )
 
-const DefaultRegistryURL = "https://api.pinix.ai"
-const DefaultAuthServerURL = "https://api.pinix.ai"
+const DefaultRegistryURL = "https://api.pinixai.com"
+const DefaultAuthServerURL = "https://api.pinixai.com"
 
 type UserInfo struct {
 	Username string `json:"username,omitempty"`

@@ -138,7 +138,7 @@ func newHubLoginCommand(serverURL *string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&username, "username", "", "Username (for non-interactive login)")
 	cmd.Flags().StringVar(&password, "password", "", "Password (for non-interactive login)")
-	cmd.Flags().StringVar(&registryURL, "registry", "", "Registry URL for authentication (default: from config or https://api.pinix.ai)")
+	cmd.Flags().StringVar(&registryURL, "registry", "", "Registry URL for authentication (default: from config or https://api.pinixai.com)")
 	return cmd
 }
 

@@ -49,7 +49,7 @@ func newUpdateCommand(serverURL, hubToken *string) *cobra.Command {
 			return updateSingleClip(cmd.Context(), cli, clips, args[0], registryURL, version, *hubToken)
 		},
 	}
-	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinix.ai)")
+	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinixai.com)")
 	cmd.Flags().StringVar(&version, "version", "", "update to a specific version instead of latest")
 	cmd.Flags().BoolVar(&all, "all", false, "update all registry-installed clips")
 	return cmd

@@ -76,7 +76,7 @@ func newSearchCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinix.ai)")
+	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinixai.com)")
 	cmd.Flags().StringVar(&domain, "domain", "", "filter results by domain")
 	cmd.Flags().StringVar(&packageType, "type", "", "filter results by package type")
 	return cmd
@@ -124,7 +124,7 @@ func newPublishCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinix.ai)")
+	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinixai.com)")
 	cmd.Flags().StringVar(&tag, "tag", "", "dist-tag to publish under")
 	return cmd
 }
