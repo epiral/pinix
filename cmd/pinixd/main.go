@@ -94,7 +94,7 @@ func main() {
 			hubURL = v
 		} else if hubToken != "" {
 			// Have token but no hub URL — default to Cloud Hub
-			hubURL = "https://hub.pinix.ai"
+			hubURL = "https://hub.pinixai.com"
 		}
 	}
 

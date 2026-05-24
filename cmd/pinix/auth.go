@@ -63,7 +63,7 @@ func newAuthLoginCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&token, "token", "", "authenticate with an existing token (skips device code flow)")
-	cmd.Flags().StringVar(&server, "server", "", "auth server URL (default: https://api.pinix.ai)")
+	cmd.Flags().StringVar(&server, "server", "", "auth server URL (default: https://api.pinixai.com)")
 	return cmd
 }
 
@@ -137,6 +137,9 @@ func loginWithToken(cmd *cobra.Command, serverURL, token string) error {
 	if hub != "" {
 		cfg.Hub = hub
 	}
+	if cfg.Hub == "" {
+		cfg.Hub = hubURLFromAuthServer(serverURL)
+	}
 	if err := configpkg.WriteClientConfig(cfg); err != nil {
 		return err
 	}
@@ -207,7 +210,7 @@ func loginWithDeviceCode(cmd *cobra.Command, serverURL string) error {
 
 		switch pollResp.Status {
 		case "complete":
-			return saveLoginResult(cmd, pollResp)
+			return saveLoginResult(cmd, serverURL, pollResp)
 		case "expired":
 			return fmt.Errorf("login expired; please try again")
 		case "pending", "authorization_pending":
@@ -222,7 +225,7 @@ func loginWithDeviceCode(cmd *cobra.Command, serverURL string) error {
 }
 
 // saveLoginResult writes the successful login response to config.
-func saveLoginResult(cmd *cobra.Command, resp *devicePollResponse) error {
+func saveLoginResult(cmd *cobra.Command, serverURL string, resp *devicePollResponse) error {
 	cfg, err := configpkg.ReadClientConfig()
 	if err != nil {
 		return err
@@ -247,6 +250,9 @@ func saveLoginResult(cmd *cobra.Command, resp *devicePollResponse) error {
 	}
 	if hub := strings.TrimSpace(resp.Hub); hub != "" {
 		cfg.Hub = hub
+	}
+	if cfg.Hub == "" {
+		cfg.Hub = hubURLFromAuthServer(serverURL)
 	}
 	if err := configpkg.WriteClientConfig(cfg); err != nil {
 		return err
@@ -371,6 +377,22 @@ func decodeAuthError(resp *http.Response, action string) error {
 		return fmt.Errorf("%s: %s", action, body.Error)
 	}
 	return fmt.Errorf("%s: HTTP %d", action, resp.StatusCode)
+}
+
+// hubURLFromAuthServer derives the Hub URL from the auth server URL.
+// e.g. "https://api.pinixai.com" → "https://hub.pinixai.com"
+//
+//	"https://api.pinix.ai" → "https://hub.pinix.ai"
+func hubURLFromAuthServer(serverURL string) string {
+	serverURL = strings.TrimRight(serverURL, "/")
+	if strings.Contains(serverURL, "api.pinixai.com") {
+		return "https://hub.pinixai.com"
+	}
+	if strings.Contains(serverURL, "api.pinix.ai") {
+		return "https://hub.pinix.ai"
+	}
+	// Generic: replace "api." with "hub."
+	return strings.Replace(serverURL, "://api.", "://hub.", 1)
 }
 
 // openBrowser tries to open a URL in the default browser.
