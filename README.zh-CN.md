@@ -1,87 +1,117 @@
-# Pinix
+<p align="center">
+  <img src="https://pinix.ai/logo.svg" alt="Pinix" width="120" />
+</p>
 
-**Agent Harness** — 一套开放能力层，让 Agent 发现、调用、组合和约束工具。
+<h1 align="center">Pinix</h1>
 
-Pinix 把设备、应用、网页、服务和工作流封装成 **Clip**。每个 Clip 是独立的能力单元，可以被任何 Agent、CLI 调用。部分 Clip 还自带 Web UI，让人直接使用。
+<p align="center">
+  <b>Agent Harness</b> — 一套开放能力层，让任何 Agent 发现、调用和组合工具。
+</p>
 
-```text
+<p align="center">
+  <a href="https://pinixai.com">官网</a> &middot;
+  <a href="docs/getting-started.md">文档</a> &middot;
+  <a href="https://discord.gg/pinix">Discord</a>
+</p>
+
+<!-- <p align="center">
+  <img src="demo.gif" width="680" alt="Pinix demo" />
+</p> -->
+
+---
+
+Pinix 把设备、应用、网页、服务和工作流封装成 **Clip** — 独立的能力单元，任何 Agent 都可以调用。部分 Clip 还自带 Web UI，人也可以直接使用。
+
+```
 人 / Agent / CLI
-  -> Hub
-  -> Clips
-  -> 设备 / 应用 / 网页 / SaaS / 工作流
+  → Hub
+  → Clip
+  → 设备 / 应用 / 网页 / SaaS / 工作流
 ```
 
 ## 快速开始
 
 ```bash
-# 1. 启动 Pinix
-pinixd
-
-# 2. 连接 pinix.ai
-pinix login
-
-# 3. 安装一个 Clip
-pinix hub add @pinix/todo
-
-# 4. 使用
-pinix invoke todo add --title "Hello Pinix"
-pinix invoke todo list
-
-# 5. 打开 Console
-open http://localhost:9000
+pinixd                                          # 启动 Pinix
+pinix login                                     # 连接 pinix.ai
+pinix hub add @pinix/todo                       # 安装一个 Clip
+pinix invoke todo add --title "Hello Pinix"     # 使用
+pinix invoke todo list                          # 查看结果
+open http://localhost:9000                       # 打开 Console
 ```
 
 `pinix login` 后，你的本地 Clips 通过 pinix.ai Cloud Hub 在任何设备上都可以访问。
 
-## 启动 Pinix 后发生了什么
+## 启动后你得到什么
 
-```text
+`pinixd` 启动后，你拥有一个完整的本地能力栈：
+
+```
 pinixd
-  ├── Hub        — 路由 invoke 调用到正确的 Clip
-  ├── Runtime    — 管理本地 Bun/TS Clip 进程
-  ├── Registry   — 从 pinix.ai Registry 安装 Clips
-  └── Console    — localhost:9000 的 Web 管理界面
+  ├── Hub        路由 invoke 到正确的 Clip
+  ├── Runtime    管理本地 Bun/TS Clip 进程
+  ├── Registry   从 pinix.ai 安装 Clips
+  └── Console    localhost:9000 管理界面
 ```
 
-如果安装了 BB-Browser，它会自动启动一个 headless Chrome，并把浏览器能力注册为 Edge Clips：
+如果安装了 [BB-Browser](https://github.com/epiral/bb-browser)，它会自动启动 headless Chrome，把 30+ 网站注册为 Edge Clips：
 
-```text
-pinix hub list
+```
+$ pinix hub list
 
   github     RUNNING   trending, repo, search
   twitter    RUNNING   search, timeline
   reddit     RUNNING   search, hot
+  browser    RUNNING   open, snapshot, click, fill, eval
   todo       RUNNING   add, delete, list
 ```
 
-## Clips
+你浏览器里的登录态、Cookie、SSO 和内网环境直接可用。实时画面在 `http://localhost:6111`。
 
-Clip 是 Pinix 的核心抽象。它提供两个关键价值：
+## 功能
 
-1. **降低模型要求。** 复杂操作被封装成确定性命令，Agent 只需要调用，不需要理解实现细节。
-2. **圈定能力边界。** Agent 只能通过 Clip 获取能力，权限、审计和测试都是内置的。
+- [x] **Clip Runtime** — 本地安装、运行和管理 Bun/TS Clips
+- [x] **Hub 路由** — 按 alias 路由 invoke，按 package name 自动发现
+- [x] **Edge Clips** — BB-Browser、clipboard、screen 等自动注册
+- [x] **Clip Web** — Clip 自带 Web UI，通过 `{alias}.hub.pinix.ai` 访问
+- [x] **Console** — 管理 Clips、查看状态、iframe 嵌入 Clip Web
+- [x] **Registry** — 搜索、安装、发布 Clips 到 pinix.ai
+- [x] **pinix.ai Cloud Hub** — 跨网络路由，从任何设备访问 Clips
+- [x] **`pinix login`** — device code flow，一条命令连接
+- [x] **自动连接** — `pinixd` 读取已保存 token，自动连 Cloud Hub
+- [ ] **`@pinix/agent`** — 默认单人 Agent Clip（开发中）
+- [ ] **Pinix Desktop** — 本地 Shell + OS Edge Clips（开发中）
+- [ ] **`install.sh`** — 一键安装（开发中）
 
-三类 Clip：
+## 为什么是 Clip
 
-| 类型 | 工作方式 | 例子 |
-|---|---|---|
-| **SDK Clip** | Bun/TS 应用，由 Runtime 管理，通过 `pinix hub add` 安装 | todo, review, memex |
-| **Edge Clip** | 原生进程，自实现 Provider 协议，自动注册到 Hub | BB-Browser sites, clipboard, screen |
-| **API Clip** | 封装外部 API 为 Clip | GitHub CLI, 12306, 高德地图 |
+Agent 需要工具。现有方案各有缺口：
+
+| | MCP | CLI (bash) | Clips |
+|---|---|---|---|
+| 发现方式 | 所有工具一次注入 | 开放环境 | 按需发现 |
+| Token 成本 | 高（无关工具占上下文） | 低 | 低（只加载活跃 Clip） |
+| 注意力 | 被无关工具分散 | — | 聚焦当前任务 |
+| 边界 | 取决于工具实现 | 无边界 | 严格 — Clip 定义边界 |
+| 模型要求 | 中 | 高（要理解 shell） | 低（确定性命令） |
+
+Clip 做两件事：
+1. **降低模型要求。** 复杂操作封装成确定性命令。
+2. **圈定能力边界。** Agent 只能用 Clip 暴露的能力。
 
 ## BB-Browser
 
-BB-Browser 把任何网站变成 Agent 可调用的 Clip。它运行在用户真实的 Chrome 里，复用已有的登录态、Cookie、SSO 和内网环境。
+[BB-Browser](https://github.com/epiral/bb-browser) 把任何网站变成 Agent 可调用的 Clip。它运行在真实 Chrome 里，复用你的登录态、Cookie、SSO 和内网环境。
 
 ```bash
 pinix invoke github trending
-# → GitHub trending 的结构化 JSON，使用你已登录的账号
+# → GitHub trending 结构化 JSON
 
 pinix invoke twitter search --query "AI agent"
-# → Twitter 搜索结果，通过你的账号
+# → Twitter 搜索结果
 ```
 
-实时画面在 `http://localhost:6111`，可以看到 Chrome 正在做什么。
+内置 103 个命令覆盖 36 个平台。Agent 还能自主生成新的 site adapter。
 
 ## 连接 pinix.ai
 
@@ -89,28 +119,43 @@ pinix invoke twitter search --query "AI agent"
 pinix login
 ```
 
-这会把你的本地 Pinix 连接到 pinix.ai Cloud Hub。你的 Clips 在任何设备上都可以访问。pinix.ai 还提供：
+打开浏览器进行设备确认。登录后：
 
-- **Cloud Hub** — 跨网络 Clip 路由
-- **Cloud Registry** — 发现和安装 Clips
-- **模型代理** — 使用 AI 模型不需要自己管 API key
-- **Console** — 从网页管理 Clips
+- 本地 Clips 从任何设备可见
+- `pinixd` 下次启动自动连接（不需要 `--hub` 参数）
+- Cloud Registry 发现和安装 Clips
+- 模型代理 — 不用自己管 API key
+
+## 三类 Clip
+
+| 类型 | 方式 | 例子 |
+|---|---|---|
+| **SDK Clip** | Bun/TS 应用，Runtime 管理，`pinix hub add` | `@pinix/todo`, `@pinix/review`, `@pinix/memex` |
+| **Edge Clip** | 原生进程，Provider 协议，自动注册 | BB-Browser sites, clipboard, screen, notification |
+| **API Clip** | 封装外部 API | GitHub, 12306, 高德地图 |
 
 ## 从源码编译
 
 ```bash
 # 需要 Go 1.22+ 和 Bun
+git clone https://github.com/epiral/pinix.git
+cd pinix
 go build -o pinixd ./cmd/pinixd
-go build -o pinix ./cmd/pinix
-
-pinixd
+go build -o pinix  ./cmd/pinix
+./pinixd
 ```
 
 ## 文档
 
-- [核心架构](docs/architecture.md)
-- [快速开始](docs/getting-started.md)
-- [Clip 开发](docs/clip-development.md)
-- [Edge Clip 开发](docs/edge-clip-development.md)
-- [协议](docs/protocol.md)
-- [部署](docs/deployment.md)
+| 文档 | 说明 |
+|---|---|
+| [快速开始](docs/getting-started.md) | 安装、第一个 Clip、第一次 invoke |
+| [核心架构](docs/architecture.md) | Hub、Runtime、Provider、Clip 模型 |
+| [Clip 开发](docs/clip-development.md) | 开发自己的 Clip |
+| [Edge Clip 开发](docs/edge-clip-development.md) | 开发硬件/浏览器 Edge Clip |
+| [协议](docs/protocol.md) | Connect-RPC、ProviderStream、IPC |
+| [部署](docs/deployment.md) | 生产部署指南 |
+
+## License
+
+[MIT](LICENSE)

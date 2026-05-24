@@ -1,87 +1,117 @@
-# Pinix
+<p align="center">
+  <img src="https://pinix.ai/logo.svg" alt="Pinix" width="120" />
+</p>
 
-**Agent Harness** — an open capability layer for Agents to discover, invoke, compose, and constrain tools.
+<h1 align="center">Pinix</h1>
 
-Pinix wraps devices, apps, websites, services, and workflows into **Clips**. Each Clip is a self-contained capability unit that can be called by any Agent, CLI, or MCP client. Some Clips also ship their own Web UI for direct human use.
+<p align="center">
+  <b>Agent Harness</b> — the open capability layer that lets any Agent discover, invoke, and compose tools.
+</p>
 
-```text
+<p align="center">
+  <a href="https://pinixai.com">Website</a> &middot;
+  <a href="docs/getting-started.md">Docs</a> &middot;
+  <a href="https://discord.gg/pinix">Discord</a>
+</p>
+
+<!-- <p align="center">
+  <img src="demo.gif" width="680" alt="Pinix demo" />
+</p> -->
+
+---
+
+Pinix wraps devices, apps, websites, services, and workflows into **Clips** — self-contained capability units that any Agent can call. Some Clips also ship a Web UI for direct human use.
+
+```
 Human / Agent / CLI
-  -> Hub
-  -> Clips
-  -> device / app / web / SaaS / workflow
+  → Hub
+  → Clip
+  → device / app / web / SaaS / workflow
 ```
 
-## Quick Start
+## Get Started
 
 ```bash
-# 1. Start Pinix
-pinixd
-
-# 2. Connect to pinix.ai
-pinix login
-
-# 3. Install a Clip
-pinix hub add @pinix/todo
-
-# 4. Use it
-pinix invoke todo add --title "Hello Pinix"
-pinix invoke todo list
-
-# 5. Open Console
-open http://localhost:9000
+pinixd                                          # start Pinix
+pinix login                                     # connect to pinix.ai
+pinix hub add @pinix/todo                       # install a Clip
+pinix invoke todo add --title "Hello Pinix"     # use it
+pinix invoke todo list                          # see results
+open http://localhost:9000                       # open Console
 ```
 
 After `pinix login`, your local Clips are accessible from any device through pinix.ai Cloud Hub.
 
-## What Happens When You Start Pinix
+## What You Get
 
-```text
+When `pinixd` starts, you get a complete local capability stack:
+
+```
 pinixd
-  ├── Hub        — routes invoke calls to the right Clip
-  ├── Runtime    — manages local Bun/TS Clip processes
-  ├── Registry   — installs Clips from pinix.ai Registry
-  └── Console    — web UI to manage Clips at localhost:9000
+  ├── Hub        routes invoke calls to the right Clip
+  ├── Runtime    manages local Bun/TS Clip processes
+  ├── Registry   installs Clips from pinix.ai
+  └── Console    web UI at localhost:9000
 ```
 
-If BB-Browser is installed, it auto-starts a headless Chrome and registers browser capabilities as Edge Clips:
+If [BB-Browser](https://github.com/epiral/bb-browser) is installed, it auto-starts a headless Chrome and registers 30+ websites as Edge Clips:
 
-```text
-pinix hub list
+```
+$ pinix hub list
 
   github     RUNNING   trending, repo, search
   twitter    RUNNING   search, timeline
   reddit     RUNNING   search, hot
+  browser    RUNNING   open, snapshot, click, fill, eval
   todo       RUNNING   add, delete, list
 ```
 
-## Clips
+Your browser's login sessions, cookies, SSO, and intranet access work out of the box. Live view at `http://localhost:6111`.
 
-Clips are the core abstraction. They provide two key values:
+## Features
 
-1. **Lower model requirements.** Complex operations are wrapped into deterministic commands. Agents just call them.
-2. **Bounded capabilities.** Agents can only access what Clips expose. Permissions, audit, and testing are built in.
+- [x] **Clip Runtime** — install, run, and manage Bun/TS Clips locally
+- [x] **Hub Routing** — route invoke calls by alias, auto-discover by package name
+- [x] **Edge Clips** — BB-Browser, clipboard, screen, device APIs register automatically
+- [x] **Clip Web** — Clips ship their own Web UI, served at `{alias}.hub.pinix.ai`
+- [x] **Console** — manage Clips, view status, embed Clip Web via iframe
+- [x] **Registry** — search, install, publish Clips to pinix.ai
+- [x] **pinix.ai Cloud Hub** — cross-network routing, access Clips from any device
+- [x] **`pinix login`** — device code flow, one command to connect
+- [x] **Auto-connect** — `pinixd` reads saved token, connects to Cloud Hub automatically
+- [ ] **`@pinix/agent`** — default single-user Agent Clip (coming soon)
+- [ ] **Pinix Desktop** — local shell + OS Edge Clips (coming soon)
+- [ ] **`install.sh`** — one-line installer (coming soon)
 
-Three types of Clips:
+## Why Clips
 
-| Type | How it works | Example |
-|---|---|---|
-| **SDK Clip** | Bun/TS app managed by Runtime, installed via `pinix hub add` | todo, review, memex |
-| **Edge Clip** | Native process implementing Provider protocol, auto-registers with Hub | BB-Browser sites, clipboard, screen |
-| **API Clip** | Wraps an external API as a Clip | GitHub CLI, 12306, Amap |
+Agents need tools. Current options have gaps:
+
+| | MCP | CLI (bash) | Clips |
+|---|---|---|---|
+| Discovery | all tools injected at once | open environment | on-demand via Hub/Registry |
+| Token cost | high (unused tools in context) | low | low (only active Clips loaded) |
+| Attention | diluted by irrelevant tools | — | focused on current task |
+| Boundary | depends on tool impl | no boundary | strict — Clips define the boundary |
+| Model requirement | medium | high (must understand shell) | low (deterministic commands) |
+
+Clips do two things:
+1. **Lower model requirements.** Complex ops become deterministic commands.
+2. **Bound capabilities.** Agents can only use what Clips expose.
 
 ## BB-Browser
 
-BB-Browser turns any website into an Agent-callable Clip by running in the user's real Chrome — reusing login sessions, cookies, SSO, and intranet access.
+[BB-Browser](https://github.com/epiral/bb-browser) turns any website into an Agent-callable Clip. It runs in a real Chrome instance — reusing your login sessions, cookies, SSO, and intranet access.
 
 ```bash
 pinix invoke github trending
-# → structured JSON from GitHub, using your logged-in session
+# → structured JSON, using your GitHub session
 
 pinix invoke twitter search --query "AI agent"
-# → Twitter search results via your account
+# → search results via your Twitter account
 ```
 
-Live view at `http://localhost:6111` shows what Chrome is doing in real time.
+103 commands across 36 platforms out of the box. Agent can also generate new site adapters autonomously.
 
 ## Connect to pinix.ai
 
@@ -89,28 +119,43 @@ Live view at `http://localhost:6111` shows what Chrome is doing in real time.
 pinix login
 ```
 
-This connects your local Pinix to pinix.ai Cloud Hub. Your Clips become accessible from any device. pinix.ai also provides:
+Opens your browser for device code confirmation. After login:
 
-- **Cloud Hub** — cross-network Clip routing
-- **Cloud Registry** — discover and install Clips
-- **Model Proxy** — use AI models without managing API keys
-- **Console** — manage Clips from the web
+- Your local Clips are visible from any device via Cloud Hub
+- `pinixd` auto-connects on next start (no `--hub` flag needed)
+- Cloud Registry for discovering and installing Clips
+- Model proxy — use AI models without managing API keys
+
+## Three Types of Clips
+
+| Type | How | Example |
+|---|---|---|
+| **SDK Clip** | Bun/TS app, managed by Runtime, `pinix hub add` | `@pinix/todo`, `@pinix/review`, `@pinix/memex` |
+| **Edge Clip** | Native process, Provider protocol, auto-registers | BB-Browser sites, clipboard, screen, notification |
+| **API Clip** | Wraps external API | GitHub, 12306, Amap |
 
 ## Build from Source
 
 ```bash
 # Requires Go 1.22+ and Bun
+git clone https://github.com/epiral/pinix.git
+cd pinix
 go build -o pinixd ./cmd/pinixd
-go build -o pinix ./cmd/pinix
-
-pinixd
+go build -o pinix  ./cmd/pinix
+./pinixd
 ```
 
-## Docs
+## Documentation
 
-- [Architecture](docs/architecture.md)
-- [Getting Started](docs/getting-started.md)
-- [Clip Development](docs/clip-development.md)
-- [Edge Clip Development](docs/edge-clip-development.md)
-- [Protocol](docs/protocol.md)
-- [Deployment](docs/deployment.md)
+| Doc | Description |
+|---|---|
+| [Getting Started](docs/getting-started.md) | Installation, first Clip, first invoke |
+| [Architecture](docs/architecture.md) | Hub, Runtime, Provider, Clip model |
+| [Clip Development](docs/clip-development.md) | Build your own Clip |
+| [Edge Clip Development](docs/edge-clip-development.md) | Build hardware/browser Edge Clips |
+| [Protocol](docs/protocol.md) | Connect-RPC, ProviderStream, IPC |
+| [Deployment](docs/deployment.md) | Production deployment guide |
+
+## License
+
+[MIT](LICENSE)
