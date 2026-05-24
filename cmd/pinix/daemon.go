@@ -1,0 +1,267 @@
+// Role:    Hidden "daemon" subcommand — runs pinixd logic inside the pinix binary
+// Depends: context, fmt, log/slog, net, os, os/signal, path/filepath, strings, sync, syscall, time, internal/config, internal/daemon, internal/logging, internal/pidfile, cobra
+// Exports: newDaemonCommand
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	configpkg "github.com/epiral/pinix/internal/config"
+	"github.com/epiral/pinix/internal/daemon"
+	"github.com/epiral/pinix/internal/logging"
+	"github.com/epiral/pinix/internal/pidfile"
+	"github.com/spf13/cobra"
+)
+
+func newDaemonCommand() *cobra.Command {
+	var (
+		superToken string
+		configPath string
+		bunPath    string
+		hubURL     string
+		hubToken   string
+		port       int
+		pidPath    string
+		hubOnly    bool
+		logLevel   string
+	)
+
+	cmd := &cobra.Command{
+		Use:    "daemon",
+		Short:  "Run the Pinix daemon (internal use)",
+		Hidden: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDaemon(daemonOptions{
+				superToken: superToken,
+				configPath: configPath,
+				bunPath:    bunPath,
+				hubURL:     hubURL,
+				hubToken:   hubToken,
+				port:       port,
+				pidPath:    pidPath,
+				hubOnly:    hubOnly,
+				logLevel:   logLevel,
+			})
+		},
+	}
+
+	cmd.Flags().StringVar(&superToken, "super-token", "", "super token required for protected add/remove operations")
+	cmd.Flags().StringVar(&configPath, "config", "", "config path (default: ~/.pinix/config.json)")
+	cmd.Flags().StringVar(&bunPath, "bun", "", "path to bun binary (default: auto-detect)")
+	cmd.Flags().StringVar(&hubURL, "hub", "", "connect to an external hub as a runtime provider")
+	cmd.Flags().StringVar(&hubToken, "hub-token", "", "JWT token for authenticating with the external hub (env: PINIX_HUB_TOKEN)")
+	cmd.Flags().BoolVar(&hubOnly, "hub-only", false, "run Hub + Portal only, without a local runtime")
+	cmd.Flags().IntVar(&port, "port", 9000, "http port for the embedded portal UI")
+	cmd.Flags().StringVar(&pidPath, "pid", "", "custom path to PID file (default: ~/.pinix/pinixd.pid)")
+	cmd.Flags().StringVar(&logLevel, "log-level", "info", "log level: debug, info, warn, error")
+
+	return cmd
+}
+
+type daemonOptions struct {
+	superToken string
+	configPath string
+	bunPath    string
+	hubURL     string
+	hubToken   string
+	port       int
+	pidPath    string
+	hubOnly    bool
+	logLevel   string
+}
+
+func runDaemon(opts daemonOptions) error {
+	// Setup structured JSON logging to stderr + file
+	home, err := os.UserHomeDir()
+	if err != nil {
+		slog.Error("failed to get home directory for logging", "error", err)
+	} else {
+		logDir := filepath.Join(home, ".pinix", "logs")
+		cleanup, err := logging.Setup(logDir, logging.ParseLevel(opts.logLevel))
+		if err != nil {
+			slog.Error("failed to setup file logging", "error", err)
+		} else {
+			defer cleanup()
+		}
+	}
+
+	clientConfig := loadDaemonClientConfig()
+
+	// Resolve hub-token: flag > env > config file
+	hubToken := opts.hubToken
+	if hubToken == "" {
+		hubToken = strings.TrimSpace(os.Getenv("PINIX_HUB_TOKEN"))
+	}
+	autoConnect := false
+	if hubToken == "" && strings.TrimSpace(clientConfig.HubToken) != "" {
+		hubToken = strings.TrimSpace(clientConfig.HubToken)
+		autoConnect = true
+	}
+
+	// Resolve hub: flag > env > config file
+	hubURL := strings.TrimSpace(opts.hubURL)
+	if hubURL == "" {
+		if v := strings.TrimSpace(os.Getenv("PINIX_HUB")); v != "" {
+			hubURL = v
+		} else if v := strings.TrimSpace(clientConfig.Hub); v != "" {
+			hubURL = v
+		} else if hubToken != "" {
+			hubURL = "https://hub.pinixai.com"
+		}
+	}
+
+	if autoConnect && hubURL != "" {
+		slog.Info("hub: auto-connecting from config", "hub", hubURL)
+	}
+	if opts.hubOnly && hubURL != "" {
+		return fmt.Errorf("--hub and --hub-only cannot be used together")
+	}
+
+	registry, err := daemon.NewRegistry(opts.configPath)
+	if err != nil {
+		return err
+	}
+	if err := daemon.EnsureLogsDir(registry.RootDir()); err != nil {
+		return fmt.Errorf("create logs directory: %w", err)
+	}
+	if opts.superToken != "" {
+		if err := registry.SetSuperToken(opts.superToken); err != nil {
+			return err
+		}
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// PID file: prevent duplicate pinixd, enable CLI auto-discovery
+	if err := pidfile.CheckExistingPIDFile(opts.port, opts.pidPath); err != nil {
+		return err
+	}
+	pidCleanup, err := pidfile.WritePIDFile(opts.port, pidfile.WritePIDFileOptions{
+		Hub:        hubURL,
+		CustomPath: opts.pidPath,
+	})
+	if err != nil {
+		return fmt.Errorf("write pid file: %w", err)
+	}
+	defer pidCleanup()
+
+	// Mode 1: Hub only (no local runtime)
+	if opts.hubOnly {
+		d, err := daemon.NewHubDaemon(registry)
+		if err != nil {
+			return err
+		}
+		return d.ServeHTTP(ctx, fmt.Sprintf(":%d", opts.port))
+	}
+
+	// Mode 2: Runtime connects to external Hub
+	if hubURL != "" {
+		processManager, err := daemon.NewProcessManager(registry, opts.bunPath, hubURL)
+		if err != nil {
+			return err
+		}
+		d, err := daemon.NewDaemon(registry, processManager)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = d.Close() }()
+		return d.ConnectHub(ctx, hubURL, opts.port, hubToken)
+	}
+
+	// Mode 3: Hub + Runtime in same process
+	addr := fmt.Sprintf(":%d", opts.port)
+	localHubURL := fmt.Sprintf("http://127.0.0.1:%d", opts.port)
+
+	hubDaemon, err := daemon.NewHubDaemon(registry)
+	if err != nil {
+		return err
+	}
+
+	var wg sync.WaitGroup
+	hubErr := make(chan error, 1)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := hubDaemon.ServeHTTP(ctx, addr); err != nil {
+			hubErr <- err
+		}
+	}()
+
+	if err := waitForDaemonHub(ctx, localHubURL, 5*time.Second); err != nil {
+		return fmt.Errorf("hub failed to start: %w", err)
+	}
+
+	processManager, err := daemon.NewProcessManager(registry, opts.bunPath, localHubURL)
+	if err != nil {
+		return err
+	}
+	runtimeDaemon, err := daemon.NewDaemon(registry, processManager)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = runtimeDaemon.Close() }()
+
+	runtimeErr := make(chan error, 1)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := runtimeDaemon.ConnectHub(ctx, localHubURL, opts.port, ""); err != nil {
+			runtimeErr <- err
+		}
+	}()
+
+	select {
+	case err := <-hubErr:
+		return fmt.Errorf("hub: %w", err)
+	case err := <-runtimeErr:
+		return fmt.Errorf("runtime: %w", err)
+	case <-ctx.Done():
+	}
+
+	_ = runtimeDaemon.Close()
+	_ = hubDaemon.Close()
+	wg.Wait()
+	return nil
+}
+
+func waitForDaemonHub(ctx context.Context, hubURL string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	host := strings.TrimPrefix(hubURL, "http://")
+	host = strings.TrimPrefix(host, "https://")
+
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		conn, err := net.DialTimeout("tcp", host, 200*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return fmt.Errorf("timeout waiting for %s", hubURL)
+}
+
+func loadDaemonClientConfig() *configpkg.ClientConfig {
+	cfg, err := configpkg.ReadClientConfig()
+	if err != nil || cfg == nil {
+		return &configpkg.ClientConfig{}
+	}
+	return cfg
+}
