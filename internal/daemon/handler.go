@@ -12,22 +12,27 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	configpkg "github.com/epiral/pinix/internal/config"
 )
 
 func readDefaultRegistryURL() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ""
+		return configpkg.DefaultRegistryURL
 	}
 	data, err := os.ReadFile(filepath.Join(home, ".pinix", "client.json"))
 	if err != nil {
-		return ""
+		return configpkg.DefaultRegistryURL
 	}
 	var cfg map[string]string
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return ""
+		return configpkg.DefaultRegistryURL
 	}
-	return strings.TrimSpace(cfg["registry"])
+	if v := strings.TrimSpace(cfg["registry"]); v != "" {
+		return v
+	}
+	return configpkg.DefaultRegistryURL
 }
 
 type Handler struct {
