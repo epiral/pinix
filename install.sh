@@ -4,7 +4,7 @@ set -e
 # Pinix installer
 # Usage: curl -fsSL https://dl.pinixai.com/install.sh | bash
 
-BASE_URL="https://pinix-blobs-1251447449.cos.ap-beijing.myqcloud.com/releases/latest"
+BASE_URL="https://dl.pinixai.com/releases/latest"
 INSTALL_DIR="/usr/local/bin"
 
 # Detect platform
