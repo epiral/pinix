@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/epiral/pinix/internal/client"
 	configpkg "github.com/epiral/pinix/internal/config"
 	"github.com/epiral/pinix/internal/daemon"
 	"github.com/epiral/pinix/internal/logging"
@@ -273,6 +274,17 @@ func runDaemon(opts daemonOptions) error {
 		}()
 	}
 
+	// Auto-install default clips (non-blocking).
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		time.Sleep(5 * time.Second)
+		if ctx.Err() != nil {
+			return
+		}
+		autoInstallDefaultClips(ctx, registry, localHubURL)
+	}()
+
 	select {
 	case err := <-hubErr:
 		return fmt.Errorf("hub: %w", err)
@@ -372,6 +384,39 @@ func waitForDaemonHub(ctx context.Context, hubURL string, timeout time.Duration)
 		time.Sleep(50 * time.Millisecond)
 	}
 	return fmt.Errorf("timeout waiting for %s", hubURL)
+}
+
+// defaultClips are auto-installed on first start if not already present.
+var defaultClips = []struct {
+	source string
+	alias  string
+}{
+	{"@pinix/agent", "agent"},
+}
+
+// autoInstallDefaultClips installs built-in clips that should be available out of the box.
+func autoInstallDefaultClips(ctx context.Context, registry *daemon.Registry, localHubURL string) {
+	c, err := client.New(localHubURL)
+	if err != nil {
+		slog.Warn("auto-install: failed to create client", "error", err)
+		return
+	}
+
+	for _, dc := range defaultClips {
+		if ctx.Err() != nil {
+			return
+		}
+		_, exists, _ := registry.GetClip(dc.alias)
+		if exists {
+			continue
+		}
+		slog.Info("auto-installing default clip", "source", dc.source, "alias", dc.alias)
+		if _, err := c.Add(ctx, dc.source, dc.alias, "", "", ""); err != nil {
+			slog.Warn("auto-install clip failed (non-fatal)", "source", dc.source, "error", err)
+		} else {
+			slog.Info("auto-installed default clip", "alias", dc.alias)
+		}
+	}
 }
 
 func loadDaemonClientConfig() *configpkg.ClientConfig {
