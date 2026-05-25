@@ -19,7 +19,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/epiral/pinix/internal/client"
 	configpkg "github.com/epiral/pinix/internal/config"
 	"github.com/epiral/pinix/internal/daemon"
 	"github.com/epiral/pinix/internal/logging"
@@ -225,6 +224,11 @@ func runDaemon(opts daemonOptions) error {
 	}
 	defer func() { _ = runtimeDaemon.Close() }()
 
+	// Auto-install default clips before connecting to Hub, so the initial
+	// register message already includes them. This runs synchronously —
+	// clips are installed and ready before the provider session starts.
+	autoInstallDefaultClips(ctx, registry, runtimeDaemon)
+
 	runtimeErr := make(chan error, 1)
 	wg.Add(1)
 	go func() {
@@ -273,17 +277,6 @@ func runDaemon(opts daemonOptions) error {
 			}
 		}()
 	}
-
-	// Auto-install default clips (non-blocking).
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		time.Sleep(5 * time.Second)
-		if ctx.Err() != nil {
-			return
-		}
-		autoInstallDefaultClips(ctx, registry, localHubURL)
-	}()
 
 	select {
 	case err := <-hubErr:
@@ -394,14 +387,9 @@ var defaultClips = []struct {
 	{"@pinix/agent", "agent"},
 }
 
-// autoInstallDefaultClips installs built-in clips that should be available out of the box.
-func autoInstallDefaultClips(ctx context.Context, registry *daemon.Registry, localHubURL string) {
-	c, err := client.New(localHubURL)
-	if err != nil {
-		slog.Warn("auto-install: failed to create client", "error", err)
-		return
-	}
-
+// autoInstallDefaultClips installs built-in clips directly via the runtime daemon's handler.
+// Called synchronously before ConnectHub so the initial register message includes them.
+func autoInstallDefaultClips(ctx context.Context, registry *daemon.Registry, d *daemon.Daemon) {
 	for _, dc := range defaultClips {
 		if ctx.Err() != nil {
 			return
@@ -411,7 +399,7 @@ func autoInstallDefaultClips(ctx context.Context, registry *daemon.Registry, loc
 			continue
 		}
 		slog.Info("auto-installing default clip", "source", dc.source, "alias", dc.alias)
-		if _, err := c.Add(ctx, dc.source, dc.alias, "", "", ""); err != nil {
+		if err := d.InstallClip(ctx, dc.source, dc.alias); err != nil {
 			slog.Warn("auto-install clip failed (non-fatal)", "source", dc.source, "error", err)
 		} else {
 			slog.Info("auto-installed default clip", "alias", dc.alias)
