@@ -224,9 +224,9 @@ func runDaemon(opts daemonOptions) error {
 	}
 	defer func() { _ = runtimeDaemon.Close() }()
 
-	// Auto-install default clips before connecting to Hub, so the initial
-	// register message already includes them. This runs synchronously —
-	// clips are installed and ready before the provider session starts.
+	// Auto-install default clips before connecting to Hub.
+	// This runs synchronously so the initial register message includes them.
+	// pinix start returns after 2s regardless — this runs in the daemon process.
 	autoInstallDefaultClips(ctx, registry, runtimeDaemon)
 
 	runtimeErr := make(chan error, 1)
