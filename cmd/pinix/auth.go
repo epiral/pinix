@@ -9,14 +9,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	configpkg "github.com/epiral/pinix/internal/config"
+	"github.com/epiral/pinix/internal/pidfile"
 	"github.com/spf13/cobra"
 )
 
@@ -152,6 +156,7 @@ func loginWithToken(cmd *cobra.Command, serverURL, token string) error {
 	if hubDisplay := cfg.Hub; hubDisplay != "" {
 		fmt.Fprintf(out, "  Hub: %s\n", hubDisplay)
 	}
+	restartDaemonIfRunning(out)
 	return nil
 }
 
@@ -268,6 +273,7 @@ func saveLoginResult(cmd *cobra.Command, serverURL string, resp *devicePollRespo
 	if hubDisplay := cfg.Hub; hubDisplay != "" {
 		fmt.Fprintf(out, "  Hub: %s\n", hubDisplay)
 	}
+	restartDaemonIfRunning(out)
 	return nil
 }
 
@@ -393,6 +399,84 @@ func hubURLFromAuthServer(serverURL string) string {
 	}
 	// Generic: replace "api." with "hub."
 	return strings.Replace(serverURL, "://api.", "://hub.", 1)
+}
+
+// restartDaemonIfRunning checks if pinixd is running and restarts it so it
+// picks up the new credentials and reconnects to Cloud Hub.
+func restartDaemonIfRunning(out io.Writer) {
+	pf, err := pidfile.ReadPIDFile()
+	if err != nil || pf == nil {
+		return // not running, nothing to do
+	}
+
+	pid := pf.PID
+	port := pf.Port
+
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Restarting Pinix to connect to Cloud Hub...")
+
+	// Send SIGTERM and wait for exit (up to 5s)
+	if err := signalProcess(pid, syscall.SIGTERM); err == nil {
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			if checkProcessAlive(pid) != nil {
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		// Force kill if still alive
+		if checkProcessAlive(pid) == nil {
+			_ = signalProcess(pid, os.Kill)
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+
+	// Clean up PID file
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	_ = os.Remove(filepath.Join(home, ".pinix", "pinixd.pid"))
+
+	// Restart daemon in background
+	executable, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(out, "Warning: could not restart daemon: %v\n", err)
+		return
+	}
+
+	child := exec.Command(executable, "daemon", "--port", fmt.Sprintf("%d", port))
+
+	logFile, err := os.OpenFile(
+		filepath.Join(home, ".pinix", "pinixd.log"),
+		os.O_CREATE|os.O_WRONLY|os.O_APPEND,
+		0o644,
+	)
+	if err != nil {
+		fmt.Fprintf(out, "Warning: could not open log file: %v\n", err)
+		return
+	}
+	child.Stdout = logFile
+	child.Stderr = logFile
+	child.SysProcAttr = daemonSysProcAttr()
+
+	if err := child.Start(); err != nil {
+		_ = logFile.Close()
+		fmt.Fprintf(out, "Warning: could not restart daemon: %v\n", err)
+		return
+	}
+	_ = logFile.Close()
+
+	// Wait and verify
+	time.Sleep(2 * time.Second)
+	if child.Process != nil {
+		if err := checkProcessAlive(child.Process.Pid); err != nil {
+			fmt.Fprintln(out, "Warning: daemon exited after restart; check ~/.pinix/pinixd.log")
+			return
+		}
+	}
+
+	fmt.Fprintf(out, "Pinix restarted on :%d (PID %d)\n", port, child.Process.Pid)
 }
 
 // openBrowser tries to open a URL in the default browser.
