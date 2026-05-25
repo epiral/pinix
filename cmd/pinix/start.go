@@ -131,7 +131,7 @@ func newStartCommand() *cobra.Command {
 			fmt.Printf("Pinix started on :%d (PID %d)\n", port, child.Process.Pid)
 			fmt.Println()
 			fmt.Println("Next:")
-			fmt.Printf("  pinix login                        connect to pinix.ai\n")
+			fmt.Printf("  pinix login                        log in to Pinix\n")
 			fmt.Printf("  pinix hub add @pinix/todo          install your first Clip\n")
 			fmt.Printf("  pinix invoke todo list             use a Clip\n")
 			fmt.Printf("  open http://localhost:%d            open Console\n", port)

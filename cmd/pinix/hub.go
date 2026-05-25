@@ -182,7 +182,7 @@ func newHubWhoAmICommand() *cobra.Command {
 			}
 			token := strings.TrimSpace(cfg.HubToken)
 			if token == "" {
-				return fmt.Errorf("not logged in; run \"pinix hub login\"")
+				return fmt.Errorf("not logged in; run \"pinix login\"")
 			}
 
 			if exp, err := parseJWTExpiry(token); err == nil {
@@ -238,7 +238,7 @@ func wrapAuthError(err error) error {
 		return nil
 	}
 	if client.IsAuthError(err) {
-		return fmt.Errorf("%w\n\nHint: your token may be expired or invalid. Run \"pinix hub login\" to refresh it.", err)
+		return fmt.Errorf("%w\n\nHint: your token may be expired or invalid. Run \"pinix login\" to refresh it.", err)
 	}
 	return err
 }
