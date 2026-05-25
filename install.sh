@@ -50,38 +50,25 @@ echo "Pinix installed: $VERSION"
 
 # --- Dependencies ---
 
-# Check Node.js (required for bb-browser)
-if ! command -v node &>/dev/null; then
-  echo ""
-  echo "Node.js is required for browser capabilities."
-  echo "Install Node.js: https://nodejs.org"
-  echo ""
-fi
-
-# Check Bun (required for Clips)
+# Install Bun (required for running Clips)
 if ! command -v bun &>/dev/null; then
   echo ""
-  echo "Bun is required for running Clips."
-  echo "Install Bun: curl -fsSL https://bun.sh/install | bash"
-  echo ""
-fi
-
-# Install bb-browser (browser automation for agents)
-if command -v npm &>/dev/null; then
-  echo ""
-  echo "Installing bb-browser (browser capabilities for agents)..."
-  if npm install -g bb-browser@latest --prefer-online 2>/dev/null; then
-    BB_VERSION=$(bb-browser --version 2>/dev/null || echo "unknown")
-    echo "bb-browser installed: $BB_VERSION"
+  echo "Installing Bun (required for Clips)..."
+  if command -v unzip &>/dev/null; then
+    curl -fsSL https://bun.sh/install | bash 2>/dev/null
+    # Source bun into current PATH for immediate use
+    export BUN_INSTALL="$HOME/.bun"
+    export PATH="$BUN_INSTALL/bin:$PATH"
+    if command -v bun &>/dev/null; then
+      echo "Bun installed: $(bun --version)"
+    else
+      echo "Warning: Bun install completed but not found in PATH."
+      echo "  Run: source ~/.bashrc (or ~/.zshrc)"
+    fi
   else
-    echo "Warning: bb-browser install failed. You can install it later:"
-    echo "  npm install -g bb-browser"
+    echo "Warning: unzip is required to install Bun."
+    echo "  Install unzip first, then run: curl -fsSL https://bun.sh/install | bash"
   fi
-else
-  echo ""
-  echo "npm not found — skipping bb-browser install."
-  echo "To add browser capabilities later:"
-  echo "  npm install -g bb-browser"
 fi
 
 echo ""
