@@ -103,27 +103,31 @@ func runDaemon(opts daemonOptions) error {
 	if hubToken == "" {
 		hubToken = strings.TrimSpace(os.Getenv("PINIX_HUB_TOKEN"))
 	}
-	autoConnect := false
 	if hubToken == "" && strings.TrimSpace(clientConfig.HubToken) != "" {
 		hubToken = strings.TrimSpace(clientConfig.HubToken)
-		autoConnect = true
 	}
 
-	// Resolve hub: flag > env > config file
+	// Resolve hub: flag > env (explicit --hub mode only; auto-connect uses Mode 3)
 	hubURL := strings.TrimSpace(opts.hubURL)
 	if hubURL == "" {
 		if v := strings.TrimSpace(os.Getenv("PINIX_HUB")); v != "" {
 			hubURL = v
-		} else if v := strings.TrimSpace(clientConfig.Hub); v != "" {
-			hubURL = v
-		} else if hubToken != "" {
-			hubURL = "https://hub.pinixai.com"
 		}
 	}
 
-	if autoConnect && hubURL != "" {
-		slog.Info("hub: auto-connecting from config", "hub", hubURL)
+	// Auto-connect hub URL (from config): used for Mode 3 outbound connection, not Mode 2.
+	autoConnectHubURL := ""
+	if hubURL == "" {
+		if v := strings.TrimSpace(clientConfig.Hub); v != "" {
+			autoConnectHubURL = v
+		} else if hubToken != "" {
+			autoConnectHubURL = "https://hub.pinixai.com"
+		}
+		if autoConnectHubURL != "" {
+			slog.Info("hub: auto-connecting from config", "hub", autoConnectHubURL)
+		}
 	}
+
 	if opts.hubOnly && hubURL != "" {
 		return fmt.Errorf("--hub and --hub-only cannot be used together")
 	}
@@ -222,6 +226,29 @@ func runDaemon(opts daemonOptions) error {
 			runtimeErr <- err
 		}
 	}()
+
+	// Also connect to Cloud Hub if configured (auto-connect from pinix login).
+	// This runs a second provider stream so local clips appear on Cloud Hub.
+	if autoConnectHubURL != "" && hubToken != "" {
+		cloudPM, err := daemon.NewProcessManager(registry, opts.bunPath, autoConnectHubURL)
+		if err != nil {
+			slog.Error("hub: failed to create cloud process manager", "error", err)
+		} else {
+			cloudDaemon, err := daemon.NewDaemon(registry, cloudPM)
+			if err != nil {
+				slog.Error("hub: failed to create cloud daemon", "error", err)
+			} else {
+				defer func() { _ = cloudDaemon.Close() }()
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					if err := cloudDaemon.ConnectHub(ctx, autoConnectHubURL, opts.port, hubToken); err != nil {
+						slog.Error("hub: cloud hub connection error (non-fatal)", "error", err)
+					}
+				}()
+			}
+		}
+	}
 
 	select {
 	case err := <-hubErr:
