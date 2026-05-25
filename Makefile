@@ -10,12 +10,30 @@ build:
 build-all:
 	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o dist/pinixd-linux-amd64 ./cmd/pinixd
 	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o dist/pinix-linux-amd64 ./cmd/pinix
+	GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o dist/pinixd-linux-arm64 ./cmd/pinixd
+	GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o dist/pinix-linux-arm64 ./cmd/pinix
 	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o dist/pinixd-darwin-arm64 ./cmd/pinixd
 	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o dist/pinix-darwin-arm64 ./cmd/pinix
 
 test:
 	go vet ./...
 	go test ./...
+
+upload-cos: build-all
+	@echo "Uploading binaries to COS..."
+	coscmd upload -H '{"x-cos-acl":"public-read"}' dist/pinixd-linux-amd64 releases/latest/pinixd-linux-amd64
+	coscmd upload -H '{"x-cos-acl":"public-read"}' dist/pinix-linux-amd64 releases/latest/pinix-linux-amd64
+	coscmd upload -H '{"x-cos-acl":"public-read"}' dist/pinixd-linux-arm64 releases/latest/pinixd-linux-arm64
+	coscmd upload -H '{"x-cos-acl":"public-read"}' dist/pinix-linux-arm64 releases/latest/pinix-linux-arm64
+	coscmd upload -H '{"x-cos-acl":"public-read"}' dist/pinixd-darwin-arm64 releases/latest/pinixd-darwin-arm64
+	coscmd upload -H '{"x-cos-acl":"public-read"}' dist/pinix-darwin-arm64 releases/latest/pinix-darwin-arm64
+	coscmd upload -H '{"x-cos-acl":"public-read"}' install.sh install.sh
+	@echo "Upload complete."
+	@echo ""
+	@echo "Verify:"
+	@echo "  curl -sI https://dl.pinixai.com/install.sh"
+	@echo "  curl -sI https://dl.pinixai.com/releases/latest/pinix-darwin-arm64"
+	@echo "  curl -sI https://dl.pinixai.com/releases/latest/pinix-linux-amd64"
 
 clean:
 	rm -f pinixd pinix

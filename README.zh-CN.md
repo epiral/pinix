@@ -32,7 +32,7 @@ Pinix 把设备、应用、网页、服务和工作流封装成 **Clip** — 独
 ## 安装
 
 ```bash
-curl -fsSL https://pinix-blobs-1251447449.cos.ap-beijing.myqcloud.com/install.sh | bash
+curl -fsSL https://dl.pinixai.com/install.sh | bash
 ```
 
 运行 Clips 需要 [Bun](https://bun.sh)。
