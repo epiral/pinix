@@ -188,6 +188,14 @@ func runBunInstall(targetPath, bunPath string) error {
 	if !isRegularFile(filepath.Join(targetPath, "package.json")) {
 		return nil
 	}
+	// Use npmmirror for faster installs when using Chinese registry.
+	npmrcPath := filepath.Join(targetPath, ".npmrc")
+	if !isRegularFile(npmrcPath) {
+		regURL := readDefaultRegistryURL()
+		if strings.Contains(regURL, "pinixai.com") {
+			_ = os.WriteFile(npmrcPath, []byte("registry=https://registry.npmmirror.com\n"), 0o644)
+		}
+	}
 	install := exec.Command(bunPath, "install")
 	install.Dir = targetPath
 	output, err := install.CombinedOutput()
