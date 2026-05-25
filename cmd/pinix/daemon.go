@@ -10,10 +10,12 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -34,6 +36,7 @@ func newDaemonCommand() *cobra.Command {
 		port       int
 		pidPath    string
 		hubOnly    bool
+		noBrowser  bool
 		logLevel   string
 	)
 
@@ -51,6 +54,7 @@ func newDaemonCommand() *cobra.Command {
 				port:       port,
 				pidPath:    pidPath,
 				hubOnly:    hubOnly,
+				noBrowser:  noBrowser,
 				logLevel:   logLevel,
 			})
 		},
@@ -62,6 +66,7 @@ func newDaemonCommand() *cobra.Command {
 	cmd.Flags().StringVar(&hubURL, "hub", "", "connect to an external hub as a runtime provider")
 	cmd.Flags().StringVar(&hubToken, "hub-token", "", "JWT token for authenticating with the external hub (env: PINIX_HUB_TOKEN)")
 	cmd.Flags().BoolVar(&hubOnly, "hub-only", false, "run Hub + Portal only, without a local runtime")
+	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "skip auto-starting bb-browser daemon")
 	cmd.Flags().IntVar(&port, "port", 9000, "http port for the embedded portal UI")
 	cmd.Flags().StringVar(&pidPath, "pid", "", "custom path to PID file (default: ~/.pinix/pinixd.pid)")
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "log level: debug, info, warn, error")
@@ -78,6 +83,7 @@ type daemonOptions struct {
 	port       int
 	pidPath    string
 	hubOnly    bool
+	noBrowser  bool
 	logLevel   string
 }
 
@@ -250,6 +256,23 @@ func runDaemon(opts daemonOptions) error {
 		}
 	}
 
+	// Auto-start bb-browser daemon if installed (unless --no-browser or --hub-only).
+	var browserCmd atomic.Pointer[exec.Cmd]
+	if !opts.noBrowser {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Wait for hub to be fully ready
+			time.Sleep(3 * time.Second)
+			if ctx.Err() != nil {
+				return
+			}
+			if cmd := startBrowserDaemon(localHubURL, hubToken, autoConnectHubURL); cmd != nil {
+				browserCmd.Store(cmd)
+			}
+		}()
+	}
+
 	select {
 	case err := <-hubErr:
 		return fmt.Errorf("hub: %w", err)
@@ -258,10 +281,61 @@ func runDaemon(opts daemonOptions) error {
 	case <-ctx.Done():
 	}
 
+	if cmd := browserCmd.Load(); cmd != nil && cmd.Process != nil {
+		slog.Info("stopping bb-browser daemon")
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		_ = cmd.Wait()
+	}
 	_ = runtimeDaemon.Close()
 	_ = hubDaemon.Close()
 	wg.Wait()
 	return nil
+}
+
+// startBrowserDaemon finds and spawns bb-browser-daemon if installed.
+// It connects to the best available hub (Cloud Hub if available, otherwise local).
+func startBrowserDaemon(localHubURL, hubToken, cloudHubURL string) *exec.Cmd {
+	bin, err := exec.LookPath("bb-browser-daemon")
+	if err != nil {
+		slog.Debug("bb-browser-daemon not found in PATH, skipping browser")
+		return nil
+	}
+
+	// Prefer Cloud Hub (so browser clips are visible to pinix CLI).
+	// Fall back to local hub if no Cloud Hub configured.
+	targetHub := localHubURL
+	targetToken := ""
+	if cloudHubURL != "" && hubToken != "" {
+		targetHub = cloudHubURL
+		targetToken = hubToken
+	}
+
+	args := []string{"--hub", targetHub}
+	if targetToken != "" {
+		args = append(args, "--hub-token", targetToken)
+	}
+
+	slog.Info("starting bb-browser daemon", "hub", targetHub)
+
+	cmd := exec.Command(bin, args...)
+	cmd.Stdout = os.Stderr // daemon logs go to stderr
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		slog.Error("failed to start bb-browser daemon", "error", err)
+		return nil
+	}
+
+	slog.Info("bb-browser daemon started", "pid", cmd.Process.Pid)
+
+	// Monitor in background — log if it exits unexpectedly
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			slog.Warn("bb-browser daemon exited", "error", err)
+		}
+	}()
+
+	return cmd
 }
 
 func waitForDaemonHub(ctx context.Context, hubURL string, timeout time.Duration) error {
