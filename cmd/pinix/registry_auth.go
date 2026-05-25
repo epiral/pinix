@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/epiral/pinix/internal/client"
+	configpkg "github.com/epiral/pinix/internal/config"
 	daemonpkg "github.com/epiral/pinix/internal/daemon"
 	"github.com/spf13/cobra"
 )
@@ -233,10 +234,15 @@ func loadRegistryToken(registryURL string) (string, error) {
 		return "", err
 	}
 	entry, ok := credentials.Registries[registryURL]
-	if !ok || strings.TrimSpace(entry.Token) == "" {
-		return "", fmt.Errorf("registry credentials not found for %s; run \"pinix login --registry %s\"", registryURL, registryURL)
+	if ok && strings.TrimSpace(entry.Token) != "" {
+		return strings.TrimSpace(entry.Token), nil
 	}
-	return strings.TrimSpace(entry.Token), nil
+	// Fall back to hub_token from client.json (set by "pinix login").
+	cfg, err := configpkg.ReadClientConfig()
+	if err == nil && strings.TrimSpace(cfg.HubToken) != "" {
+		return strings.TrimSpace(cfg.HubToken), nil
+	}
+	return "", fmt.Errorf("not logged in; run \"pinix login\"")
 }
 
 func normalizeRegistryCredentialRegistry(registryURL string) (string, error) {
