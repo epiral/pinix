@@ -28,7 +28,7 @@ URL="${BASE_URL}/${BINARY}"
 
 echo "Installing Pinix (${OS}/${ARCH})..."
 
-# Download
+# Download pinix binary
 TMPFILE=$(mktemp)
 if ! curl -fsSL "$URL" -o "$TMPFILE"; then
   echo "Failed to download Pinix from $URL"
@@ -36,7 +36,7 @@ if ! curl -fsSL "$URL" -o "$TMPFILE"; then
   exit 1
 fi
 
-# Install
+# Install pinix
 if [ -w "$INSTALL_DIR" ]; then
   mv "$TMPFILE" "$INSTALL_DIR/pinix"
   chmod +x "$INSTALL_DIR/pinix"
@@ -45,7 +45,20 @@ else
   sudo chmod +x "$INSTALL_DIR/pinix"
 fi
 
-# Check Bun
+VERSION=$("$INSTALL_DIR/pinix" --version 2>&1 || echo "unknown")
+echo "Pinix installed: $VERSION"
+
+# --- Dependencies ---
+
+# Check Node.js (required for bb-browser)
+if ! command -v node &>/dev/null; then
+  echo ""
+  echo "Node.js is required for browser capabilities."
+  echo "Install Node.js: https://nodejs.org"
+  echo ""
+fi
+
+# Check Bun (required for Clips)
 if ! command -v bun &>/dev/null; then
   echo ""
   echo "Bun is required for running Clips."
@@ -53,9 +66,24 @@ if ! command -v bun &>/dev/null; then
   echo ""
 fi
 
-VERSION=$("$INSTALL_DIR/pinix" --version 2>&1 || echo "unknown")
-echo ""
-echo "Pinix installed: $VERSION"
+# Install bb-browser (browser automation for agents)
+if command -v npm &>/dev/null; then
+  echo ""
+  echo "Installing bb-browser (browser capabilities for agents)..."
+  if npm install -g bb-browser@latest --prefer-online 2>/dev/null; then
+    BB_VERSION=$(bb-browser --version 2>/dev/null || echo "unknown")
+    echo "bb-browser installed: $BB_VERSION"
+  else
+    echo "Warning: bb-browser install failed. You can install it later:"
+    echo "  npm install -g bb-browser"
+  fi
+else
+  echo ""
+  echo "npm not found — skipping bb-browser install."
+  echo "To add browser capabilities later:"
+  echo "  npm install -g bb-browser"
+fi
+
 echo ""
 echo "Get started:"
 echo "  pinix start                        start Pinix"
