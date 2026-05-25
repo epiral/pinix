@@ -283,8 +283,9 @@ func runDaemon(opts daemonOptions) error {
 
 	if cmd := browserCmd.Load(); cmd != nil && cmd.Process != nil {
 		slog.Info("stopping bb-browser daemon")
-		_ = cmd.Process.Signal(syscall.SIGTERM)
-		_ = cmd.Wait()
+		// Kill the entire process group (bb-browser-daemon + its managed Chrome).
+		// The monitor goroutine handles cmd.Wait().
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 	}
 	_ = runtimeDaemon.Close()
 	_ = hubDaemon.Close()
@@ -294,6 +295,9 @@ func runDaemon(opts daemonOptions) error {
 
 // startBrowserDaemon finds and spawns bb-browser-daemon if installed.
 // It connects to the best available hub (Cloud Hub if available, otherwise local).
+// The child runs in its own process group (Setpgid) so that signals sent to
+// pinixd do not cascade into bb-browser prematurely. On shutdown, the caller
+// sends SIGTERM to the process group via syscall.Kill(-pid, SIGTERM).
 func startBrowserDaemon(localHubURL, hubToken, cloudHubURL string) *exec.Cmd {
 	bin, err := exec.LookPath("bb-browser-daemon")
 	if err != nil {
@@ -315,24 +319,35 @@ func startBrowserDaemon(localHubURL, hubToken, cloudHubURL string) *exec.Cmd {
 		args = append(args, "--hub-token", targetToken)
 	}
 
-	slog.Info("starting bb-browser daemon", "hub", targetHub)
+	// Log to dedicated file instead of mixing with pinixd output.
+	home, _ := os.UserHomeDir()
+	logPath := filepath.Join(home, ".pinix", "logs", "bb-browserd.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		slog.Error("failed to open bb-browser log", "path", logPath, "error", err)
+		return nil
+	}
+
+	slog.Info("starting bb-browser daemon", "hub", targetHub, "log", logPath)
 
 	cmd := exec.Command(bin, args...)
-	cmd.Stdout = os.Stderr // daemon logs go to stderr
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	if err := cmd.Start(); err != nil {
 		slog.Error("failed to start bb-browser daemon", "error", err)
+		logFile.Close()
 		return nil
 	}
 
 	slog.Info("bb-browser daemon started", "pid", cmd.Process.Pid)
 
-	// Monitor in background — log if it exits unexpectedly
+	// Monitor in background — close log file when process exits.
 	go func() {
-		if err := cmd.Wait(); err != nil {
-			slog.Warn("bb-browser daemon exited", "error", err)
-		}
+		_ = cmd.Wait()
+		logFile.Close()
+		slog.Info("bb-browser daemon exited")
 	}()
 
 	return cmd
