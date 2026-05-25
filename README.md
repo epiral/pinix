@@ -35,7 +35,7 @@ Human / Agent / CLI
 curl -fsSL https://dl.pinixai.com/install.sh | bash
 ```
 
-Requires [Bun](https://bun.sh) for running Clips.
+This installs the `pinix` binary and [Bun](https://bun.sh) (required for Clips).
 
 ## Get Started
 
@@ -86,12 +86,12 @@ Your browser's login sessions, cookies, SSO, and intranet access work out of the
 - [x] **Console** — manage Clips, view status, embed Clip Web via iframe
 - [x] **Registry** — search, install, publish Clips to pinix.ai
 - [x] **pinix.ai Cloud Hub** — cross-network routing, access Clips from any device
-- [x] **`pinix login`** — device code flow, one command to connect
+- [x] **`pinix login`** — device code flow, auto-restarts daemon to connect Cloud Hub
 - [x] **Single binary** — one `pinix` binary: `start`, `stop`, `status`, `login`, `invoke`
 - [x] **Auto-connect** — reads saved token, connects to Cloud Hub automatically
+- [x] **`install.sh`** — one-line installer with auto Bun setup
 - [ ] **`@pinix/agent`** — default single-user Agent Clip (coming soon)
 - [ ] **Pinix Desktop** — local shell + OS Edge Clips (coming soon)
-- [ ] **`install.sh`** — one-line installer (coming soon)
 
 ## Why Clips
 

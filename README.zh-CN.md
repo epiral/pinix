@@ -35,7 +35,7 @@ Pinix 把设备、应用、网页、服务和工作流封装成 **Clip** — 独
 curl -fsSL https://dl.pinixai.com/install.sh | bash
 ```
 
-运行 Clips 需要 [Bun](https://bun.sh)。
+自动安装 `pinix` 和 [Bun](https://bun.sh)（运行 Clips 所需）。
 
 ## 快速开始
 
@@ -86,12 +86,12 @@ $ pinix hub list
 - [x] **Console** — 管理 Clips、查看状态、iframe 嵌入 Clip Web
 - [x] **Registry** — 搜索、安装、发布 Clips 到 pinix.ai
 - [x] **pinix.ai Cloud Hub** — 跨网络路由，从任何设备访问 Clips
-- [x] **`pinix login`** — device code flow，一条命令连接
+- [x] **`pinix login`** — device code flow，登录后自动重启 daemon 连接 Cloud Hub
 - [x] **单一 binary** — 一个 `pinix`：`start`、`stop`、`status`、`login`、`invoke`
 - [x] **自动连接** — 读取已保存 token，自动连 Cloud Hub
+- [x] **`install.sh`** — 一键安装，自动配置 Bun
 - [ ] **`@pinix/agent`** — 默认单人 Agent Clip（开发中）
 - [ ] **Pinix Desktop** — 本地 Shell + OS Edge Clips（开发中）
-- [ ] **`install.sh`** — 一键安装（开发中）
 
 ## 为什么是 Clip
 
