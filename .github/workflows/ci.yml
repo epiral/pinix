@@ -24,3 +24,18 @@ jobs:
       - run: go build ./cmd/pinix
       - run: go vet ./...
       - run: go test ./...
+
+  check-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - uses: bufbuild/buf-setup-action@v1
+      - name: Generate proto
+        run: buf generate
+      - run: go build ./cmd/pinixd
+      - run: go build ./cmd/pinix
+      - run: go vet ./...
+      - run: go test ./...
