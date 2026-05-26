@@ -1,8 +1,9 @@
 #!/bin/bash
-set -e
-
 # Pinix installer
 # Usage: curl -fsSL https://dl.pinixai.com/install.sh | bash
+#
+# Do NOT use set -e — sub-installers (fnm, bun) can return non-zero
+# from pipe operations even when they succeed.
 
 BASE_URL="https://dl.pinixai.com/releases/latest"
 INSTALL_DIR="/usr/local/bin"
