@@ -90,7 +90,7 @@ Your browser's login sessions, cookies, SSO, and intranet access work out of the
 - [x] **Single binary** — one `pinix` binary: `start`, `stop`, `status`, `login`, `invoke`
 - [x] **Auto-connect** — reads saved token, connects to Cloud Hub automatically
 - [x] **`install.sh`** — one-line installer with auto Bun setup
-- [ ] **`@pinix/agent`** — default single-user Agent Clip (coming soon)
+- [x] **Console Agent** — browser-native multi-agent chat that can call Clips
 - [ ] **Pinix Desktop** — local shell + OS Edge Clips (coming soon)
 
 ## Why Clips

@@ -224,11 +224,6 @@ func runDaemon(opts daemonOptions) error {
 	}
 	defer func() { _ = runtimeDaemon.Close() }()
 
-	// Auto-install default clips before connecting to Hub.
-	// This runs synchronously so the initial register message includes them.
-	// pinix start returns after 2s regardless — this runs in the daemon process.
-	autoInstallDefaultClips(ctx, registry, runtimeDaemon)
-
 	runtimeErr := make(chan error, 1)
 	wg.Add(1)
 	go func() {
@@ -377,34 +372,6 @@ func waitForDaemonHub(ctx context.Context, hubURL string, timeout time.Duration)
 		time.Sleep(50 * time.Millisecond)
 	}
 	return fmt.Errorf("timeout waiting for %s", hubURL)
-}
-
-// defaultClips are auto-installed on first start if not already present.
-var defaultClips = []struct {
-	source string
-	alias  string
-}{
-	{"@pinix/agent", "agent"},
-}
-
-// autoInstallDefaultClips installs built-in clips directly via the runtime daemon's handler.
-// Called synchronously before ConnectHub so the initial register message includes them.
-func autoInstallDefaultClips(ctx context.Context, registry *daemon.Registry, d *daemon.Daemon) {
-	for _, dc := range defaultClips {
-		if ctx.Err() != nil {
-			return
-		}
-		_, exists, _ := registry.GetClip(dc.alias)
-		if exists {
-			continue
-		}
-		slog.Info("auto-installing default clip", "source", dc.source, "alias", dc.alias)
-		if err := d.InstallClip(ctx, dc.source, dc.alias); err != nil {
-			slog.Warn("auto-install clip failed (non-fatal)", "source", dc.source, "error", err)
-		} else {
-			slog.Info("auto-installed default clip", "alias", dc.alias)
-		}
-	}
 }
 
 func loadDaemonClientConfig() *configpkg.ClientConfig {
