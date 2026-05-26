@@ -6,7 +6,6 @@
 # from pipe operations even when they succeed.
 
 BASE_URL="https://dl.pinixai.com/releases/latest"
-INSTALL_DIR="/usr/local/bin"
 
 # Detect platform
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -24,10 +23,38 @@ case "$ARCH" in
   *)             echo "Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 
+# Choose install dir: /usr/local/bin if writable or sudo available, else ~/.local/bin
+INSTALL_DIR="/usr/local/bin"
+if [ ! -w "$INSTALL_DIR" ]; then
+  if command -v sudo &>/dev/null && sudo -n true 2>/dev/null; then
+    USE_SUDO=1
+  else
+    # No sudo — install to user directory
+    INSTALL_DIR="$HOME/.local/bin"
+    mkdir -p "$INSTALL_DIR"
+    USE_SUDO=0
+    # Ensure ~/.local/bin is in PATH
+    case ":$PATH:" in
+      *":$INSTALL_DIR:"*) ;;
+      *)
+        export PATH="$INSTALL_DIR:$PATH"
+        # Add to shell profile if not already there
+        for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+          if [ -f "$rc" ] && ! grep -q "$INSTALL_DIR" "$rc" 2>/dev/null; then
+            echo "export PATH=\"$INSTALL_DIR:\$PATH\"" >> "$rc"
+          fi
+        done
+        ;;
+    esac
+  fi
+else
+  USE_SUDO=0
+fi
+
 BINARY="pinix-${OS}-${ARCH}"
 URL="${BASE_URL}/${BINARY}"
 
-echo "Installing Pinix (${OS}/${ARCH})..."
+echo "Installing Pinix (${OS}/${ARCH}) to ${INSTALL_DIR}..."
 
 # Download pinix binary
 TMPFILE=$(mktemp)
@@ -37,13 +64,25 @@ if ! curl -fsSL "$URL" -o "$TMPFILE"; then
   exit 1
 fi
 
-# Install pinix
-if [ -w "$INSTALL_DIR" ]; then
-  mv "$TMPFILE" "$INSTALL_DIR/pinix"
-  chmod +x "$INSTALL_DIR/pinix"
+# Install pinix + pinixd
+install_bin() {
+  local src="$1" dst="$2"
+  if [ "$USE_SUDO" = "1" ]; then
+    sudo mv "$src" "$dst" && sudo chmod +x "$dst"
+  else
+    mv "$src" "$dst" && chmod +x "$dst"
+  fi
+}
+
+install_bin "$TMPFILE" "$INSTALL_DIR/pinix"
+
+# Also install pinixd if available
+PINIXD_URL="${BASE_URL}/pinixd-${OS}-${ARCH}"
+TMPFILE2=$(mktemp)
+if curl -fsSL "$PINIXD_URL" -o "$TMPFILE2" 2>/dev/null; then
+  install_bin "$TMPFILE2" "$INSTALL_DIR/pinixd"
 else
-  sudo mv "$TMPFILE" "$INSTALL_DIR/pinix"
-  sudo chmod +x "$INSTALL_DIR/pinix"
+  rm -f "$TMPFILE2"
 fi
 
 VERSION=$("$INSTALL_DIR/pinix" --version 2>&1 || echo "unknown")
@@ -55,11 +94,9 @@ echo "Pinix installed: $VERSION"
 if ! command -v node &>/dev/null; then
   echo ""
   echo "Installing Node.js..."
-  # Use fnm (fast node manager) for cross-platform install
   if command -v fnm &>/dev/null; then
     fnm install --lts && fnm default lts-latest
   else
-    # Install via NodeSource or platform package manager
     if [ "$OS" = "darwin" ]; then
       if command -v brew &>/dev/null; then
         brew install node 2>/dev/null && echo "Node.js installed (via brew)"
@@ -75,7 +112,6 @@ if ! command -v node &>/dev/null; then
         fi
       fi
     elif [ "$OS" = "linux" ]; then
-      # Use fnm (works without root, no external repo needed)
       curl -fsSL https://fnm.vercel.app/install | bash 2>/dev/null
       FNM_PATH="$HOME/.local/share/fnm"
       export PATH="$FNM_PATH:$PATH"
@@ -87,7 +123,6 @@ if ! command -v node &>/dev/null; then
           echo "Node.js installed (via fnm)"
         fi
       else
-        # Fallback: system package manager
         if command -v apt-get &>/dev/null; then
           sudo apt-get update -qq && sudo apt-get install -y -qq nodejs npm 2>/dev/null && echo "Node.js installed (via apt)"
         elif command -v yum &>/dev/null; then
@@ -112,7 +147,6 @@ if ! command -v bun &>/dev/null; then
   echo "Installing Bun (required for Clips)..."
   if command -v unzip &>/dev/null; then
     curl -fsSL https://bun.sh/install | bash 2>/dev/null
-    # Source bun into current PATH for immediate use
     export BUN_INSTALL="$HOME/.bun"
     export PATH="$BUN_INSTALL/bin:$PATH"
     if command -v bun &>/dev/null; then
@@ -127,6 +161,19 @@ if ! command -v bun &>/dev/null; then
   fi
 fi
 
+# Ensure bun is discoverable by pinixd at runtime.
+# pinixd searches PATH and ~/.bun/bin/bun. If bun was installed by the
+# official installer it's already at ~/.bun/bin/bun. If installed via
+# brew/fnm, create a symlink so pinixd can always find it.
+if command -v bun &>/dev/null; then
+  BUN_BIN=$(command -v bun)
+  BUN_HOME="$HOME/.bun/bin"
+  if [ ! -x "$BUN_HOME/bun" ] && [ -x "$BUN_BIN" ]; then
+    mkdir -p "$BUN_HOME"
+    ln -sf "$BUN_BIN" "$BUN_HOME/bun"
+  fi
+fi
+
 # Install bb-browser (browser Clip — provides browser automation + stream)
 echo ""
 echo "Installing bb-browser..."
@@ -135,6 +182,13 @@ if command -v npm &>/dev/null; then
 else
   echo "Warning: npm not found, skipping bb-browser install."
   echo "  Install manually: npm install -g bb-browser"
+fi
+
+# Clean stale bb-viewer binary so daemon downloads the latest static build
+BB_VIEWER_PATH="$HOME/.bb-browser/bin/bb-viewer"
+if [ -f "$BB_VIEWER_PATH" ]; then
+  rm -f "$BB_VIEWER_PATH"
+  echo "Cleared cached bb-viewer (will re-download latest on first stream)"
 fi
 
 # Linux: install Xvfb (required for headed Chrome in headless environments)
