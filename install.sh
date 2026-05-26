@@ -65,17 +65,27 @@ if ! command -v node &>/dev/null; then
         brew install node 2>/dev/null && echo "Node.js installed (via brew)"
       else
         curl -fsSL https://fnm.vercel.app/install | bash 2>/dev/null
-        export PATH="$HOME/.local/share/fnm:$PATH"
-        eval "$(fnm env)" 2>/dev/null
-        fnm install --lts 2>/dev/null && echo "Node.js installed (via fnm)"
+        FNM_PATH="$HOME/.local/share/fnm"
+        export PATH="$FNM_PATH:$PATH"
+        eval "$(fnm env --shell bash 2>/dev/null)" 2>/dev/null || true
+        if command -v fnm &>/dev/null; then
+          fnm install --lts 2>/dev/null
+          eval "$(fnm env --shell bash 2>/dev/null)" 2>/dev/null || true
+          command -v node &>/dev/null && echo "Node.js installed (via fnm)"
+        fi
       fi
     elif [ "$OS" = "linux" ]; then
       # Use fnm (works without root, no external repo needed)
       curl -fsSL https://fnm.vercel.app/install | bash 2>/dev/null
-      export PATH="$HOME/.local/share/fnm:$PATH"
-      eval "$(fnm env 2>/dev/null)" 2>/dev/null || true
+      FNM_PATH="$HOME/.local/share/fnm"
+      export PATH="$FNM_PATH:$PATH"
+      eval "$(fnm env --shell bash 2>/dev/null)" 2>/dev/null || true
       if command -v fnm &>/dev/null; then
-        fnm install --lts 2>/dev/null && echo "Node.js installed (via fnm)"
+        fnm install --lts 2>/dev/null
+        eval "$(fnm env --shell bash 2>/dev/null)" 2>/dev/null || true
+        if command -v node &>/dev/null; then
+          echo "Node.js installed (via fnm)"
+        fi
       else
         # Fallback: system package manager
         if command -v apt-get &>/dev/null; then
