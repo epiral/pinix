@@ -1,5 +1,5 @@
 // Role:    Bun Clip process lifecycle, IPC registration handshake, and Clip invocation router
-// Depends: bufio, context, crypto/rand, encoding/hex, encoding/json, errors, fmt, io, log/slog, os, os/exec, path/filepath, sort, strconv, strings, sync, sync/atomic, syscall, time, connectrpc, internal/client, internal/ipc
+// Depends: bufio, context, crypto/rand, encoding/hex, encoding/json, errors, fmt, io, log/slog, os, os/exec, path/filepath, runtime, sort, strconv, strings, sync, sync/atomic, time, connectrpc, internal/client, internal/ipc
 // Exports: ProcessManager, NewProcessManager
 
 package daemon
@@ -19,10 +19,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	connect "connectrpc.com/connect"
@@ -1242,8 +1242,8 @@ func stopProcess(proc *clipProcess, timeout time.Duration) error {
 		return nil
 	}
 
-	if err := proc.cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
-		return fmt.Errorf("send SIGTERM: %w", err)
+	if err := sendTermSignal(proc.cmd.Process); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return fmt.Errorf("send term signal: %w", err)
 	}
 
 	select {
@@ -1274,12 +1274,18 @@ func findBunBinary() (string, error) {
 		return "", fmt.Errorf("get home dir for bun lookup: %w", err)
 	}
 
-	candidate := filepath.Join(home, ".bun", "bin", "bun")
+	// On Windows, bun installs as bun.exe
+	bunName := "bun"
+	if runtime.GOOS == "windows" {
+		bunName = "bun.exe"
+	}
+
+	candidate := filepath.Join(home, ".bun", "bin", bunName)
 	if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
 		return candidate, nil
 	}
 
-	return "", fmt.Errorf("bun binary not found in PATH or ~/.bun/bin/bun")
+	return "", fmt.Errorf("bun binary not found in PATH or ~/%s", filepath.Join(".bun", "bin", bunName))
 }
 
 func resolveEntrypoint(clip ClipConfig) (string, error) {

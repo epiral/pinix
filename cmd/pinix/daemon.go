@@ -1,5 +1,5 @@
 // Role:    Hidden "daemon" subcommand — runs pinixd logic inside the pinix binary
-// Depends: context, fmt, log/slog, net, os, os/signal, path/filepath, strings, sync, syscall, time, internal/config, internal/daemon, internal/logging, internal/pidfile, cobra
+// Depends: context, fmt, log/slog, net, os, os/exec, os/signal, path/filepath, strings, sync, time, internal/config, internal/daemon, internal/logging, internal/pidfile, cobra
 // Exports: newDaemonCommand
 
 package main
@@ -16,7 +16,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	configpkg "github.com/epiral/pinix/internal/config"
@@ -151,7 +150,12 @@ func runDaemon(opts daemonOptions) error {
 		}
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	// On Windows, prevent CTRL_CLOSE_EVENT from killing the daemon when
+	// the parent console/SSH session closes. Must be called before
+	// signal.NotifyContext so Go's handler takes precedence for Interrupt.
+	setupDaemonSignalHandling()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
 	// PID file: prevent duplicate pinixd, enable CLI auto-discovery
@@ -283,9 +287,7 @@ func runDaemon(opts daemonOptions) error {
 
 	if cmd := browserCmd.Load(); cmd != nil && cmd.Process != nil {
 		slog.Info("stopping bb-browser daemon")
-		// Kill the entire process group (bb-browser-daemon + its managed Chrome).
-		// The monitor goroutine handles cmd.Wait().
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+		killBrowserProcessGroup(cmd)
 	}
 	_ = runtimeDaemon.Close()
 	_ = hubDaemon.Close()
@@ -297,7 +299,7 @@ func runDaemon(opts daemonOptions) error {
 // It connects to the best available hub (Cloud Hub if available, otherwise local).
 // The child runs in its own process group (Setpgid) so that signals sent to
 // pinixd do not cascade into bb-browser prematurely. On shutdown, the caller
-// sends SIGTERM to the process group via syscall.Kill(-pid, SIGTERM).
+// sends a termination signal to the process group via killBrowserProcessGroup().
 func startBrowserDaemon(localHubURL, hubToken, cloudHubURL string) *exec.Cmd {
 	bin, err := exec.LookPath("bb-browser-daemon")
 	if err != nil {
@@ -333,7 +335,7 @@ func startBrowserDaemon(localHubURL, hubToken, cloudHubURL string) *exec.Cmd {
 	cmd := exec.Command(bin, args...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = browserDaemonSysProcAttr()
 
 	if err := cmd.Start(); err != nil {
 		slog.Error("failed to start bb-browser daemon", "error", err)

@@ -1,5 +1,5 @@
 // Role:    pinixd daemon entrypoint for Hub, Runtime, and Portal modes
-// Depends: context, flag, fmt, log/slog, net, os, os/signal, path/filepath, strings, sync, syscall, time, internal/config, internal/daemon, internal/logging, internal/pidfile
+// Depends: context, flag, fmt, log/slog, net, os, os/signal, path/filepath, strings, sync, time, internal/config, internal/daemon, internal/logging, internal/pidfile
 // Exports: main
 
 package main
@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	configpkg "github.com/epiral/pinix/internal/config"
@@ -118,7 +117,9 @@ func main() {
 		}
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	setupDaemonSignalHandling()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
 	// PID file: prevent duplicate pinixd, enable CLI auto-discovery
