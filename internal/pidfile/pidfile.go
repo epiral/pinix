@@ -1,5 +1,5 @@
 // Role:    PID file management for pinixd — write, read, validate, and clean stale PID files
-// Depends: encoding/json, fmt, os, path/filepath, strings, syscall, time
+// Depends: encoding/json, fmt, os, path/filepath, strings, time
 // Exports: PIDFile, WritePIDFile, ReadPIDFile, CheckExistingPIDFile
 
 package pidfile
@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 )
 
@@ -113,13 +112,13 @@ func ReadPIDFile(customPath ...string) (*PIDFile, error) {
 		return nil, nil
 	}
 
-	// Check if process is still alive (signal 0 = no-op, just checks existence).
+	// Check if process is still alive.
 	proc, err := os.FindProcess(pf.PID)
 	if err != nil {
 		_ = os.Remove(path)
 		return nil, nil
 	}
-	if err := proc.Signal(syscall.Signal(0)); err != nil {
+	if !isProcessAlive(proc) {
 		// Process is dead — remove stale file
 		_ = os.Remove(path)
 		return nil, nil

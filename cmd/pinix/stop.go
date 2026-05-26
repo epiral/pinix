@@ -1,5 +1,5 @@
 // Role:    "stop" subcommand — stop the running Pinix daemon
-// Depends: fmt, os, syscall, time, internal/pidfile, cobra
+// Depends: fmt, os, path/filepath, strings, time, internal/pidfile, cobra
 // Exports: newStopCommand
 
 package main
@@ -7,8 +7,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/epiral/pinix/internal/pidfile"
@@ -35,8 +35,8 @@ func newStopCommand() *cobra.Command {
 			pid := pf.PID
 			resolvedPath := resolvePIDFilePath(pidPath)
 
-			// Send SIGTERM
-			if err := signalProcess(pid, syscall.SIGTERM); err != nil {
+			// Send graceful termination signal (SIGTERM on Unix, CTRL_BREAK/Kill on Windows)
+			if err := signalProcess(pid, os.Interrupt); err != nil {
 				removePIDFile(resolvedPath)
 				fmt.Println("Pinix stopped")
 				return nil
@@ -78,7 +78,7 @@ func resolvePIDFilePath(custom string) string {
 	if err != nil {
 		return ""
 	}
-	return home + "/.pinix/pinixd.pid"
+	return filepath.Join(home, ".pinix", "pinixd.pid")
 }
 
 func fileExists(path string) bool {

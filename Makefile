@@ -14,6 +14,8 @@ build-all:
 	GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o dist/pinix-linux-arm64 ./cmd/pinix
 	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o dist/pinixd-darwin-arm64 ./cmd/pinixd
 	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o dist/pinix-darwin-arm64 ./cmd/pinix
+	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o dist/pinixd-windows-amd64.exe ./cmd/pinixd
+	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o dist/pinix-windows-amd64.exe ./cmd/pinix
 
 test:
 	go vet ./...

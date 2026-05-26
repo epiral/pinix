@@ -1,5 +1,5 @@
 // Role:    File-locked config registry for Pinix daemon state
-// Depends: encoding/json, fmt, os, path/filepath, sort, strings, syscall
+// Depends: encoding/json, fmt, os, path/filepath, sort, strings
 // Exports: ClipConfig, CommandInfo, DependencySpec, ManifestCache, Config, Registry, DefaultRootDir, DefaultConfigPath, NewRegistry
 
 package daemon
@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 )
 
 type ClipConfig struct {
@@ -181,20 +180,16 @@ func (r *Registry) withConfig(exclusive bool, fn func(cfg *Config) error) error 
 		return err
 	}
 
-	lockFile, err := os.OpenFile(r.lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	lf, err := os.OpenFile(r.lockPath, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return fmt.Errorf("open config lock: %w", err)
 	}
-	defer lockFile.Close()
+	defer lf.Close()
 
-	mode := syscall.LOCK_SH
-	if exclusive {
-		mode = syscall.LOCK_EX
-	}
-	if err := syscall.Flock(int(lockFile.Fd()), mode); err != nil {
+	if err := lockFile(lf, exclusive); err != nil {
 		return fmt.Errorf("lock config: %w", err)
 	}
-	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+	defer unlockFile(lf)
 
 	cfg, err := r.loadLocked()
 	if err != nil {
