@@ -150,6 +150,11 @@ func runDaemon(opts daemonOptions) error {
 		}
 	}
 
+	// On Windows, prevent CTRL_CLOSE_EVENT from killing the daemon when
+	// the parent console/SSH session closes. Must be called before
+	// signal.NotifyContext so Go's handler takes precedence for Interrupt.
+	setupDaemonSignalHandling()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 

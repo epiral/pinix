@@ -1,5 +1,5 @@
 // Role:    "start" subcommand — start the Pinix daemon in background or foreground
-// Depends: fmt, os, os/exec, path/filepath, time, internal/pidfile, cobra
+// Depends: fmt, os, path/filepath, internal/pidfile, cobra
 // Exports: newStartCommand
 
 package main
@@ -7,9 +7,7 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"time"
 
 	"github.com/epiral/pinix/internal/pidfile"
 	"github.com/spf13/cobra"
@@ -108,27 +106,12 @@ func newStartCommand() *cobra.Command {
 				return fmt.Errorf("resolve executable path: %w", err)
 			}
 
-			child := exec.Command(executable, daemonArgs...)
-			child.Stdout = logFile
-			child.Stderr = logFile
-			// Detach from parent process group
-			child.SysProcAttr = daemonSysProcAttr()
-
-			if err := child.Start(); err != nil {
-				_ = logFile.Close()
-				return fmt.Errorf("start daemon: %w", err)
-			}
-			_ = logFile.Close()
-
-			// Wait briefly and verify the process is still alive
-			time.Sleep(2 * time.Second)
-			if child.Process != nil {
-				if err := checkProcessAlive(child.Process.Pid); err != nil {
-					return fmt.Errorf("daemon exited shortly after start; check ~/.pinix/pinixd.log for details")
-				}
+			childPid, err := startBackgroundDaemon(executable, daemonArgs, logFile)
+			if err != nil {
+				return err
 			}
 
-			fmt.Printf("Pinix started on :%d (PID %d)\n", port, child.Process.Pid)
+			fmt.Printf("Pinix started on :%d (PID %d)\n", port, childPid)
 			fmt.Println()
 			fmt.Println("Next:")
 			fmt.Printf("  pinix login                        log in to Pinix\n")

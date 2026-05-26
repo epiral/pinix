@@ -22,14 +22,23 @@ var (
 const (
 	processQueryLimitedInformation = 0x1000
 	createNewProcessGroup          = 0x00000200
-	createNoWindow                 = 0x08000000
+	detachedProcess                = 0x00000008
+	createBreakawayFromJob         = 0x01000000
 )
 
-// daemonSysProcAttr returns SysProcAttr to run the daemon as a detached process
-// in its own process group (CREATE_NEW_PROCESS_GROUP).
+// daemonSysProcAttr returns SysProcAttr to run the daemon as a fully detached
+// background process.
+//
+// - DETACHED_PROCESS: detach from the parent console so the child survives
+//   after the parent (pinix start) exits.
+// - CREATE_NEW_PROCESS_GROUP: give the daemon its own process group.
+// - CREATE_BREAKAWAY_FROM_JOB: break out of the parent's Job Object. This is
+//   critical when pinix is launched from OpenSSH Server, which uses a Job
+//   Object to manage session processes. Without this flag, sshd kills the
+//   daemon when the SSH session ends.
 func daemonSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{
-		CreationFlags: createNewProcessGroup | createNoWindow,
+		CreationFlags: createNewProcessGroup | detachedProcess | createBreakawayFromJob,
 	}
 }
 
