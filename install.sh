@@ -50,6 +50,45 @@ echo "Pinix installed: $VERSION"
 
 # --- Dependencies ---
 
+# Install Node.js (required for bb-browser daemon)
+if ! command -v node &>/dev/null; then
+  echo ""
+  echo "Installing Node.js..."
+  # Use fnm (fast node manager) for cross-platform install
+  if command -v fnm &>/dev/null; then
+    fnm install --lts && fnm default lts-latest
+  else
+    # Install via NodeSource or platform package manager
+    if [ "$OS" = "darwin" ]; then
+      if command -v brew &>/dev/null; then
+        brew install node 2>/dev/null && echo "Node.js installed (via brew)"
+      else
+        curl -fsSL https://fnm.vercel.app/install | bash 2>/dev/null
+        export PATH="$HOME/.local/share/fnm:$PATH"
+        eval "$(fnm env)" 2>/dev/null
+        fnm install --lts 2>/dev/null && echo "Node.js installed (via fnm)"
+      fi
+    elif [ "$OS" = "linux" ]; then
+      if command -v apt-get &>/dev/null; then
+        # NodeSource LTS
+        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - 2>/dev/null
+        sudo apt-get install -y -qq nodejs 2>/dev/null && echo "Node.js installed (via apt)"
+      elif command -v yum &>/dev/null; then
+        curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash - 2>/dev/null
+        sudo yum install -y nodejs 2>/dev/null && echo "Node.js installed (via yum)"
+      else
+        echo "Warning: install Node.js manually — https://nodejs.org"
+      fi
+    fi
+  fi
+  if command -v node &>/dev/null; then
+    echo "Node.js $(node --version) installed"
+  else
+    echo "Warning: Node.js installation may require a new shell."
+    echo "  Run: source ~/.bashrc (or ~/.zshrc)"
+  fi
+fi
+
 # Install Bun (required for running Clips)
 if ! command -v bun &>/dev/null; then
   echo ""
@@ -74,12 +113,10 @@ fi
 # Install bb-browser (browser Clip — provides browser automation + stream)
 echo ""
 echo "Installing bb-browser..."
-if command -v bun &>/dev/null; then
-  bun install -g bb-browser 2>/dev/null && echo "bb-browser installed (via bun)" || echo "Warning: bb-browser install failed"
-elif command -v npm &>/dev/null; then
-  npm install -g bb-browser 2>/dev/null && echo "bb-browser installed (via npm)" || echo "Warning: bb-browser install failed"
+if command -v npm &>/dev/null; then
+  npm install -g bb-browser 2>/dev/null && echo "bb-browser installed" || echo "Warning: bb-browser install failed"
 else
-  echo "Warning: neither bun nor npm found, skipping bb-browser install."
+  echo "Warning: npm not found, skipping bb-browser install."
   echo "  Install manually: npm install -g bb-browser"
 fi
 
