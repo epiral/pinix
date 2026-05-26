@@ -62,18 +62,6 @@ func (d *Daemon) hasLocalRuntime() bool {
 	return d != nil && d.process != nil
 }
 
-// InstallClip installs a clip from source and starts it via the local runtime handler.
-func (d *Daemon) InstallClip(ctx context.Context, source, alias string) error {
-	if d == nil || d.handler == nil {
-		return fmt.Errorf("daemon handler is not configured")
-	}
-	_, err := d.handler.handleAddTrusted(ctx, AddParams{
-		Source:         source,
-		RequestedAlias: alias,
-	})
-	return err
-}
-
 func (d *Daemon) GetManifest(ctx context.Context, name string) (*ManifestCache, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {

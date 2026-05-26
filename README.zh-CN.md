@@ -90,7 +90,7 @@ $ pinix hub list
 - [x] **单一 binary** — 一个 `pinix`：`start`、`stop`、`status`、`login`、`invoke`
 - [x] **自动连接** — 读取已保存 token，自动连 Cloud Hub
 - [x] **`install.sh`** — 一键安装，自动配置 Bun
-- [ ] **`@pinix/agent`** — 默认单人 Agent Clip（开发中）
+- [x] **Console Agent** — 浏览器原生多 Agent Chat，可直接调用 Clips
 - [ ] **Pinix Desktop** — 本地 Shell + OS Edge Clips（开发中）
 
 ## 为什么是 Clip
