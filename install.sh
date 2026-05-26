@@ -71,6 +71,35 @@ if ! command -v bun &>/dev/null; then
   fi
 fi
 
+# Install bb-browser (browser Clip — provides browser automation + stream)
+echo ""
+echo "Installing bb-browser..."
+if command -v bun &>/dev/null; then
+  bun install -g bb-browser 2>/dev/null && echo "bb-browser installed (via bun)" || echo "Warning: bb-browser install failed"
+elif command -v npm &>/dev/null; then
+  npm install -g bb-browser 2>/dev/null && echo "bb-browser installed (via npm)" || echo "Warning: bb-browser install failed"
+else
+  echo "Warning: neither bun nor npm found, skipping bb-browser install."
+  echo "  Install manually: npm install -g bb-browser"
+fi
+
+# Linux: install Xvfb (required for headed Chrome in headless environments)
+if [ "$OS" = "linux" ]; then
+  if ! command -v Xvfb &>/dev/null; then
+    echo ""
+    echo "Installing Xvfb (required for browser on Linux)..."
+    if command -v apt-get &>/dev/null; then
+      sudo apt-get update -qq && sudo apt-get install -y -qq xvfb 2>/dev/null && echo "Xvfb installed" || echo "Warning: Xvfb install failed"
+    elif command -v yum &>/dev/null; then
+      sudo yum install -y xorg-x11-server-Xvfb 2>/dev/null && echo "Xvfb installed" || echo "Warning: Xvfb install failed"
+    else
+      echo "Warning: install Xvfb manually (apt: xvfb, yum: xorg-x11-server-Xvfb)"
+    fi
+  fi
+fi
+
+echo ""
+echo "Pinix installed successfully!"
 echo ""
 echo "Get started:"
 echo "  pinix start                        start Pinix"
