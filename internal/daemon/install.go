@@ -274,7 +274,12 @@ func extractTarGz(targetPath string, data []byte) error {
 				return fmt.Errorf("create tarball symlink parent %s: %w", filepath.Dir(target), err)
 			}
 			if err := os.Symlink(header.Linkname, target); err != nil {
-				return fmt.Errorf("create tarball symlink %s: %w", target, err)
+				// Symlinks may fail on Windows without admin/Developer Mode.
+				// Fall back to copying the link target.
+				linkSrc := filepath.Join(filepath.Dir(target), header.Linkname)
+				if copyErr := copyFileIfExists(linkSrc, target); copyErr != nil {
+					return fmt.Errorf("create tarball symlink %s (and copy fallback failed): %w", target, err)
+				}
 			}
 		}
 	}
@@ -313,7 +318,15 @@ func copyDirectory(sourceDir, targetDir string) error {
 			if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
 				return err
 			}
-			return os.Symlink(linkTarget, targetPath)
+			if err := os.Symlink(linkTarget, targetPath); err != nil {
+				// Symlinks may fail on Windows without admin/Developer Mode.
+				// Fall back to copying the link target.
+				linkSrc := filepath.Join(filepath.Dir(path), linkTarget)
+				if copyErr := copyFileIfExists(linkSrc, targetPath); copyErr != nil {
+					return fmt.Errorf("symlink %s (and copy fallback failed): %w", targetPath, err)
+				}
+			}
+			return nil
 		}
 		if entry.IsDir() {
 			return os.MkdirAll(targetPath, info.Mode().Perm())
@@ -323,6 +336,18 @@ func copyDirectory(sourceDir, targetDir string) error {
 		}
 		return copyFile(path, targetPath, info.Mode().Perm())
 	})
+}
+
+// copyFileIfExists copies a file if the source exists, used as a fallback when symlinks fail (e.g. on Windows).
+func copyFileIfExists(src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return copyDirectory(src, dst)
+	}
+	return copyFile(src, dst, info.Mode().Perm())
 }
 
 func copyFile(sourcePath, targetPath string, mode fs.FileMode) error {
