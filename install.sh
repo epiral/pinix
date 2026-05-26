@@ -69,15 +69,21 @@ if ! command -v node &>/dev/null; then
         fnm install --lts 2>/dev/null && echo "Node.js installed (via fnm)"
       fi
     elif [ "$OS" = "linux" ]; then
-      if command -v apt-get &>/dev/null; then
-        # NodeSource LTS
-        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - 2>/dev/null
-        sudo apt-get install -y -qq nodejs 2>/dev/null && echo "Node.js installed (via apt)"
-      elif command -v yum &>/dev/null; then
-        curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash - 2>/dev/null
-        sudo yum install -y nodejs 2>/dev/null && echo "Node.js installed (via yum)"
+      # Use fnm (works without root, no external repo needed)
+      curl -fsSL https://fnm.vercel.app/install | bash 2>/dev/null
+      export PATH="$HOME/.local/share/fnm:$PATH"
+      eval "$(fnm env 2>/dev/null)" 2>/dev/null || true
+      if command -v fnm &>/dev/null; then
+        fnm install --lts 2>/dev/null && echo "Node.js installed (via fnm)"
       else
-        echo "Warning: install Node.js manually — https://nodejs.org"
+        # Fallback: system package manager
+        if command -v apt-get &>/dev/null; then
+          sudo apt-get update -qq && sudo apt-get install -y -qq nodejs npm 2>/dev/null && echo "Node.js installed (via apt)"
+        elif command -v yum &>/dev/null; then
+          sudo yum install -y nodejs npm 2>/dev/null && echo "Node.js installed (via yum)"
+        else
+          echo "Warning: install Node.js manually — https://nodejs.org"
+        fi
       fi
     fi
   fi
