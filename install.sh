@@ -9,9 +9,11 @@
 
 # Parse arguments
 INSTALL_MODE="full"
+CUSTOM_INSTALL_DIR=""
 for arg in "$@"; do
   case "$arg" in
     --cli) INSTALL_MODE="cli" ;;
+    --install-dir=*) CUSTOM_INSTALL_DIR="${arg#--install-dir=}" ;;
   esac
 done
 
@@ -33,29 +35,47 @@ case "$ARCH" in
   *)             echo "Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 
-# Choose install dir: /usr/local/bin if writable or sudo available, else ~/.local/bin
-INSTALL_DIR="/usr/local/bin"
-if [ ! -w "$INSTALL_DIR" ]; then
-  if command -v sudo &>/dev/null && sudo -n true 2>/dev/null; then
+# Choose install dir
+USE_SUDO=0
+use_user_dir() {
+  INSTALL_DIR="$HOME/.local/bin"
+  mkdir -p "$INSTALL_DIR"
+  USE_SUDO=0
+  case ":$PATH:" in
+    *":$INSTALL_DIR:"*) ;;
+    *)
+      export PATH="$INSTALL_DIR:$PATH"
+      for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
+        if [ -f "$rc" ] && ! grep -q "$INSTALL_DIR" "$rc" 2>/dev/null; then
+          echo "export PATH=\"$INSTALL_DIR:\$PATH\"" >> "$rc"
+        fi
+      done
+      ;;
+  esac
+}
+
+if [ -n "$CUSTOM_INSTALL_DIR" ]; then
+  INSTALL_DIR="$CUSTOM_INSTALL_DIR"
+  mkdir -p "$INSTALL_DIR"
+elif [ -w "/usr/local/bin" ]; then
+  # Test actual write (catches read-only filesystems even when dir appears writable)
+  if touch /usr/local/bin/.pinix-test 2>/dev/null; then
+    rm -f /usr/local/bin/.pinix-test
+    INSTALL_DIR="/usr/local/bin"
+  else
+    use_user_dir
+  fi
+elif command -v sudo &>/dev/null && sudo -n true 2>/dev/null; then
+  # Has passwordless sudo — test if filesystem is actually writable
+  if sudo touch /usr/local/bin/.pinix-test 2>/dev/null; then
+    sudo rm -f /usr/local/bin/.pinix-test
+    INSTALL_DIR="/usr/local/bin"
     USE_SUDO=1
   else
-    INSTALL_DIR="$HOME/.local/bin"
-    mkdir -p "$INSTALL_DIR"
-    USE_SUDO=0
-    case ":$PATH:" in
-      *":$INSTALL_DIR:"*) ;;
-      *)
-        export PATH="$INSTALL_DIR:$PATH"
-        for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
-          if [ -f "$rc" ] && ! grep -q "$INSTALL_DIR" "$rc" 2>/dev/null; then
-            echo "export PATH=\"$INSTALL_DIR:\$PATH\"" >> "$rc"
-          fi
-        done
-        ;;
-    esac
+    use_user_dir
   fi
 else
-  USE_SUDO=0
+  use_user_dir
 fi
 
 install_bin() {
