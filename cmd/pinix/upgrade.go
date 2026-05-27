@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 
@@ -102,9 +103,44 @@ func runUpgrade(cmd *cobra.Command) error {
 
 	os.Remove(oldPath)
 
-	// Check new version
-	fmt.Fprintf(out, "Pinix upgraded successfully.\n")
-	fmt.Fprintf(out, "  Run 'pinix --version' to verify.\n")
+	fmt.Fprintf(out, "Pinix binary upgraded.\n")
+
+	// Also upgrade bb-browser if npm is available
+	upgradeBBBrowser(out)
+
+	// Clean stale bb-viewer so it re-downloads latest
+	home, _ := os.UserHomeDir()
+	if home != "" {
+		viewerPath := filepath.Join(home, ".bb-browser", "bin", "bb-viewer")
+		if _, err := os.Stat(viewerPath); err == nil {
+			os.Remove(viewerPath)
+			fmt.Fprintln(out, "Cleared cached bb-viewer (will re-download latest)")
+		}
+	}
+
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "Upgrade complete. Run 'pinix --version' to verify.")
 
 	return nil
+}
+
+func upgradeBBBrowser(out io.Writer) {
+	npmPath, err := exec.LookPath("npm")
+	if err != nil {
+		return // no npm, skip
+	}
+	// Check if bb-browser is installed
+	check := exec.Command(npmPath, "list", "-g", "bb-browser", "--depth=0")
+	if check.Run() != nil {
+		return // not installed, skip
+	}
+	fmt.Fprintln(out, "Upgrading bb-browser...")
+	cmd := exec.Command(npmPath, "update", "-g", "bb-browser")
+	cmd.Stdout = out
+	cmd.Stderr = out
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(out, "Warning: bb-browser upgrade failed: %v\n", err)
+	} else {
+		fmt.Fprintln(out, "bb-browser upgraded.")
+	}
 }
