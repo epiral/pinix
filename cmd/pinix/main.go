@@ -46,9 +46,12 @@ Quick start:
   pinix hub list                    see available Clips
   pinix invoke <clip> <command>     call a Clip
 
-CLI-only (no daemon):
+CLI-only (no daemon, invoke remote providers):
   pinix login --token pnx_...       connect to Cloud Hub
-  pinix invoke todo list            invoke Clips on remote providers
+  pinix registry search <query>     search Clips in the registry
+  pinix hub add @pinix/todo         install a Clip (on remote provider)
+  pinix hub list                    see available Clips
+  pinix invoke todo list            call a Clip
 
 Docker:
   docker run -d --shm-size=2g pinixai/pinix <hub-token>`,
