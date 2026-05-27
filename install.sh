@@ -91,47 +91,19 @@ echo "Pinix installed: $VERSION"
 # --- Dependencies ---
 
 # Install Node.js (required for bb-browser daemon)
+# Uses fnm (fast node manager) — no brew/sudo needed, works on macOS + Linux.
 if ! command -v node &>/dev/null; then
   echo ""
   echo "Installing Node.js..."
+  if ! command -v fnm &>/dev/null; then
+    curl -fsSL https://fnm.vercel.app/install | bash 2>/dev/null
+  fi
+  FNM_PATH="$HOME/.local/share/fnm"
+  export PATH="$FNM_PATH:$PATH"
+  eval "$(fnm env --shell bash 2>/dev/null)" 2>/dev/null || true
   if command -v fnm &>/dev/null; then
-    fnm install --lts && fnm default lts-latest
-  else
-    if [ "$OS" = "darwin" ]; then
-      if command -v brew &>/dev/null; then
-        brew install node 2>/dev/null && echo "Node.js installed (via brew)"
-      else
-        curl -fsSL https://fnm.vercel.app/install | bash 2>/dev/null
-        FNM_PATH="$HOME/.local/share/fnm"
-        export PATH="$FNM_PATH:$PATH"
-        eval "$(fnm env --shell bash 2>/dev/null)" 2>/dev/null || true
-        if command -v fnm &>/dev/null; then
-          fnm install --lts 2>/dev/null
-          eval "$(fnm env --shell bash 2>/dev/null)" 2>/dev/null || true
-          command -v node &>/dev/null && echo "Node.js installed (via fnm)"
-        fi
-      fi
-    elif [ "$OS" = "linux" ]; then
-      curl -fsSL https://fnm.vercel.app/install | bash 2>/dev/null
-      FNM_PATH="$HOME/.local/share/fnm"
-      export PATH="$FNM_PATH:$PATH"
-      eval "$(fnm env --shell bash 2>/dev/null)" 2>/dev/null || true
-      if command -v fnm &>/dev/null; then
-        fnm install --lts 2>/dev/null
-        eval "$(fnm env --shell bash 2>/dev/null)" 2>/dev/null || true
-        if command -v node &>/dev/null; then
-          echo "Node.js installed (via fnm)"
-        fi
-      else
-        if command -v apt-get &>/dev/null; then
-          sudo apt-get update -qq && sudo apt-get install -y -qq nodejs npm 2>/dev/null && echo "Node.js installed (via apt)"
-        elif command -v yum &>/dev/null; then
-          sudo yum install -y nodejs npm 2>/dev/null && echo "Node.js installed (via yum)"
-        else
-          echo "Warning: install Node.js manually — https://nodejs.org"
-        fi
-      fi
-    fi
+    fnm install --lts 2>/dev/null
+    eval "$(fnm env --shell bash 2>/dev/null)" 2>/dev/null || true
   fi
   if command -v node &>/dev/null; then
     echo "Node.js $(node --version) installed"
