@@ -50,9 +50,21 @@ type ManifestCache struct {
 	Entities       map[string]json.RawMessage `json:"entities,omitempty"`
 }
 
+// ScheduleConfig holds a user-created scheduled task stored in config.json.
+type ScheduleConfig struct {
+	ID          string `json:"id"`
+	Clip        string `json:"clip"`
+	Command     string `json:"command"`
+	Cron        string `json:"cron"`
+	Input       string `json:"input,omitempty"`
+	Description string `json:"description,omitempty"`
+	Enabled     bool   `json:"enabled"`
+}
+
 type Config struct {
-	SuperToken string                `json:"super_token,omitempty"`
-	Clips      map[string]ClipConfig `json:"clips"`
+	SuperToken string                    `json:"super_token,omitempty"`
+	Clips      map[string]ClipConfig     `json:"clips"`
+	Schedules  map[string]ScheduleConfig `json:"schedules,omitempty"`
 }
 
 type Registry struct {
@@ -176,6 +188,63 @@ func (r *Registry) RemoveClip(name string) (ClipConfig, bool, error) {
 	return removed, ok, err
 }
 
+// --- Schedule CRUD ---
+
+func (r *Registry) ListSchedules() ([]ScheduleConfig, error) {
+	var schedules []ScheduleConfig
+	err := r.withConfig(false, func(cfg *Config) error {
+		schedules = make([]ScheduleConfig, 0, len(cfg.Schedules))
+		for _, s := range cfg.Schedules {
+			schedules = append(schedules, s)
+		}
+		sort.Slice(schedules, func(i, j int) bool {
+			return schedules[i].ID < schedules[j].ID
+		})
+		return nil
+	})
+	return schedules, err
+}
+
+func (r *Registry) GetSchedule(id string) (ScheduleConfig, bool, error) {
+	var (
+		schedule ScheduleConfig
+		ok       bool
+	)
+	err := r.withConfig(false, func(cfg *Config) error {
+		schedule, ok = cfg.Schedules[id]
+		return nil
+	})
+	return schedule, ok, err
+}
+
+func (r *Registry) PutSchedule(schedule ScheduleConfig) error {
+	if strings.TrimSpace(schedule.ID) == "" {
+		return fmt.Errorf("schedule id is required")
+	}
+	return r.withConfig(true, func(cfg *Config) error {
+		if cfg.Schedules == nil {
+			cfg.Schedules = make(map[string]ScheduleConfig)
+		}
+		cfg.Schedules[schedule.ID] = schedule
+		return nil
+	})
+}
+
+func (r *Registry) RemoveSchedule(id string) (ScheduleConfig, bool, error) {
+	var (
+		removed ScheduleConfig
+		ok      bool
+	)
+	err := r.withConfig(true, func(cfg *Config) error {
+		removed, ok = cfg.Schedules[id]
+		if ok {
+			delete(cfg.Schedules, id)
+		}
+		return nil
+	})
+	return removed, ok, err
+}
+
 func (r *Registry) withConfig(exclusive bool, fn func(cfg *Config) error) error {
 	if err := r.ensureBaseDir(); err != nil {
 		return err
@@ -238,12 +307,19 @@ func (r *Registry) loadLocked() (*Config, error) {
 	if cfg.Clips == nil {
 		cfg.Clips = make(map[string]ClipConfig)
 	}
+	if cfg.Schedules == nil {
+		cfg.Schedules = make(map[string]ScheduleConfig)
+	}
 	return &cfg, nil
 }
 
 func (r *Registry) saveLocked(cfg *Config) error {
 	if cfg.Clips == nil {
 		cfg.Clips = make(map[string]ClipConfig)
+	}
+	// Omit empty schedules map from JSON output
+	if len(cfg.Schedules) == 0 {
+		cfg.Schedules = nil
 	}
 
 	data, err := json.MarshalIndent(cfg, "", "  ")
