@@ -14,11 +14,12 @@ import (
 )
 
 type Daemon struct {
-	registry *Registry
-	process  *ProcessManager
-	provider *ProviderManager
-	runtime  *RuntimeManager
-	handler  *Handler
+	registry  *Registry
+	process   *ProcessManager
+	provider  *ProviderManager
+	runtime   *RuntimeManager
+	handler   *Handler
+	scheduler *Scheduler
 
 	mu         sync.Mutex
 	httpServer *http.Server
@@ -60,6 +61,16 @@ func NewHubDaemon(registry *Registry) (*Daemon, error) {
 
 func (d *Daemon) hasLocalRuntime() bool {
 	return d != nil && d.process != nil
+}
+
+// SetScheduler attaches a scheduler to this daemon. Must be called before ServeHTTP or ConnectHub.
+func (d *Daemon) SetScheduler(s *Scheduler) {
+	d.scheduler = s
+}
+
+// GetScheduler returns the attached scheduler, or nil.
+func (d *Daemon) GetScheduler() *Scheduler {
+	return d.scheduler
 }
 
 func (d *Daemon) GetManifest(ctx context.Context, name string) (*ManifestCache, error) {
@@ -125,6 +136,9 @@ func (d *Daemon) Close() error {
 	d.mu.Unlock()
 
 	var errs []error
+	if d.scheduler != nil {
+		d.scheduler.Stop()
+	}
 	if httpServer != nil {
 		if err := httpServer.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errs = append(errs, err)
