@@ -143,6 +143,9 @@ func newListCommand(serverURL, hubToken *string) *cobra.Command {
 				commands := strings.Join(clipCommandNames(clip), ",")
 				fmt.Printf("%s\t%s\t%s\t%s\t%s\n", clip.GetName(), firstNonEmpty(clip.GetPackage(), "-"), firstNonEmpty(clip.GetVersion(), "-"), clip.GetProvider(), commands)
 			}
+			fmt.Fprintln(cmd.ErrOrStderr(), "")
+			fmt.Fprintln(cmd.ErrOrStderr(), "All listed Clips can be invoked directly:")
+			fmt.Fprintln(cmd.ErrOrStderr(), "  pinix invoke <clip> <command> [-- --arg value]")
 			return nil
 		},
 	}
