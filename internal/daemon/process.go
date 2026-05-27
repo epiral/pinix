@@ -1407,6 +1407,7 @@ func registeredManifestForClip(clip ClipConfig, manifest *ipc.Manifest) (*Manife
 		Dependencies:   ipcDependencySpecsToInternal(manifest.Dependencies),
 		Patterns:       normalizeStrings(manifest.Patterns),
 		Entities:       manifest.Entities,
+		Schedules:      ipcSchedulesToInternal(manifest.Schedules),
 	}
 	registered.Commands = commandNames(registered.CommandDetails)
 	registered = enrichManifestForClip(clip, registered)
@@ -1414,6 +1415,27 @@ func registeredManifestForClip(clip ClipConfig, manifest *ipc.Manifest) (*Manife
 		return nil, fmt.Errorf("register alias is required")
 	}
 	return registered, nil
+}
+
+func ipcSchedulesToInternal(schedules []ipc.ManifestSchedule) []ManifestScheduleDecl {
+	if len(schedules) == 0 {
+		return nil
+	}
+	result := make([]ManifestScheduleDecl, 0, len(schedules))
+	for _, s := range schedules {
+		command := strings.TrimSpace(s.Command)
+		cron := strings.TrimSpace(s.Cron)
+		if command == "" || cron == "" {
+			continue
+		}
+		result = append(result, ManifestScheduleDecl{
+			Command:     command,
+			Cron:        cron,
+			Input:       strings.TrimSpace(s.Input),
+			Description: strings.TrimSpace(s.Description),
+		})
+	}
+	return result
 }
 
 func ipcDependencySpecsToInternal(values map[string]ipc.DependencySpec) map[string]DependencySpec {

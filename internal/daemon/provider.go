@@ -38,6 +38,8 @@ type ProviderManager struct {
 	clips     map[string]*providerClipRef
 	reserved  map[string]aliasReservation
 	nextID    atomic.Uint64
+
+	onClipAdded func(alias string, registration *pinixv2.ClipRegistration)
 }
 
 type aliasReservation struct {
@@ -130,6 +132,13 @@ func NewProviderManager(registry *Registry) *ProviderManager {
 		clips:     make(map[string]*providerClipRef),
 		reserved:  make(map[string]aliasReservation),
 	}
+}
+
+// SetOnClipAdded sets a callback fired when a clip is registered via ProviderStream.
+func (m *ProviderManager) SetOnClipAdded(fn func(alias string, registration *pinixv2.ClipRegistration)) {
+	m.mu.Lock()
+	m.onClipAdded = fn
+	m.mu.Unlock()
 }
 
 func (m *ProviderManager) ReserveAlias(requestedAlias, source, owner string) (string, error) {
@@ -634,6 +643,12 @@ func (m *ProviderManager) addClipToSession(session *providerSession, registratio
 	session.clips[alias] = clip
 	m.clips[alias] = &providerClipRef{session: session, clip: clip}
 	delete(m.reserved, alias)
+
+	// Notify listener (e.g., scheduler for clip-declared schedules)
+	if fn := m.onClipAdded; fn != nil {
+		fn(alias, clip.registration)
+	}
+
 	return providerClipToClipInfo(session.name, clip), nil
 }
 
@@ -1083,6 +1098,7 @@ func sanitizeProviderClip(registration *pinixv2.ClipRegistration) (*providerClip
 		TokenProtected: registration.GetTokenProtected(),
 		Patterns:       normalizeStrings(registration.GetPatterns()),
 		Entities:       registration.GetEntities(),
+		Schedules:      registration.GetSchedules(),
 	}
 	return &providerClip{registration: sanitized}, nil
 }

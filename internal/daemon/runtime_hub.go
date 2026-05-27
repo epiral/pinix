@@ -834,5 +834,22 @@ func localClipToRegistration(clip ClipConfig) *pinixv2.ClipRegistration {
 		Dependencies: dependencySlots(manifest.Dependencies),
 		Patterns:     append([]string(nil), manifest.Patterns...),
 		Entities:     entitiesToProto(manifest.Entities),
+		Schedules:    scheduleDeclsToProto(manifest.Schedules),
 	}
+}
+
+func scheduleDeclsToProto(decls []ManifestScheduleDecl) []*pinixv2.ScheduleDeclaration {
+	if len(decls) == 0 {
+		return nil
+	}
+	result := make([]*pinixv2.ScheduleDeclaration, 0, len(decls))
+	for _, d := range decls {
+		result = append(result, &pinixv2.ScheduleDeclaration{
+			Command:     d.Command,
+			Cron:        d.Cron,
+			Input:       d.Input,
+			Description: d.Description,
+		})
+	}
+	return result
 }

@@ -24,15 +24,16 @@ type packageJSON struct {
 
 // ClipJSON represents the clip.json package identity file.
 type ClipJSON struct {
-	Name        string `json:"name"`
-	Version     string `json:"version"`
-	Description string `json:"description"`
-	Runtime     string `json:"runtime"`
-	Main        string `json:"main"`
-	Web         string `json:"web"`
-	Author      string `json:"author"`
-	License     string `json:"license"`
-	Repository  string `json:"repository"`
+	Name        string                 `json:"name"`
+	Version     string                 `json:"version"`
+	Description string                 `json:"description"`
+	Runtime     string                 `json:"runtime"`
+	Main        string                 `json:"main"`
+	Web         string                 `json:"web"`
+	Author      string                 `json:"author"`
+	License     string                 `json:"license"`
+	Repository  string                 `json:"repository"`
+	Schedules   []ManifestScheduleDecl `json:"schedules,omitempty"`
 }
 
 type projectMetadata struct {
@@ -45,6 +46,7 @@ type projectMetadata struct {
 	Dependencies map[string]DependencySpec
 	Patterns     []string
 	Commands     []CommandInfo
+	Schedules    []ManifestScheduleDecl
 }
 
 type manifestDependencies map[string]DependencySpec
@@ -85,6 +87,9 @@ func enrichManifestForClip(clip ClipConfig, manifest *ManifestCache) *ManifestCa
 		}
 		if len(merged.CommandDetails) == 0 {
 			merged.CommandDetails = normalizeCommandDetails(meta.Commands)
+		}
+		if len(merged.Schedules) == 0 {
+			merged.Schedules = normalizeScheduleDecls(meta.Schedules)
 		}
 	}
 
@@ -166,6 +171,7 @@ func readClipJSONMetadata(workdir string) (*projectMetadata, error) {
 		Description: strings.TrimSpace(clip.Description),
 		Main:        strings.TrimSpace(clip.Main),
 		Web:         strings.TrimSpace(clip.Web),
+		Schedules:   normalizeScheduleDecls(clip.Schedules),
 	}
 	return meta, nil
 }
@@ -200,6 +206,9 @@ func mergeProjectMetadata(target, source *projectMetadata) {
 	}
 	if len(target.Commands) == 0 {
 		target.Commands = normalizeCommandDetails(source.Commands)
+	}
+	if len(target.Schedules) == 0 {
+		target.Schedules = normalizeScheduleDecls(source.Schedules)
 	}
 }
 
@@ -362,6 +371,7 @@ func cloneManifest(manifest *ManifestCache) *ManifestCache {
 		Dependencies:   cloneDependencySpecs(manifest.Dependencies),
 		Patterns:       append([]string(nil), manifest.Patterns...),
 		Entities:       cloneEntities(manifest.Entities),
+		Schedules:      append([]ManifestScheduleDecl(nil), manifest.Schedules...),
 	}
 	return cloned
 }
@@ -396,6 +406,7 @@ func finalizeManifestCache(manifest *ManifestCache) *ManifestCache {
 	if len(manifest.Commands) == 0 {
 		manifest.Commands = normalizeStrings(manifest.Commands)
 	}
+	manifest.Schedules = normalizeScheduleDecls(manifest.Schedules)
 	return manifest
 }
 
@@ -510,4 +521,32 @@ func derivePackageName(clip ClipConfig) string {
 		return strings.TrimSpace(clip.Manifest.Package)
 	}
 	return strings.TrimSpace(clip.Name)
+}
+
+// normalizeScheduleDecls deduplicates and trims schedule declarations.
+func normalizeScheduleDecls(schedules []ManifestScheduleDecl) []ManifestScheduleDecl {
+	if len(schedules) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(schedules))
+	cleaned := make([]ManifestScheduleDecl, 0, len(schedules))
+	for _, s := range schedules {
+		command := strings.TrimSpace(s.Command)
+		cron := strings.TrimSpace(s.Cron)
+		if command == "" || cron == "" {
+			continue
+		}
+		key := command + "|" + cron
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		cleaned = append(cleaned, ManifestScheduleDecl{
+			Command:     command,
+			Cron:        cron,
+			Input:       strings.TrimSpace(s.Input),
+			Description: strings.TrimSpace(s.Description),
+		})
+	}
+	return cleaned
 }
