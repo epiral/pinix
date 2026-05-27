@@ -39,7 +39,7 @@ curl -fsSL dl.pinixai.com/install.sh | sh
 curl -fsSL dl.pinixai.com/install.sh | sh -s -- --cli
 
 # Docker（一个 token，全部搞定）
-docker run -d --shm-size=2g pinixai/pinix <your-hub-token>
+docker run -d --shm-size=2g lueco/pinix <your-hub-token>
 ```
 
 ## 快速开始
@@ -94,7 +94,7 @@ $ pinix hub list
 - [x] **单一 binary** — 一个 `pinix`：`start`、`stop`、`status`、`login`、`invoke`
 - [x] **自动连接** — 读取已保存 token，自动连 Cloud Hub
 - [x] **`install.sh`** — 一键安装（Node.js + Bun + bb-browser，或 `--cli` 最小安装）
-- [x] **Docker** — `docker run pinixai/pinix <token>` — 零配置一键启动
+- [x] **Docker** — `docker run lueco/pinix <token>` — 零配置一键启动
 - [x] **Console Agent** — 浏览器原生多 Agent Chat，可直接调用 Clips
 - [ ] **Pinix Desktop** — 本地 Shell + OS Edge Clips（开发中）
 

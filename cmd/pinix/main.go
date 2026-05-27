@@ -54,7 +54,7 @@ CLI-only (no daemon, invoke remote providers):
   pinix invoke todo list            call a Clip
 
 Docker:
-  docker run -d --shm-size=2g pinixai/pinix <hub-token>`,
+  docker run -d --shm-size=2g lueco/pinix <hub-token>`,
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
