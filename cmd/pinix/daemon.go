@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -258,7 +259,11 @@ func runDaemon(opts daemonOptions) error {
 
 	// Auto-start bb-browser daemon if installed (unless --no-browser or --hub-only).
 	var browserCmd atomic.Pointer[exec.Cmd]
+	var xvfbCleanup func()
 	if !opts.noBrowser {
+		// On Linux, start Xvfb if no DISPLAY is set (Chrome needs a display).
+		xvfbCleanup = ensureDisplay()
+
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -287,10 +292,61 @@ func runDaemon(opts daemonOptions) error {
 		// The monitor goroutine handles cmd.Wait().
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 	}
+	if xvfbCleanup != nil {
+		xvfbCleanup()
+	}
 	_ = runtimeDaemon.Close()
 	_ = hubDaemon.Close()
 	wg.Wait()
 	return nil
+}
+
+// ensureDisplay starts Xvfb on Linux if no DISPLAY is set.
+// Chrome runs in headed mode and needs a display (real or virtual).
+// On macOS, Chrome renders off-screen without a display server.
+// Returns a cleanup function to kill Xvfb on shutdown.
+func ensureDisplay() (cleanup func()) {
+	cleanup = func() {}
+	if runtime.GOOS != "linux" {
+		return
+	}
+	if os.Getenv("DISPLAY") != "" {
+		return
+	}
+
+	xvfb, err := exec.LookPath("Xvfb")
+	if err != nil {
+		slog.Warn("Xvfb not found, Chrome may fail to start on headless Linux. Install: apt install xvfb")
+		return
+	}
+
+	display := ":99"
+	cmd := exec.Command(xvfb, display, "-screen", "0", "1920x1080x24", "-ac", "+render", "-noreset")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		slog.Error("failed to start Xvfb", "error", err)
+		return
+	}
+
+	// Wait for Xvfb to be ready
+	for i := 0; i < 10; i++ {
+		time.Sleep(500 * time.Millisecond)
+		if probe := exec.Command("xdpyinfo", "-display", display); probe.Run() == nil {
+			break
+		}
+	}
+
+	os.Setenv("DISPLAY", display)
+	slog.Info("Xvfb started", "display", display, "pid", cmd.Process.Pid)
+
+	cleanup = func() {
+		if cmd.Process != nil {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+			_ = cmd.Wait()
+			slog.Info("Xvfb stopped")
+		}
+	}
+	return
 }
 
 // startBrowserDaemon finds and spawns bb-browser-daemon if installed.
@@ -333,6 +389,7 @@ func startBrowserDaemon(localHubURL, hubToken, cloudHubURL string) *exec.Cmd {
 	cmd := exec.Command(bin, args...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
+	cmd.Env = append(os.Environ()) // inherit DISPLAY from ensureDisplay()
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	if err := cmd.Start(); err != nil {
