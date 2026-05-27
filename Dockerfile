@@ -2,8 +2,8 @@
 # One token, one command, everything runs.
 #
 # Usage:
-#   docker run -d --shm-size=2g pinixai/pinix <hub-token>
-#   docker run -d --shm-size=2g -p 9000:9000 pinixai/pinix <hub-token>
+#   docker run -d --shm-size=2g lueco/pinix <hub-token>
+#   docker run -d --shm-size=2g -p 9000:9000 lueco/pinix <hub-token>
 #
 # What's inside:
 #   pinix/pinixd    Pinix CLI + daemon
@@ -67,7 +67,7 @@ set -e
 
 TOKEN="$1"
 if [ -z "$TOKEN" ]; then
-  echo "Usage: docker run --shm-size=2g pinixai/pinix <hub-token>"
+  echo "Usage: docker run --shm-size=2g lueco/pinix <hub-token>"
   echo ""
   echo "Get your token at https://console.pinixai.com/settings"
   exit 1

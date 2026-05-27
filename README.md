@@ -39,7 +39,7 @@ curl -fsSL dl.pinixai.com/install.sh | sh
 curl -fsSL dl.pinixai.com/install.sh | sh -s -- --cli
 
 # Docker (one token, everything included)
-docker run -d --shm-size=2g pinixai/pinix <your-hub-token>
+docker run -d --shm-size=2g lueco/pinix <your-hub-token>
 ```
 
 ## Get Started
@@ -94,7 +94,7 @@ Your browser's login sessions, cookies, SSO, and intranet access work out of the
 - [x] **Single binary** — one `pinix` binary: `start`, `stop`, `status`, `login`, `invoke`
 - [x] **Auto-connect** — reads saved token, connects to Cloud Hub automatically
 - [x] **`install.sh`** — one-line installer (Node.js + Bun + bb-browser, or `--cli` for minimal)
-- [x] **Docker** — `docker run pinixai/pinix <token>` — zero-config all-in-one
+- [x] **Docker** — `docker run lueco/pinix <token>` — zero-config all-in-one
 - [x] **Console Agent** — browser-native multi-agent chat that can call Clips
 - [ ] **Pinix Desktop** — local shell + OS Edge Clips (coming soon)
 
