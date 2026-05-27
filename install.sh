@@ -163,18 +163,27 @@ if [ -f "$BB_VIEWER_PATH" ]; then
   echo "Cleared cached bb-viewer (will re-download latest on first stream)"
 fi
 
-# Linux: install Xvfb (required for headed Chrome in headless environments)
+# Linux: install Xvfb + Chrome runtime dependencies
 if [ "$OS" = "linux" ]; then
-  if ! command -v Xvfb &>/dev/null; then
-    echo ""
-    echo "Installing Xvfb (required for browser on Linux)..."
-    if command -v apt-get &>/dev/null; then
-      sudo apt-get update -qq && sudo apt-get install -y -qq xvfb 2>/dev/null && echo "Xvfb installed" || echo "Warning: Xvfb install failed"
-    elif command -v yum &>/dev/null; then
-      sudo yum install -y xorg-x11-server-Xvfb 2>/dev/null && echo "Xvfb installed" || echo "Warning: Xvfb install failed"
-    else
-      echo "Warning: install Xvfb manually (apt: xvfb, yum: xorg-x11-server-Xvfb)"
-    fi
+  echo ""
+  echo "Installing browser dependencies (Xvfb + Chrome libs)..."
+  if command -v apt-get &>/dev/null; then
+    sudo apt-get update -qq && sudo apt-get install -y -qq \
+      xvfb \
+      libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2 \
+      libxss1 libxcomposite1 libxdamage1 libxrandr2 libcups2 \
+      libpango-1.0-0 libcairo2 libdrm2 libdbus-1-3 libxext6 \
+      libxfixes3 libxkbcommon0 libatspi2.0-0 \
+      fonts-noto-cjk fonts-noto-color-emoji \
+      2>/dev/null && echo "Browser dependencies installed" || echo "Warning: some browser deps failed to install"
+  elif command -v yum &>/dev/null; then
+    sudo yum install -y xorg-x11-server-Xvfb \
+      nss atk at-spi2-atk gtk3 libdrm alsa-lib \
+      cups-libs libXcomposite libXdamage libXrandr \
+      pango cairo libxkbcommon \
+      2>/dev/null && echo "Browser dependencies installed" || echo "Warning: some browser deps failed to install"
+  else
+    echo "Warning: install Xvfb + Chrome dependencies manually"
   fi
 fi
 
