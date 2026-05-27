@@ -1,9 +1,19 @@
 #!/bin/bash
 # Pinix installer
-# Usage: curl -fsSL https://dl.pinixai.com/install.sh | bash
+# Usage:
+#   curl -fsSL dl.pinixai.com/install.sh | sh              # full install
+#   curl -fsSL dl.pinixai.com/install.sh | sh -s -- --cli   # CLI only
 #
 # Do NOT use set -e — sub-installers (fnm, bun) can return non-zero
 # from pipe operations even when they succeed.
+
+# Parse arguments
+INSTALL_MODE="full"
+for arg in "$@"; do
+  case "$arg" in
+    --cli) INSTALL_MODE="cli" ;;
+  esac
+done
 
 BASE_URL="https://dl.pinixai.com/releases/latest"
 
@@ -29,16 +39,13 @@ if [ ! -w "$INSTALL_DIR" ]; then
   if command -v sudo &>/dev/null && sudo -n true 2>/dev/null; then
     USE_SUDO=1
   else
-    # No sudo — install to user directory
     INSTALL_DIR="$HOME/.local/bin"
     mkdir -p "$INSTALL_DIR"
     USE_SUDO=0
-    # Ensure ~/.local/bin is in PATH
     case ":$PATH:" in
       *":$INSTALL_DIR:"*) ;;
       *)
         export PATH="$INSTALL_DIR:$PATH"
-        # Add to shell profile if not already there
         for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
           if [ -f "$rc" ] && ! grep -q "$INSTALL_DIR" "$rc" 2>/dev/null; then
             echo "export PATH=\"$INSTALL_DIR:\$PATH\"" >> "$rc"
@@ -51,20 +58,6 @@ else
   USE_SUDO=0
 fi
 
-BINARY="pinix-${OS}-${ARCH}"
-URL="${BASE_URL}/${BINARY}"
-
-echo "Installing Pinix (${OS}/${ARCH}) to ${INSTALL_DIR}..."
-
-# Download pinix binary
-TMPFILE=$(mktemp)
-if ! curl -fsSL "$URL" -o "$TMPFILE"; then
-  echo "Failed to download Pinix from $URL"
-  rm -f "$TMPFILE"
-  exit 1
-fi
-
-# Install pinix + pinixd
 install_bin() {
   local src="$1" dst="$2"
   if [ "$USE_SUDO" = "1" ]; then
@@ -74,24 +67,38 @@ install_bin() {
   fi
 }
 
-install_bin "$TMPFILE" "$INSTALL_DIR/pinix"
+# -------------------------------------------------------
+# Step 1: Install pinix binary (always)
+# -------------------------------------------------------
+BINARY="pinix-${OS}-${ARCH}"
+URL="${BASE_URL}/${BINARY}"
 
-# Also install pinixd if available
-PINIXD_URL="${BASE_URL}/pinixd-${OS}-${ARCH}"
-TMPFILE2=$(mktemp)
-if curl -fsSL "$PINIXD_URL" -o "$TMPFILE2" 2>/dev/null; then
-  install_bin "$TMPFILE2" "$INSTALL_DIR/pinixd"
-else
-  rm -f "$TMPFILE2"
+echo "Installing Pinix (${OS}/${ARCH}) to ${INSTALL_DIR}..."
+
+TMPFILE=$(mktemp)
+if ! curl -fsSL "$URL" -o "$TMPFILE"; then
+  echo "Failed to download Pinix from $URL"
+  rm -f "$TMPFILE"
+  exit 1
 fi
+install_bin "$TMPFILE" "$INSTALL_DIR/pinix"
 
 VERSION=$("$INSTALL_DIR/pinix" --version 2>&1 || echo "unknown")
 echo "Pinix installed: $VERSION"
 
-# --- Dependencies ---
+# CLI-only mode stops here
+if [ "$INSTALL_MODE" = "cli" ]; then
+  echo ""
+  echo "Pinix CLI installed. To install the full runtime later:"
+  echo "  curl -fsSL dl.pinixai.com/install.sh | sh"
+  exit 0
+fi
+
+# -------------------------------------------------------
+# Step 2: Full install — Node.js, Bun, bb-browser, Xvfb
+# -------------------------------------------------------
 
 # Install Node.js (required for bb-browser daemon)
-# Uses fnm (fast node manager) — no brew/sudo needed, works on macOS + Linux.
 if ! command -v node &>/dev/null; then
   echo ""
   echo "Installing Node.js..."
@@ -134,9 +141,6 @@ if ! command -v bun &>/dev/null; then
 fi
 
 # Ensure bun is discoverable by pinixd at runtime.
-# pinixd searches PATH and ~/.bun/bin/bun. If bun was installed by the
-# official installer it's already at ~/.bun/bin/bun. If installed via
-# brew/fnm, create a symlink so pinixd can always find it.
 if command -v bun &>/dev/null; then
   BUN_BIN=$(command -v bun)
   BUN_HOME="$HOME/.bun/bin"
