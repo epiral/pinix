@@ -32,21 +32,25 @@ Pinix 把设备、应用、网页、服务和工作流封装成 **Clip** — 独
 ## 安装
 
 ```bash
-curl -fsSL https://dl.pinixai.com/install.sh | bash
-```
+# 全套安装（pinix + Node.js + Bun + bb-browser）
+curl -fsSL dl.pinixai.com/install.sh | sh
 
-自动安装 `pinix` 和 [Bun](https://bun.sh)（运行 Clips 所需）。
+# 只装 CLI
+curl -fsSL dl.pinixai.com/install.sh | sh -s -- --cli
+
+# Docker（一个 token，全部搞定）
+docker run -d --shm-size=2g pinixai/pinix <your-hub-token>
+```
 
 ## 快速开始
 
 ```bash
 pinix start                                     # 启动 Pinix daemon
-pinix login                                     # 连接 pinix.ai
-pinix hub add @pinix/todo                       # 安装一个 Clip
-pinix invoke todo add --title "Hello Pinix"     # 使用
+pinix login                                     # 浏览器授权登录
+# 或：pinix login --token pnx_...              # token 登录
+pinix invoke todo add -- --title "Hello Pinix"  # 使用 Clip
 pinix invoke todo list                          # 查看结果
 open http://localhost:9000                       # 打开 Console
-pinix stop                                      # 停止 daemon
 ```
 
 `pinix login` 后，你的本地 Clips 通过 pinix.ai Cloud Hub 在任何设备上都可以访问。
@@ -63,7 +67,7 @@ pinix start
   └── Console    localhost:9000 管理界面
 ```
 
-如果安装了 [BB-Browser](https://github.com/epiral/bb-browser)，它会自动启动 headless Chrome，把 30+ 网站注册为 Edge Clips：
+BB-Browser 在全套安装中已自动包含。它会自动启动 Chrome，把 30+ 网站注册为 Edge Clips：
 
 ```
 $ pinix hub list
@@ -89,7 +93,8 @@ $ pinix hub list
 - [x] **`pinix login`** — device code flow，登录后自动重启 daemon 连接 Cloud Hub
 - [x] **单一 binary** — 一个 `pinix`：`start`、`stop`、`status`、`login`、`invoke`
 - [x] **自动连接** — 读取已保存 token，自动连 Cloud Hub
-- [x] **`install.sh`** — 一键安装，自动配置 Bun
+- [x] **`install.sh`** — 一键安装（Node.js + Bun + bb-browser，或 `--cli` 最小安装）
+- [x] **Docker** — `docker run pinixai/pinix <token>` — 零配置一键启动
 - [x] **Console Agent** — 浏览器原生多 Agent Chat，可直接调用 Clips
 - [ ] **Pinix Desktop** — 本地 Shell + OS Edge Clips（开发中）
 

@@ -32,21 +32,25 @@ Human / Agent / CLI
 ## Install
 
 ```bash
-curl -fsSL https://dl.pinixai.com/install.sh | bash
-```
+# Full install (pinix + Node.js + Bun + bb-browser)
+curl -fsSL dl.pinixai.com/install.sh | sh
 
-This installs the `pinix` binary and [Bun](https://bun.sh) (required for Clips).
+# CLI only (just the pinix binary)
+curl -fsSL dl.pinixai.com/install.sh | sh -s -- --cli
+
+# Docker (one token, everything included)
+docker run -d --shm-size=2g pinixai/pinix <your-hub-token>
+```
 
 ## Get Started
 
 ```bash
 pinix start                                     # start Pinix daemon
-pinix login                                     # connect to pinix.ai
-pinix hub add @pinix/todo                       # install a Clip
-pinix invoke todo add --title "Hello Pinix"     # use it
+pinix login                                     # browser-based login
+# or: pinix login --token pnx_...              # token-based login
+pinix invoke todo add -- --title "Hello Pinix"  # use a Clip
 pinix invoke todo list                          # see results
 open http://localhost:9000                       # open Console
-pinix stop                                      # stop daemon
 ```
 
 After `pinix login`, your local Clips are accessible from any device through pinix.ai Cloud Hub.
@@ -63,7 +67,7 @@ pinix start
   └── Console    web UI at localhost:9000
 ```
 
-If [BB-Browser](https://github.com/epiral/bb-browser) is installed, it auto-starts a headless Chrome and registers 30+ websites as Edge Clips:
+BB-Browser is included in the full install. It auto-starts Chrome and registers 30+ websites as Edge Clips:
 
 ```
 $ pinix hub list
@@ -89,7 +93,8 @@ Your browser's login sessions, cookies, SSO, and intranet access work out of the
 - [x] **`pinix login`** — device code flow, auto-restarts daemon to connect Cloud Hub
 - [x] **Single binary** — one `pinix` binary: `start`, `stop`, `status`, `login`, `invoke`
 - [x] **Auto-connect** — reads saved token, connects to Cloud Hub automatically
-- [x] **`install.sh`** — one-line installer with auto Bun setup
+- [x] **`install.sh`** — one-line installer (Node.js + Bun + bb-browser, or `--cli` for minimal)
+- [x] **Docker** — `docker run pinixai/pinix <token>` — zero-config all-in-one
 - [x] **Console Agent** — browser-native multi-agent chat that can call Clips
 - [ ] **Pinix Desktop** — local shell + OS Edge Clips (coming soon)
 
