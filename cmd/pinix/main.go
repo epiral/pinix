@@ -72,6 +72,7 @@ Docker:
 	rootCmd.AddCommand(newHubCommand())
 	rootCmd.AddCommand(newRegistryGroupCommand())
 	rootCmd.AddCommand(newConfigCommand())
+	rootCmd.AddCommand(newUpgradeCommand())
 
 	return rootCmd
 }
