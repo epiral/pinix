@@ -35,8 +35,23 @@ func execute() error {
 
 func newRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:           "pinix",
-		Short:         "Pinix CLI for managing Clips and invoking commands",
+		Use:   "pinix",
+		Short: "Pinix — Agent Harness for AI capabilities",
+		Long: `Pinix gives AI agents real-world capabilities through Clips.
+
+Quick start:
+  pinix start                       start the daemon (provider mode)
+  pinix login                       log in (browser-based)
+  pinix login --token pnx_...       log in (token-based)
+  pinix hub list                    see available Clips
+  pinix invoke <clip> <command>     call a Clip
+
+CLI-only (no daemon):
+  pinix login --token pnx_...       connect to Cloud Hub
+  pinix invoke todo list            invoke Clips on remote providers
+
+Docker:
+  docker run -d --shm-size=2g pinixai/pinix <hub-token>`,
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
