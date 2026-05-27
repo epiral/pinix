@@ -64,6 +64,18 @@ func (h *HubService) ListClips(context.Context, *connect.Request[pinixv2.ListCli
 	if h.daemon != nil && h.daemon.provider != nil {
 		clips = append(clips, h.daemon.provider.ListClipInfos()...)
 	}
+	// Add agent virtual clip
+	if h.daemon != nil && h.daemon.agentHandler != nil {
+		clips = append(clips, &pinixv2.ClipInfo{
+			Name:        "agent",
+			Package:     "@pinix/agent",
+			Version:     "1.0.0",
+			Domain:      "ai",
+			Description: "Built-in AI Agent Runtime",
+			Provider:    "local",
+			Status:      pinixv2.ClipStatus_CLIP_STATUS_RUNNING,
+		})
+	}
 	sort.Slice(clips, func(i, j int) bool {
 		return clips[i].GetName() < clips[j].GetName()
 	})
@@ -198,6 +210,24 @@ func (h *HubService) Invoke(ctx context.Context, req *connect.Request[pinixv2.In
 		"command", command,
 		"route", "pending",
 	)
+
+	// Agent virtual clip: route to built-in Go Agent Runtime
+	if clipName == "agent" && h.daemon != nil && h.daemon.agentHandler != nil {
+		slog.Info("hub.invoke: routed", "trace_id", traceID, "target", clipName, "route", "agent")
+		err := h.invokeAgentClip(ctx, command, req.Msg.GetInput(), stream)
+		if err != nil {
+			slog.Error("hub.invoke: error",
+				"trace_id", traceID, "target", clipName, "command", command,
+				"route", "agent", "duration_ms", time.Since(start).Milliseconds(), "error", err,
+			)
+		} else {
+			slog.Info("hub.invoke: done",
+				"trace_id", traceID, "target", clipName, "command", command,
+				"route", "agent", "duration_ms", time.Since(start).Milliseconds(),
+			)
+		}
+		return err
+	}
 
 	if h.daemon != nil && h.daemon.hasLocalRuntime() {
 		clip, ok, err := h.daemon.registry.GetClip(clipName)
@@ -832,6 +862,21 @@ func (h *HubService) invokeProviderClipCallback(ctx context.Context, clipName, c
 			return nil
 		}
 	}
+}
+
+func (h *HubService) invokeAgentClip(ctx context.Context, command string, input []byte, stream *connect.ServerStream[pinixv2.InvokeResponse]) error {
+	onChunk := func(chunk json.RawMessage) {
+		_ = stream.Send(&pinixv2.InvokeResponse{Output: chunk})
+	}
+
+	result, err := h.daemon.agentHandler.HandleInvoke(ctx, command, json.RawMessage(input), onChunk)
+	if err != nil {
+		return sendInvokeApplicationError(stream, err)
+	}
+	if len(result) > 0 {
+		_ = stream.Send(&pinixv2.InvokeResponse{Output: result})
+	}
+	return nil
 }
 
 func (h *HubService) invokeLocalClip(ctx context.Context, clip ClipConfig, command string, input []byte, clipToken string, stream *connect.ServerStream[pinixv2.InvokeResponse]) error {
