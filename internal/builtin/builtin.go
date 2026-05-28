@@ -35,6 +35,11 @@ type Clip struct {
 	Domain      string
 	Description string
 	Commands    []CommandDef
+
+	// CatchAll is an optional handler for commands that don't match any
+	// registered CommandDef by name. This is used by clips with dynamic
+	// command routing (e.g. resource paths like "/agents/<id> get").
+	CatchAll func(ctx context.Context, command string, input json.RawMessage, onChunk ChunkFunc) (json.RawMessage, error)
 }
 
 // Invoke dispatches a command to the matching handler.
@@ -45,6 +50,9 @@ func (c *Clip) Invoke(ctx context.Context, command string, input json.RawMessage
 		if cmd.Name == command {
 			return cmd.Handler(ctx, input, onChunk)
 		}
+	}
+	if c.CatchAll != nil {
+		return c.CatchAll(ctx, command, input, onChunk)
 	}
 	return nil, fmt.Errorf("command %q not found on builtin clip %q", command, c.Name)
 }

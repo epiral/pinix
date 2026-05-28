@@ -12,11 +12,15 @@ import (
 )
 
 // NewAgentClip creates a builtin Clip that wraps an agent.Handler.
-// All commands delegate to handler.HandleInvoke, preserving streaming via onChunk.
+// The "chat" command is registered for exact match. All other commands —
+// resource paths (/agents/:id get), action commands (get-run), help (--help),
+// and legacy compat (topic list) — route through CatchAll to handler.HandleInvoke.
+//
+// Template-path commands are registered in Commands for discoverability
+// (they show up in ListClips) but have nil Handlers since they can't be
+// exact-matched (they contain dynamic :id segments). CatchAll handles them.
 func NewAgentClip(handler *agent.Handler) *Clip {
-	// All agent commands route through HandleInvoke, which does its own switch.
-	// We register each command individually so ListClips/GetManifest shows them.
-	makeHandler := func(command string) CommandHandler {
+	invoke := func(command string) CommandHandler {
 		return func(ctx context.Context, input json.RawMessage, onChunk ChunkFunc) (json.RawMessage, error) {
 			return handler.HandleInvoke(ctx, command, input, onChunk)
 		}
@@ -29,25 +33,31 @@ func NewAgentClip(handler *agent.Handler) *Clip {
 		Domain:      "ai",
 		Description: "Built-in AI Agent Runtime",
 		Commands: []CommandDef{
-			{Name: "chat", Description: "Send a message and get a streaming response", Input: `{"type":"object","properties":{"agent_id":{"type":"string"},"topic_id":{"type":"string"},"message":{"type":"string"}},"required":["agent_id","message"]}`, Handler: makeHandler("chat")},
-			{Name: "topic list", Description: "List all topics for an agent", Handler: makeHandler("topic list")},
-			{Name: "topic get", Description: "Get topic details with messages", Handler: makeHandler("topic get")},
-			{Name: "topic create", Description: "Create a new topic", Handler: makeHandler("topic create")},
-			{Name: "topic delete", Description: "Delete a topic", Handler: makeHandler("topic delete")},
-			{Name: "topic rename", Description: "Rename a topic", Handler: makeHandler("topic rename")},
-			{Name: "topic search", Description: "Search across topics", Handler: makeHandler("topic search")},
-			{Name: "run get", Description: "Get run details", Handler: makeHandler("run get")},
-			{Name: "run cancel", Description: "Cancel a running run", Handler: makeHandler("run cancel")},
-			{Name: "agent list", Description: "List all agent configurations", Handler: makeHandler("agent list")},
-			{Name: "agent get", Description: "Get agent details", Handler: makeHandler("agent get")},
-			{Name: "agent create", Description: "Create a new agent", Handler: makeHandler("agent create")},
-			{Name: "agent update", Description: "Update agent configuration", Handler: makeHandler("agent update")},
-			{Name: "agent delete", Description: "Delete an agent", Handler: makeHandler("agent delete")},
-			{Name: "event create", Description: "Create a scheduled event", Handler: makeHandler("event create")},
-			{Name: "event list", Description: "List scheduled events", Handler: makeHandler("event list")},
-			{Name: "event update", Description: "Update a scheduled event", Handler: makeHandler("event update")},
-			{Name: "event cancel", Description: "Cancel a scheduled event", Handler: makeHandler("event cancel")},
-			{Name: "config get", Description: "Get global agent configuration", Handler: makeHandler("config get")},
+			// Action commands (exact match)
+			{Name: "chat", Description: "Send a message and get a streaming response", Input: `{"type":"object","properties":{"agent_id":{"type":"string"},"topic_id":{"type":"string"},"message":{"type":"string"}},"required":["agent_id","message"]}`, Handler: invoke("chat")},
+			{Name: "get-run", Description: "Get run details with messages", Handler: invoke("get-run")},
+			{Name: "cancel-run", Description: "Cancel a running run", Handler: invoke("cancel-run")},
+			{Name: "cancel-event", Description: "Cancel a scheduled event", Handler: invoke("cancel-event")},
+			{Name: "--help", Description: "Show available commands and resources", Handler: invoke("--help")},
+
+			// Resource commands (template paths — listed for discoverability, handled by CatchAll)
+			{Name: "/agents list", Description: "List all agents"},
+			{Name: "/agents create", Description: "Create a new agent"},
+			{Name: "/agents/:id get", Description: "Get agent details"},
+			{Name: "/agents/:id update", Description: "Update agent configuration"},
+			{Name: "/agents/:id delete", Description: "Delete an agent"},
+			{Name: "/topics list", Description: "List topics (supports query param for search)"},
+			{Name: "/topics create", Description: "Create a new topic"},
+			{Name: "/topics/:id get", Description: "Get topic with messages"},
+			{Name: "/topics/:id update", Description: "Update topic (e.g. title)"},
+			{Name: "/topics/:id delete", Description: "Delete a topic"},
+			{Name: "/events list", Description: "List scheduled events"},
+			{Name: "/events create", Description: "Create a scheduled event"},
+			{Name: "/events/:id get", Description: "Get event details"},
+			{Name: "/events/:id update", Description: "Update a scheduled event"},
+		},
+		CatchAll: func(ctx context.Context, command string, input json.RawMessage, onChunk ChunkFunc) (json.RawMessage, error) {
+			return handler.HandleInvoke(ctx, command, input, onChunk)
 		},
 	}
 }
