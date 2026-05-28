@@ -36,6 +36,14 @@ type DependencySpec struct {
 	Version string `json:"version,omitempty"`
 }
 
+// ManifestScheduleDecl is a Clip-declared scheduled command (from clip.json or IPC register).
+type ManifestScheduleDecl struct {
+	Command     string `json:"command"`
+	Cron        string `json:"cron"`
+	Input       string `json:"input,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
 type ManifestCache struct {
 	Name           string                     `json:"name"`
 	Package        string                     `json:"package,omitempty"`
@@ -48,6 +56,7 @@ type ManifestCache struct {
 	Dependencies   manifestDependencies       `json:"dependencies,omitempty"`
 	Patterns       []string                   `json:"patterns,omitempty"`
 	Entities       map[string]json.RawMessage `json:"entities,omitempty"`
+	Schedules      []ManifestScheduleDecl     `json:"schedules,omitempty"`
 }
 
 // ScheduleConfig holds a user-created scheduled task stored in config.json.
