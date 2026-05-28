@@ -154,6 +154,9 @@ func (h *Handler) handleTopicList(_ context.Context, input json.RawMessage) (jso
 	if err != nil {
 		return nil, err
 	}
+	if topics == nil {
+		topics = []Topic{}
+	}
 	return json.Marshal(topics)
 }
 
@@ -247,6 +250,9 @@ func (h *Handler) handleTopicSearch(_ context.Context, input json.RawMessage) (j
 	if err != nil {
 		return nil, err
 	}
+	if msgs == nil {
+		msgs = []Message{}
+	}
 	return json.Marshal(msgs)
 }
 
@@ -294,6 +300,9 @@ func (h *Handler) handleAgentList(_ context.Context) (json.RawMessage, error) {
 	agents, err := h.runtime.store.ListAgents()
 	if err != nil {
 		return nil, err
+	}
+	if agents == nil {
+		agents = []Agent{}
 	}
 	// Mask API keys
 	for i := range agents {
@@ -439,6 +448,9 @@ func (h *Handler) handleEventList(_ context.Context, input json.RawMessage) (jso
 	events, err := h.runtime.store.ListEvents(req.AgentID)
 	if err != nil {
 		return nil, err
+	}
+	if events == nil {
+		events = []Event{}
 	}
 	return json.Marshal(events)
 }
