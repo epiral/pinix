@@ -60,7 +60,7 @@ func NewDaemon(registry *Registry, process *ProcessManager) (*Daemon, error) {
 
 // initAgentRuntime sets up the built-in Go Agent Runtime.
 func (d *Daemon) initAgentRuntime() {
-	dataDir := filepath.Join(os.Getenv("HOME"), ".pinix", "data", "agent")
+	dataDir := filepath.Join(os.Getenv("HOME"), ".pinix", "data", "agent-go")
 	store, err := agent.NewStore(dataDir)
 	if err != nil {
 		slog.Error("agent: failed to initialize store", "error", err)
