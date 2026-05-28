@@ -66,7 +66,7 @@ func NewScheduler(registry *Registry, hubURL string) *Scheduler {
 	return &Scheduler{
 		registry: registry,
 		hubURL:   hubURL,
-		cron:     cron.New(cron.WithSeconds()),
+		cron:     cron.New(cron.WithParser(cron.NewParser(cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow))),
 		entries:  make(map[string]*scheduleEntry),
 		history:  make(map[string][]ScheduleExecution),
 		ctx:      ctx,
