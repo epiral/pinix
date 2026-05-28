@@ -96,9 +96,11 @@ func (r *Runtime) Chat(ctx context.Context, input ChatInput, onEvent func(Stream
 	// Update topic timestamp
 	_ = r.store.SaveTopic(topic)
 
-	// Generate title asynchronously if this is a new topic
-	if topic.Title == truncate(input.Message, 30) {
-		go r.generateTopicTitle(agt, topic, input.Message)
+	// Generate title if this topic has no meaningful title yet.
+	// This covers both: (1) topics created by Chat() itself (title = truncated message),
+	// and (2) topics pre-created by the frontend with an empty title.
+	if topic.Title == "" || topic.Title == truncate(input.Message, 30) {
+		r.generateTopicTitle(agt, topic, input.Message)
 	}
 
 	if loopErr != nil && ctx.Err() == nil {
