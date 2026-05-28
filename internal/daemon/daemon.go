@@ -125,6 +125,8 @@ func (d *Daemon) listAgentClips() []agent.ClipInfo {
 				ci.Commands = append(ci.Commands, agent.CommandInfo{
 					Name:        cmd.GetName(),
 					Description: cmd.GetDescription(),
+					Input:       cmd.GetInput(),
+					Output:      cmd.GetOutput(),
 				})
 			}
 			clips = append(clips, ci)
