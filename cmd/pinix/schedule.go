@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -48,7 +49,7 @@ Examples:
 }
 
 // invokeScheduler invokes the builtin scheduler Clip.
-func invokeScheduler(serverURL, hubToken, command string, input any) (json.RawMessage, error) {
+func invokeScheduler(ctx context.Context, serverURL, hubToken, command string, input any) (json.RawMessage, error) {
 	cli, err := client.New(serverURL)
 	if err != nil {
 		return nil, err
@@ -57,7 +58,7 @@ func invokeScheduler(serverURL, hubToken, command string, input any) (json.RawMe
 	if err != nil {
 		return nil, fmt.Errorf("marshal input: %w", err)
 	}
-	return cli.Invoke(nil, schedulerClipName, command, inputJSON, "", hubToken)
+	return cli.Invoke(ctx, schedulerClipName, command, inputJSON, "", hubToken)
 }
 
 func newScheduleListCommand(serverURL, hubToken *string) *cobra.Command {
@@ -66,7 +67,7 @@ func newScheduleListCommand(serverURL, hubToken *string) *cobra.Command {
 		Short: "List all scheduled tasks",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			output, err := invokeScheduler(*serverURL, *hubToken, "list", map[string]any{})
+			output, err := invokeScheduler(cmd.Context(), *serverURL, *hubToken, "list", map[string]any{})
 			if err != nil {
 				return err
 			}
@@ -126,7 +127,7 @@ func newScheduleAddCommand(serverURL, hubToken *string) *cobra.Command {
 			if cronExpr == "" {
 				return fmt.Errorf("--cron is required")
 			}
-			_, err := invokeScheduler(*serverURL, *hubToken, "add", map[string]any{
+			_, err := invokeScheduler(cmd.Context(), *serverURL, *hubToken, "add", map[string]any{
 				"id":          strings.TrimSpace(args[0]),
 				"clip":        strings.TrimSpace(args[1]),
 				"command":     strings.TrimSpace(args[2]),
@@ -153,7 +154,7 @@ func newScheduleRemoveCommand(serverURL, hubToken *string) *cobra.Command {
 		Short: "Remove a scheduled task",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, err := invokeScheduler(*serverURL, *hubToken, "remove", map[string]string{"id": strings.TrimSpace(args[0])})
+			_, err := invokeScheduler(cmd.Context(), *serverURL, *hubToken, "remove", map[string]string{"id": strings.TrimSpace(args[0])})
 			if err != nil {
 				return err
 			}
@@ -169,7 +170,7 @@ func newSchedulePauseCommand(serverURL, hubToken *string) *cobra.Command {
 		Short: "Pause a scheduled task",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, err := invokeScheduler(*serverURL, *hubToken, "pause", map[string]string{"id": strings.TrimSpace(args[0])})
+			_, err := invokeScheduler(cmd.Context(), *serverURL, *hubToken, "pause", map[string]string{"id": strings.TrimSpace(args[0])})
 			if err != nil {
 				return err
 			}
@@ -185,7 +186,7 @@ func newScheduleResumeCommand(serverURL, hubToken *string) *cobra.Command {
 		Short: "Resume a paused scheduled task",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, err := invokeScheduler(*serverURL, *hubToken, "resume", map[string]string{"id": strings.TrimSpace(args[0])})
+			_, err := invokeScheduler(cmd.Context(), *serverURL, *hubToken, "resume", map[string]string{"id": strings.TrimSpace(args[0])})
 			if err != nil {
 				return err
 			}
@@ -201,7 +202,7 @@ func newScheduleRunCommand(serverURL, hubToken *string) *cobra.Command {
 		Short: "Trigger a scheduled task immediately",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, err := invokeScheduler(*serverURL, *hubToken, "run", map[string]string{"id": strings.TrimSpace(args[0])})
+			_, err := invokeScheduler(cmd.Context(), *serverURL, *hubToken, "run", map[string]string{"id": strings.TrimSpace(args[0])})
 			if err != nil {
 				return err
 			}
@@ -217,7 +218,7 @@ func newScheduleHistoryCommand(serverURL, hubToken *string) *cobra.Command {
 		Short: "Show execution history for a scheduled task",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			output, err := invokeScheduler(*serverURL, *hubToken, "history", map[string]string{"id": strings.TrimSpace(args[0])})
+			output, err := invokeScheduler(cmd.Context(), *serverURL, *hubToken, "history", map[string]string{"id": strings.TrimSpace(args[0])})
 			if err != nil {
 				return err
 			}
