@@ -260,6 +260,11 @@ func runDaemon(opts daemonOptions) error {
 			if err != nil {
 				slog.Error("hub: failed to create cloud daemon", "error", err)
 			} else {
+				// Share the scheduler so the scheduler builtin clip is registered
+				// on the Cloud Hub provider stream.
+				if hubDaemon.GetScheduler() != nil {
+					cloudDaemon.SetScheduler(hubDaemon.GetScheduler())
+				}
 				defer func() { _ = cloudDaemon.Close() }()
 				wg.Add(1)
 				go func() {
