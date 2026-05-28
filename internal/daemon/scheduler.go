@@ -45,6 +45,7 @@ type scheduleEntry struct {
 // Scheduler manages cron-triggered Clip invokes.
 type Scheduler struct {
 	registry *Registry
+	store    *SchedulerStore
 	hubURL   string
 	hubToken string
 
@@ -53,25 +54,34 @@ type Scheduler struct {
 	mu      sync.RWMutex
 	entries map[string]*scheduleEntry // schedule ID -> entry
 
-	historyMu sync.RWMutex
-	history   map[string][]ScheduleExecution // schedule ID -> recent executions (ring buffer)
-
 	ctx    context.Context
 	cancel context.CancelFunc
 }
 
 // NewScheduler creates a new scheduler. Call Start() to begin scheduling.
-func NewScheduler(registry *Registry, hubURL string) *Scheduler {
+// dataDir is the directory for the SQLite database (e.g. ~/.pinix/data/scheduler).
+func NewScheduler(registry *Registry, hubURL string, dataDir string) *Scheduler {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Scheduler{
+	s := &Scheduler{
 		registry: registry,
 		hubURL:   hubURL,
 		cron:     cron.New(cron.WithParser(cron.NewParser(cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow))),
 		entries:  make(map[string]*scheduleEntry),
-		history:  make(map[string][]ScheduleExecution),
 		ctx:      ctx,
 		cancel:   cancel,
 	}
+
+	// Open SQLite store for execution history
+	if dataDir != "" {
+		store, err := NewSchedulerStore(dataDir)
+		if err != nil {
+			slog.Warn("scheduler: failed to open history store, history will not persist", "error", err)
+		} else {
+			s.store = store
+		}
+	}
+
+	return s
 }
 
 // SetHubToken sets the hub auth token for scheduled invokes.
@@ -170,6 +180,9 @@ func (s *Scheduler) Stop() {
 	s.cancel()
 	ctx := s.cron.Stop()
 	<-ctx.Done()
+	if s.store != nil {
+		_ = s.store.Close()
+	}
 	slog.Info("scheduler: stopped")
 }
 
@@ -212,9 +225,10 @@ func (s *Scheduler) Remove(id string) error {
 		return fmt.Errorf("schedule %q not found", id)
 	}
 
-	s.historyMu.Lock()
-	delete(s.history, id)
-	s.historyMu.Unlock()
+	// Clean up execution history
+	if s.store != nil {
+		_ = s.store.DeleteExecutions(id)
+	}
 
 	slog.Info("scheduler: removed", "id", id)
 	return nil
@@ -305,13 +319,12 @@ func (s *Scheduler) List() ([]ScheduleStatus, error) {
 				status.NextRun = &cronEntry.Next
 			}
 		}
-		// Attach last execution
-		s.historyMu.RLock()
-		if hist, ok := s.history[sc.ID]; ok && len(hist) > 0 {
-			last := hist[len(hist)-1]
-			status.LastRun = &last
+		// Attach last execution from store
+		if s.store != nil {
+			if last := s.store.LastExecution(sc.ID); last != nil {
+				status.LastRun = last
+			}
 		}
-		s.historyMu.RUnlock()
 
 		result = append(result, status)
 	}
@@ -320,17 +333,15 @@ func (s *Scheduler) List() ([]ScheduleStatus, error) {
 
 // History returns recent executions for a schedule.
 func (s *Scheduler) History(id string) []ScheduleExecution {
-	s.historyMu.RLock()
-	defer s.historyMu.RUnlock()
-
-	hist, ok := s.history[id]
-	if !ok {
+	if s.store == nil {
 		return nil
 	}
-	// Return a copy
-	out := make([]ScheduleExecution, len(hist))
-	copy(out, hist)
-	return out
+	execs, err := s.store.ListExecutions(id, maxHistoryPerSchedule)
+	if err != nil {
+		slog.Warn("scheduler: failed to read history", "id", id, "error", err)
+		return nil
+	}
+	return execs
 }
 
 // ScheduleStatus is a schedule config with runtime status.
@@ -417,13 +428,9 @@ func (s *Scheduler) recordExecution(id string, startedAt time.Time, output json.
 		)
 	}
 
-	s.historyMu.Lock()
-	defer s.historyMu.Unlock()
-
-	hist := s.history[id]
-	hist = append(hist, exec)
-	if len(hist) > maxHistoryPerSchedule {
-		hist = hist[len(hist)-maxHistoryPerSchedule:]
+	if s.store != nil {
+		if err := s.store.RecordExecution(exec); err != nil {
+			slog.Warn("scheduler: failed to persist execution", "id", id, "error", err)
+		}
 	}
-	s.history[id] = hist
 }
