@@ -36,15 +36,6 @@ service HubService {
   rpc GetBindings(GetBindingsRequest) returns (GetBindingsResponse);
   rpc SetBinding(SetBindingRequest) returns (SetBindingResponse);
   rpc RemoveBinding(RemoveBindingRequest) returns (RemoveBindingResponse);
-
-  // Schedule management
-  rpc ListSchedules(ListSchedulesRequest) returns (ListSchedulesResponse);
-  rpc AddSchedule(AddScheduleRequest) returns (AddScheduleResponse);
-  rpc RemoveSchedule(RemoveScheduleRequest) returns (RemoveScheduleResponse);
-  rpc PauseSchedule(PauseScheduleRequest) returns (PauseScheduleResponse);
-  rpc ResumeSchedule(ResumeScheduleRequest) returns (ResumeScheduleResponse);
-  rpc RunSchedule(RunScheduleRequest) returns (RunScheduleResponse);
-  rpc GetScheduleHistory(GetScheduleHistoryRequest) returns (GetScheduleHistoryResponse);
 }
 
 message HubError {
@@ -452,83 +443,4 @@ message DataResult {
   HubError error = 6;
 }
 
-// ============================================================
-//  Scheduled Tasks
-// ============================================================
 
-message ScheduleRule {
-  string id = 1;
-  string clip = 2;
-  string command = 3;
-  string cron = 4;
-  string input = 5;          // JSON string
-  string description = 6;
-  bool enabled = 7;
-}
-
-message ScheduleStatus {
-  ScheduleRule rule = 1;
-  string next_run = 2;       // ISO 8601
-  ScheduleExecution last_run = 3;
-}
-
-message ScheduleExecution {
-  string schedule_id = 1;
-  string started_at = 2;     // ISO 8601
-  string finished_at = 3;    // ISO 8601
-  int64 duration_ms = 4;
-  bool success = 5;
-  bytes output = 6;
-  string error = 7;
-}
-
-message ListSchedulesRequest {}
-
-message ListSchedulesResponse {
-  repeated ScheduleStatus schedules = 1;
-}
-
-message AddScheduleRequest {
-  string id = 1;
-  string clip = 2;
-  string command = 3;
-  string cron = 4;
-  string input = 5;
-  string description = 6;
-}
-
-message AddScheduleResponse {
-  ScheduleRule rule = 1;
-}
-
-message RemoveScheduleRequest {
-  string id = 1;
-}
-
-message RemoveScheduleResponse {}
-
-message PauseScheduleRequest {
-  string id = 1;
-}
-
-message PauseScheduleResponse {}
-
-message ResumeScheduleRequest {
-  string id = 1;
-}
-
-message ResumeScheduleResponse {}
-
-message RunScheduleRequest {
-  string id = 1;
-}
-
-message RunScheduleResponse {}
-
-message GetScheduleHistoryRequest {
-  string id = 1;
-}
-
-message GetScheduleHistoryResponse {
-  repeated ScheduleExecution executions = 1;
-}
