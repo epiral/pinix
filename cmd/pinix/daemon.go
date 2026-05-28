@@ -221,8 +221,18 @@ func runDaemon(opts daemonOptions) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := hubDaemon.ServeHTTP(ctx, addr); err != nil {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("daemon: PANIC in hub goroutine", "panic", fmt.Sprintf("%v", r))
+				hubErr <- fmt.Errorf("hub panic: %v", r)
+			}
+		}()
+		err := hubDaemon.ServeHTTP(ctx, addr)
+		slog.Info("hub: ServeHTTP returned", "error", err)
+		if err != nil {
 			hubErr <- err
+		} else {
+			hubErr <- fmt.Errorf("hub: ServeHTTP returned nil unexpectedly (ctx.Err=%v)", ctx.Err())
 		}
 	}()
 
@@ -244,8 +254,18 @@ func runDaemon(opts daemonOptions) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := runtimeDaemon.ConnectHub(ctx, localHubURL, opts.port, ""); err != nil {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("daemon: PANIC in runtime goroutine", "panic", fmt.Sprintf("%v", r))
+				runtimeErr <- fmt.Errorf("runtime panic: %v", r)
+			}
+		}()
+		err := runtimeDaemon.ConnectHub(ctx, localHubURL, opts.port, "")
+		slog.Info("hub: local ConnectHub returned", "error", err)
+		if err != nil {
 			runtimeErr <- err
+		} else {
+			runtimeErr <- fmt.Errorf("hub: local ConnectHub returned nil unexpectedly (ctx.Err=%v)", ctx.Err())
 		}
 	}()
 
@@ -269,9 +289,13 @@ func runDaemon(opts daemonOptions) error {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					if err := cloudDaemon.ConnectHub(ctx, autoConnectHubURL, opts.port, hubToken); err != nil {
-						slog.Error("hub: cloud hub connection error (non-fatal)", "error", err)
-					}
+					defer func() {
+						if r := recover(); r != nil {
+							slog.Error("daemon: PANIC in cloud hub goroutine", "panic", fmt.Sprintf("%v", r))
+						}
+					}()
+					err := cloudDaemon.ConnectHub(ctx, autoConnectHubURL, opts.port, hubToken)
+					slog.Error("hub: cloud ConnectHub returned", "error", err, "ctx_err", ctx.Err())
 				}()
 			}
 		}
@@ -300,10 +324,13 @@ func runDaemon(opts daemonOptions) error {
 
 	select {
 	case err := <-hubErr:
+		slog.Error("daemon: exiting due to hub error", "error", err)
 		return fmt.Errorf("hub: %w", err)
 	case err := <-runtimeErr:
+		slog.Error("daemon: exiting due to runtime error", "error", err)
 		return fmt.Errorf("runtime: %w", err)
 	case <-ctx.Done():
+		slog.Info("daemon: exiting due to signal", "signal", ctx.Err())
 	}
 
 	if cmd := browserCmd.Load(); cmd != nil && cmd.Process != nil {
@@ -315,9 +342,11 @@ func runDaemon(opts daemonOptions) error {
 	if xvfbCleanup != nil {
 		xvfbCleanup()
 	}
+	slog.Info("daemon: shutting down")
 	_ = runtimeDaemon.Close()
 	_ = hubDaemon.Close()
 	wg.Wait()
+	slog.Info("daemon: shutdown complete")
 	return nil
 }
 
