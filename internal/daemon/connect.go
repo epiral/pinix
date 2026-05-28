@@ -199,7 +199,28 @@ func (h *HubService) Invoke(ctx context.Context, req *connect.Request[pinixv2.In
 		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("command is required"))
 	}
 
-	clipName, err := h.resolveClipName(req.Msg.GetClipName())
+	// Agent virtual clip: intercept BEFORE resolveClipName (agent is not in registry)
+	reqClipName := strings.TrimSpace(req.Msg.GetClipName())
+	if reqClipName == "agent" && h.daemon != nil && h.daemon.agentHandler != nil {
+		slog.Info("hub.invoke: start",
+			"trace_id", traceID, "target", "agent", "command", command, "route", "agent",
+		)
+		err := h.invokeAgentClip(ctx, command, req.Msg.GetInput(), stream)
+		if err != nil {
+			slog.Error("hub.invoke: error",
+				"trace_id", traceID, "target", "agent", "command", command,
+				"route", "agent", "duration_ms", time.Since(start).Milliseconds(), "error", err,
+			)
+		} else {
+			slog.Info("hub.invoke: done",
+				"trace_id", traceID, "target", "agent", "command", command,
+				"route", "agent", "duration_ms", time.Since(start).Milliseconds(),
+			)
+		}
+		return err
+	}
+
+	clipName, err := h.resolveClipName(reqClipName)
 	if err != nil {
 		return connectErrorFromErr(err)
 	}
@@ -210,24 +231,6 @@ func (h *HubService) Invoke(ctx context.Context, req *connect.Request[pinixv2.In
 		"command", command,
 		"route", "pending",
 	)
-
-	// Agent virtual clip: route to built-in Go Agent Runtime
-	if clipName == "agent" && h.daemon != nil && h.daemon.agentHandler != nil {
-		slog.Info("hub.invoke: routed", "trace_id", traceID, "target", clipName, "route", "agent")
-		err := h.invokeAgentClip(ctx, command, req.Msg.GetInput(), stream)
-		if err != nil {
-			slog.Error("hub.invoke: error",
-				"trace_id", traceID, "target", clipName, "command", command,
-				"route", "agent", "duration_ms", time.Since(start).Milliseconds(), "error", err,
-			)
-		} else {
-			slog.Info("hub.invoke: done",
-				"trace_id", traceID, "target", clipName, "command", command,
-				"route", "agent", "duration_ms", time.Since(start).Milliseconds(),
-			)
-		}
-		return err
-	}
 
 	if h.daemon != nil && h.daemon.hasLocalRuntime() {
 		clip, ok, err := h.daemon.registry.GetClip(clipName)
