@@ -345,6 +345,85 @@ func (c *RegistryClient) WhoAmI(ctx context.Context, token string) (*RegistryAut
 	return &resp, nil
 }
 
+// --- Organization management ---
+
+type OrgResponse struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	CreatedAt string `json:"created_at"`
+}
+
+type OrgMemberResponse struct {
+	OrgID  string `json:"org_id"`
+	UserID string `json:"user_id"`
+	Role   string `json:"role"`
+}
+
+type ListOrgsResponse struct {
+	Orgs []OrgResponse `json:"orgs"`
+}
+
+type ListOrgMembersResponse struct {
+	Members []OrgMemberResponse `json:"members"`
+}
+
+func (c *RegistryClient) CreateOrg(ctx context.Context, token, name string) (*OrgResponse, error) {
+	payload := map[string]string{"name": name}
+	var resp OrgResponse
+	if err := c.postJSON(ctx, "/orgs", payload, token, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *RegistryClient) ListUserOrgs(ctx context.Context, token string) (*ListOrgsResponse, error) {
+	var resp ListOrgsResponse
+	if err := c.doJSON(ctx, http.MethodGet, "/users/me/orgs", nil, "application/json", token, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *RegistryClient) GetOrg(ctx context.Context, orgID string) (*OrgResponse, error) {
+	var resp OrgResponse
+	if err := c.getJSON(ctx, "/orgs/"+url.PathEscape(orgID), &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *RegistryClient) ListOrgMembers(ctx context.Context, orgID string) (*ListOrgMembersResponse, error) {
+	var resp ListOrgMembersResponse
+	if err := c.getJSON(ctx, "/orgs/"+url.PathEscape(orgID)+"/members", &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *RegistryClient) AddOrgMember(ctx context.Context, token, orgID, username, role string) error {
+	payload := map[string]string{
+		"username": username,
+		"role":     role,
+	}
+	return c.postJSON(ctx, "/orgs/"+url.PathEscape(orgID)+"/members", payload, token, nil)
+}
+
+func (c *RegistryClient) RemoveOrgMember(ctx context.Context, token, orgID, userID string) error {
+	path := "/orgs/" + url.PathEscape(orgID) + "/members/" + url.PathEscape(userID)
+	return c.doJSON(ctx, http.MethodDelete, path, nil, "application/json", token, nil)
+}
+
+// SetAccess changes the access level of a package.
+func (c *RegistryClient) SetAccess(ctx context.Context, token, name, access string) error {
+	path := packagePath(name) + "/access"
+	payload := map[string]string{"access": access}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal access request: %w", err)
+	}
+	return c.doJSON(ctx, http.MethodPut, path, bytes.NewReader(data), "application/json", token, nil)
+}
+
 func (c *RegistryClient) SetDistTag(ctx context.Context, name, tag, version, token string) error {
 	name = strings.TrimSpace(name)
 	tag = strings.TrimSpace(tag)
