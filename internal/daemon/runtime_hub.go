@@ -6,6 +6,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -340,9 +341,14 @@ func (c *runtimeHubConnector) registerMessage(ctx context.Context) (*pinixv2.Pro
 	if err != nil {
 		return nil, fmt.Errorf("list local clips: %w", err)
 	}
-	registrations := make([]*pinixv2.ClipRegistration, 0, len(clips))
+	registrations := make([]*pinixv2.ClipRegistration, 0, len(clips)+1)
 	for _, clip := range clips {
 		registrations = append(registrations, localClipToRegistration(clip))
+	}
+
+	// Register the built-in agent virtual clip so it appears on remote Hubs
+	if c.daemon.agentHandler != nil {
+		registrations = append(registrations, agentClipRegistration())
 	}
 
 	select {
@@ -484,6 +490,24 @@ func (c *runtimeHubConnector) handleInvokeCommand(ctx context.Context, stream *c
 	commandName := strings.TrimSpace(command.GetCommand())
 	if commandName == "" {
 		c.sendInvokeError(stream, requestID, daemonError{Code: "invalid_argument", Message: "command is required"})
+		return
+	}
+
+	// Agent virtual clip: route to built-in Go Agent Runtime
+	if clipName == "agent" && c.daemon.agentHandler != nil {
+		onChunk := func(chunk json.RawMessage) {
+			_ = c.sendInvokeResult(stream, &pinixv2.InvokeResult{RequestId: requestID, Output: chunk})
+		}
+		result, err := c.daemon.agentHandler.HandleInvoke(ctx, commandName, json.RawMessage(command.GetInput()), onChunk)
+		if err != nil {
+			c.sendInvokeError(stream, requestID, err)
+			return
+		}
+		if len(result) > 0 {
+			_ = c.sendInvokeResult(stream, &pinixv2.InvokeResult{RequestId: requestID, Output: result, Done: true})
+		} else {
+			_ = c.sendInvokeResult(stream, &pinixv2.InvokeResult{RequestId: requestID, Output: []byte(`{}`), Done: true})
+		}
 		return
 	}
 
@@ -835,6 +859,39 @@ func localClipToRegistration(clip ClipConfig) *pinixv2.ClipRegistration {
 		Patterns:     append([]string(nil), manifest.Patterns...),
 		Entities:     entitiesToProto(manifest.Entities),
 		Schedules:    scheduleDeclsToProto(manifest.Schedules),
+	}
+}
+
+// agentClipRegistration returns a ClipRegistration for the built-in agent virtual clip.
+func agentClipRegistration() *pinixv2.ClipRegistration {
+	return &pinixv2.ClipRegistration{
+		Alias:       "agent",
+		Package:     "@pinix/agent",
+		Version:     "1.0.0",
+		Domain:      "ai",
+		Description: "Built-in AI Agent Runtime",
+		Commands: []*pinixv2.CommandInfo{
+			{Name: "chat", Description: "Send a message and get a streaming response",
+				Input: `{"type":"object","properties":{"agent_id":{"type":"string"},"topic_id":{"type":"string"},"message":{"type":"string"}},"required":["agent_id","message"]}`},
+			{Name: "topic list", Description: "List all topics for an agent"},
+			{Name: "topic get", Description: "Get topic details with messages"},
+			{Name: "topic create", Description: "Create a new topic"},
+			{Name: "topic delete", Description: "Delete a topic"},
+			{Name: "topic rename", Description: "Rename a topic"},
+			{Name: "topic search", Description: "Search across topics"},
+			{Name: "run get", Description: "Get run details"},
+			{Name: "run cancel", Description: "Cancel a running run"},
+			{Name: "agent list", Description: "List all agent configurations"},
+			{Name: "agent get", Description: "Get agent details"},
+			{Name: "agent create", Description: "Create a new agent"},
+			{Name: "agent update", Description: "Update agent configuration"},
+			{Name: "agent delete", Description: "Delete an agent"},
+			{Name: "event create", Description: "Create a scheduled event"},
+			{Name: "event list", Description: "List scheduled events"},
+			{Name: "event update", Description: "Update a scheduled event"},
+			{Name: "event cancel", Description: "Cancel a scheduled event"},
+			{Name: "config get", Description: "Get global agent configuration"},
+		},
 	}
 }
 
