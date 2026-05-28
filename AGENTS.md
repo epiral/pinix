@@ -15,6 +15,8 @@ Pinix V2 是一个 **Clip runtime + routing Hub**：
   - `cmd/pinixd/`
   - `cmd/pinix/`
   - `internal/daemon/`
+  - `internal/builtin/`
+  - `internal/agent/`
   - `internal/client/`
   - `internal/ipc/`
   - `proto/pinix/v2/`
@@ -77,19 +79,28 @@ Pinix V2 的核心是：**Hub 只看到 Clip**。
   - 通过 IPC v2 与本地 Clip 进程通信
   - 读取和代理 Clip `web/` 目录
 
-### Agent Runtime
+### Builtin Clip
 
-- pinixd 内置的 Go Agent Runtime（`internal/agent/`）。
-- 以虚拟 Clip `agent` 的身份注册到 Hub，不是安装的 SDK Clip。
-- 包含 LLM Client（支持 DeepSeek/OpenAI/Anthropic/OpenRouter）、Tool Loop（invoke clips as tools）、Context Manager（渐进式压缩）。
-- 数据持久化在 `~/.pinix/data/agent-go/agent.db`（SQLite）。
-- Console（pinixai-web）作为纯 UI 层，通过 Hub invoke 调用 Agent Runtime，不再在浏览器端运行 LLM loop。
-- TUI 入口：`pinix chat`（`internal/tui/`，bubbletea v2）。
+- pinixd 进程内运行的 Clip，通过 `internal/builtin/` 框架统一管理。
+- 不需要 IPC、不需要 Bun 进程、不需要安装——pinixd 启动即可用。
+- 所有 builtin clip 通过 `builtin.Registry` 注册，统一走 Hub Invoke 路由。
+- 在 ListClips 中显示为 `provider=builtin`，通过 ProviderStream 注册到 Cloud Hub。
+- 支持流式输出（`onChunk`）。
+- 当前 builtin clips：
+  - **agent** — AI Agent Runtime（`internal/agent/`），LLM 对话、topic/run 管理
+  - **scheduler** — 定时任务管理（`internal/daemon/scheduler.go`），cron 调度 + SQLite 执行历史
+
+### 添加新的 Builtin Clip
+
+1. 在 `internal/builtin/` 创建 `xxx.go`，实现 `NewXxxClip() *Clip`
+2. 在 `daemon.go` 的初始化代码中调用 `d.builtin.Register(builtin.NewXxxClip(...))`
+3. 不需要改 connect.go、runtime_hub.go、provider.go——框架自动处理 invoke 路由、ListClips、ProviderStream 注册
 
 ### 术语约束
 
-- 当前主线只使用：**Hub / Clip / Edge Clip / Provider / Runtime / Agent Runtime**。
+- 当前主线只使用：**Hub / Clip / Edge Clip / Builtin Clip / Provider / Runtime**。
 - Hub 内部不要再引入额外类型分支来区分 Clip 的"来源类型"。
+- Builtin Clip 是开发者术语，对 Hub 来说就是普通 Clip。
 
 ## 目录结构
 
@@ -102,7 +113,8 @@ pinix/
 │   ├── pinixd/            # 当前 daemon entrypoint（全包 / hub-only / --hub）
 │   └── edge-test/         # Provider 协议联调用的小工具
 ├── internal/
-│   ├── daemon/            # V2 核心：HubService、Provider 管理、Runtime、Portal HTTP、Clip Web 代理
+│   ├── daemon/            # V2 核心：HubService、Provider 管理、Runtime、Portal HTTP、Clip Web 代理、Scheduler
+│   ├── builtin/           # Builtin Clip 框架：Registry + agent/scheduler Clip 桥接
 │   ├── agent/             # Go Agent Runtime：LLM client、tool loop、context manager、SQLite storage
 │   ├── tui/               # TUI（bubbletea v2），`pinix chat` 终端交互界面
 │   ├── client/            # V2 Connect-RPC client（CLI / Provider 复用）
@@ -342,7 +354,7 @@ go test ./...
 
 ### 变更边界
 
-- 新的 V2 功能优先落在：`cmd/pinixd`、`cmd/pinix`、`internal/daemon`、`internal/agent`、`internal/tui`、`internal/client`、`internal/ipc`、`proto/pinix/v2`、`web`。
+- 新的 V2 功能优先落在：`cmd/pinixd`、`cmd/pinix`、`internal/daemon`、`internal/builtin`、`internal/agent`、`internal/tui`、`internal/client`、`internal/ipc`、`proto/pinix/v2`、`web`。
 - 除非明确在做遗留清理，不要把新功能继续写到 v1 遗留目录。
 - 不要在注释、文档、PR 描述里把当前架构写回旧双服务、旧 YAML 配置或旧命令体系。
 
