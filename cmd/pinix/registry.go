@@ -24,20 +24,21 @@ import (
 )
 
 type registryPublishManifest struct {
-	Name         string            `json:"name"`
-	Version      string            `json:"version"`
-	Type         string            `json:"type"`
-	Description  string            `json:"description"`
-	Domain       string            `json:"domain,omitempty"`
-	Runtime      string            `json:"runtime,omitempty"`
-	Main         string            `json:"main,omitempty"`
-	Web          string            `json:"web,omitempty"`
-	Author       string            `json:"author,omitempty"`
-	License      string            `json:"license,omitempty"`
-	Repository   string            `json:"repository,omitempty"`
-	Commands     []daemonpkg.CommandInfo          `json:"commands,omitempty"`
-	Dependencies map[string]daemonpkg.DependencySpec `json:"dependencies,omitempty"`
-	Patterns     []string          `json:"patterns,omitempty"`
+	Name         string                              `json:"name"`
+	Version      string                              `json:"version"`
+	Type         string                              `json:"type"`
+	Description  string                              `json:"description"`
+	Access       string                              `json:"access,omitempty"`
+	Domain       string                              `json:"domain,omitempty"`
+	Runtime      string                              `json:"runtime,omitempty"`
+	Main         string                              `json:"main,omitempty"`
+	Web          string                              `json:"web,omitempty"`
+	Author       string                              `json:"author,omitempty"`
+	License      string                              `json:"license,omitempty"`
+	Repository   string                              `json:"repository,omitempty"`
+	Commands     []daemonpkg.CommandInfo              `json:"commands,omitempty"`
+	Dependencies map[string]daemonpkg.DependencySpec  `json:"dependencies,omitempty"`
+	Patterns     []string                             `json:"patterns,omitempty"`
 }
 
 type localPackageJSON struct {
@@ -85,6 +86,7 @@ func newSearchCommand() *cobra.Command {
 func newPublishCommand() *cobra.Command {
 	var registryURL string
 	var tag string
+	var access string
 
 	cmd := &cobra.Command{
 		Use:   "publish [path]",
@@ -96,10 +98,25 @@ func newPublishCommand() *cobra.Command {
 				dir = args[0]
 			}
 
+			access = strings.TrimSpace(access)
+			if access != "" && access != "public" && access != "private" && access != "restricted" {
+				return fmt.Errorf("--access must be one of: public, private, restricted")
+			}
+
 			manifestRaw, manifest, err := loadRegistryPublishManifest(dir)
 			if err != nil {
 				return err
 			}
+
+			// Apply --access flag to manifest if specified.
+			if access != "" {
+				manifest.Access = access
+				manifestRaw, err = json.Marshal(manifest)
+				if err != nil {
+					return fmt.Errorf("marshal manifest with access: %w", err)
+				}
+			}
+
 			tarball, err := buildRegistryTarball(dir)
 			if err != nil {
 				return err
@@ -126,6 +143,7 @@ func newPublishCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&registryURL, "registry", "", "Pinix Registry base URL (default: from config or https://api.pinixai.com)")
 	cmd.Flags().StringVar(&tag, "tag", "", "dist-tag to publish under")
+	cmd.Flags().StringVar(&access, "access", "", "access level: public, private, or restricted")
 	return cmd
 }
 
