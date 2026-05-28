@@ -344,7 +344,7 @@ func startBrowserDaemon(localHubURL, hubToken, cloudHubURL string) *exec.Cmd {
 	cmd := exec.Command(bin, args...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	cmd.Env = append(os.Environ()) // inherit DISPLAY from ensureDisplay()
+	cmd.Env = os.Environ() // inherit DISPLAY from ensureDisplay()
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	if err := cmd.Start(); err != nil {
