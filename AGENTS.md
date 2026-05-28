@@ -77,10 +77,19 @@ Pinix V2 的核心是：**Hub 只看到 Clip**。
   - 通过 IPC v2 与本地 Clip 进程通信
   - 读取和代理 Clip `web/` 目录
 
+### Agent Runtime
+
+- pinixd 内置的 Go Agent Runtime（`internal/agent/`）。
+- 以虚拟 Clip `agent` 的身份注册到 Hub，不是安装的 SDK Clip。
+- 包含 LLM Client（支持 DeepSeek/OpenAI/Anthropic/OpenRouter）、Tool Loop（invoke clips as tools）、Context Manager（渐进式压缩）。
+- 数据持久化在 `~/.pinix/data/agent-go/agent.db`（SQLite）。
+- Console（pinixai-web）作为纯 UI 层，通过 Hub invoke 调用 Agent Runtime，不再在浏览器端运行 LLM loop。
+- TUI 入口：`pinix chat`（`internal/tui/`，bubbletea v2）。
+
 ### 术语约束
 
-- 当前主线只使用：**Hub / Clip / Edge Clip / Provider / Runtime**。
-- Hub 内部不要再引入额外类型分支来区分 Clip 的“来源类型”。
+- 当前主线只使用：**Hub / Clip / Edge Clip / Provider / Runtime / Agent Runtime**。
+- Hub 内部不要再引入额外类型分支来区分 Clip 的"来源类型"。
 
 ## 目录结构
 
@@ -89,11 +98,13 @@ Pinix V2 的核心是：**Hub 只看到 Clip**。
 ```text
 pinix/
 ├── cmd/
-│   ├── pinix/             # 当前 CLI + MCP gateway
+│   ├── pinix/             # 当前 CLI + MCP gateway + `pinix chat`（TUI 入口）
 │   ├── pinixd/            # 当前 daemon entrypoint（全包 / hub-only / --hub）
 │   └── edge-test/         # Provider 协议联调用的小工具
 ├── internal/
 │   ├── daemon/            # V2 核心：HubService、Provider 管理、Runtime、Portal HTTP、Clip Web 代理
+│   ├── agent/             # Go Agent Runtime：LLM client、tool loop、context manager、SQLite storage
+│   ├── tui/               # TUI（bubbletea v2），`pinix chat` 终端交互界面
 │   ├── client/            # V2 Connect-RPC client（CLI / Provider 复用）
 │   └── ipc/               # pinixd <-> 本地 Clip 的 IPC v2 NDJSON 定义
 ├── proto/pinix/v2/        # 当前外部协议定义
@@ -138,6 +149,7 @@ buf generate
 ./pinix --server http://127.0.0.1:9000 add clip-todo
 ./pinix --server http://127.0.0.1:9000 todo add -- --title "Ship Pinix V2"
 ./pinix mcp --all --server http://127.0.0.1:9000
+./pinix chat                         # TUI Agent 交互（bubbletea v2）
 ```
 
 - 运行本地 Runtime 时需要 `bun`；`pinixd` 会从 `PATH` 或 `~/.bun/bin/bun` 自动探测。
@@ -330,7 +342,7 @@ go test ./...
 
 ### 变更边界
 
-- 新的 V2 功能优先落在：`cmd/pinixd`、`cmd/pinix`、`internal/daemon`、`internal/client`、`internal/ipc`、`proto/pinix/v2`、`web`。
+- 新的 V2 功能优先落在：`cmd/pinixd`、`cmd/pinix`、`internal/daemon`、`internal/agent`、`internal/tui`、`internal/client`、`internal/ipc`、`proto/pinix/v2`、`web`。
 - 除非明确在做遗留清理，不要把新功能继续写到 v1 遗留目录。
 - 不要在注释、文档、PR 描述里把当前架构写回旧双服务、旧 YAML 配置或旧命令体系。
 
