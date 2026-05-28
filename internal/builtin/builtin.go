@@ -47,7 +47,7 @@ type Clip struct {
 func (c *Clip) Invoke(ctx context.Context, command string, input json.RawMessage, onChunk ChunkFunc) (json.RawMessage, error) {
 	command = strings.TrimSpace(command)
 	for _, cmd := range c.Commands {
-		if cmd.Name == command {
+		if cmd.Name == command && cmd.Handler != nil {
 			return cmd.Handler(ctx, input, onChunk)
 		}
 	}
