@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -80,8 +81,9 @@ func (s *Scheduler) SetHubToken(token string) {
 	s.mu.Unlock()
 }
 
-// Start loads schedules from the registry and starts the cron engine.
+// Start loads schedules from the registry, registers clip-declared schedules, and starts the cron engine.
 func (s *Scheduler) Start() error {
+	// Load user-created schedules
 	schedules, err := s.registry.ListSchedules()
 	if err != nil {
 		return fmt.Errorf("load schedules: %w", err)
@@ -98,9 +100,69 @@ func (s *Scheduler) Start() error {
 		}
 	}
 
+	// Load clip-declared schedules from manifests
+	clips, err := s.registry.ListClips()
+	if err != nil {
+		slog.Warn("scheduler: failed to load clips for manifest schedules", "error", err)
+	} else {
+		for _, clip := range clips {
+			s.registerClipSchedules(clip.Name, clip.Manifest)
+		}
+	}
+
 	s.cron.Start()
 	slog.Info("scheduler: started", "schedules", len(schedules))
 	return nil
+}
+
+// RegisterClipSchedules registers (or re-registers) all schedule declarations
+// from a Clip's manifest. Called when a Clip is installed or its manifest updates.
+func (s *Scheduler) RegisterClipSchedules(clipName string, manifest *ManifestCache) {
+	s.registerClipSchedules(clipName, manifest)
+}
+
+// UnregisterClipSchedules removes all clip-declared schedules for the given clip.
+func (s *Scheduler) UnregisterClipSchedules(clipName string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	prefix := "clip:" + clipName + ":"
+	for id, entry := range s.entries {
+		if strings.HasPrefix(id, prefix) {
+			s.cron.Remove(entry.entryID)
+			delete(s.entries, id)
+			slog.Info("scheduler: unregistered clip schedule", "id", id)
+		}
+	}
+}
+
+func (s *Scheduler) registerClipSchedules(clipName string, manifest *ManifestCache) {
+	if manifest == nil || len(manifest.Schedules) == 0 {
+		return
+	}
+
+	for _, decl := range manifest.Schedules {
+		// Clip-declared schedule IDs are prefixed to avoid collision with user schedules
+		scheduleID := "clip:" + clipName + ":" + decl.Command
+		sc := ScheduleConfig{
+			ID:          scheduleID,
+			Clip:        clipName,
+			Command:     decl.Command,
+			Cron:        decl.Cron,
+			Input:       decl.Input,
+			Description: decl.Description,
+			Enabled:     true,
+		}
+		if err := s.registerEntry(sc); err != nil {
+			slog.Warn("scheduler: skip invalid clip schedule",
+				"clip", clipName, "command", decl.Command, "cron", decl.Cron, "error", err,
+			)
+		} else {
+			slog.Info("scheduler: registered clip schedule",
+				"id", scheduleID, "clip", clipName, "command", decl.Command, "cron", decl.Cron,
+			)
+		}
+	}
 }
 
 // Stop gracefully shuts down the scheduler.

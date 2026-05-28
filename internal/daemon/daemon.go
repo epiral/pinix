@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	pinixv2 "github.com/epiral/pinix/gen/go/pinix/v2"
 	"github.com/epiral/pinix/internal/agent"
 )
 
@@ -206,9 +207,29 @@ func (d *Daemon) hasLocalRuntime() bool {
 	return d != nil && d.process != nil
 }
 
-// SetScheduler attaches a scheduler to this daemon. Must be called before ServeHTTP or ConnectHub.
+// SetScheduler attaches a scheduler to this daemon and wires up clip-declared schedule registration.
 func (d *Daemon) SetScheduler(s *Scheduler) {
 	d.scheduler = s
+
+	// When a provider registers a clip with schedule declarations, auto-register them.
+	if d.provider != nil {
+		d.provider.SetOnClipAdded(func(alias string, registration *pinixv2.ClipRegistration) {
+			if s == nil || registration == nil || len(registration.GetSchedules()) == 0 {
+				return
+			}
+			decls := make([]ManifestScheduleDecl, 0, len(registration.GetSchedules()))
+			for _, sd := range registration.GetSchedules() {
+				decls = append(decls, ManifestScheduleDecl{
+					Command:     sd.GetCommand(),
+					Cron:        sd.GetCron(),
+					Input:       sd.GetInput(),
+					Description: sd.GetDescription(),
+				})
+			}
+			manifest := &ManifestCache{Schedules: decls}
+			s.RegisterClipSchedules(alias, manifest)
+		})
+	}
 }
 
 // GetScheduler returns the attached scheduler, or nil.

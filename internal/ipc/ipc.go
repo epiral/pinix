@@ -76,6 +76,15 @@ type Manifest struct {
 	Dependencies Dependencies                   `json:"dependencies,omitempty"`
 	Patterns     []string                       `json:"patterns,omitempty"`
 	Entities     map[string]json.RawMessage     `json:"entities,omitempty"`
+	Schedules    []ManifestSchedule             `json:"schedules,omitempty"`
+}
+
+// ManifestSchedule is a Clip-declared scheduled command.
+type ManifestSchedule struct {
+	Command     string `json:"command"`
+	Cron        string `json:"cron"`
+	Input       string `json:"input,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 type Dependencies map[string]DependencySpec

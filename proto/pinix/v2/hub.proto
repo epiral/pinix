@@ -183,6 +183,15 @@ message ClipRegistration {
   repeated string patterns = 10;
   map<string, string> entities = 11;
   string description = 12;
+  repeated ScheduleDeclaration schedules = 13;
+}
+
+// Clip-declared schedule: a command the Clip wants to run periodically.
+message ScheduleDeclaration {
+  string command = 1;
+  string cron = 2;
+  string input = 3;          // JSON string
+  string description = 4;
 }
 
 message ClipAdded {
