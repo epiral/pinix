@@ -282,6 +282,7 @@ func (r *Runtime) runLoop(ctx context.Context, agt *Agent, topic *Topic, run *Ru
 			onEvent(StreamEvent{
 				Type:    StreamEventToolResult,
 				ID:      tc.ID,
+				Name:    tc.Name,
 				Content: toolResult,
 			})
 
