@@ -70,6 +70,7 @@ Docker:
 	rootCmd.AddCommand(newInvokeCommand())
 	rootCmd.AddCommand(newDataCommand())
 	rootCmd.AddCommand(newHubCommand())
+	rootCmd.AddCommand(newOrgGroupCommand())
 	rootCmd.AddCommand(newRegistryGroupCommand())
 	rootCmd.AddCommand(newConfigCommand())
 	rootCmd.AddCommand(newScheduleCommand())
