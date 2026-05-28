@@ -187,6 +187,15 @@ func runDaemon(opts daemonOptions) error {
 			return err
 		}
 		defer func() { _ = d.Close() }()
+
+		// Start scheduler (invokes through external Hub)
+		sched := daemon.NewScheduler(registry, hubURL)
+		sched.SetHubToken(hubToken)
+		d.SetScheduler(sched)
+		if err := sched.Start(); err != nil {
+			slog.Warn("scheduler: failed to start", "error", err)
+		}
+
 		return d.ConnectHub(ctx, hubURL, opts.port, hubToken)
 	}
 
@@ -197,6 +206,13 @@ func runDaemon(opts daemonOptions) error {
 	hubDaemon, err := daemon.NewHubDaemon(registry)
 	if err != nil {
 		return err
+	}
+
+	// Start scheduler on hubDaemon (invokes through local Hub)
+	sched := daemon.NewScheduler(registry, localHubURL)
+	hubDaemon.SetScheduler(sched)
+	if err := sched.Start(); err != nil {
+		slog.Warn("scheduler: failed to start", "error", err)
 	}
 
 	var wg sync.WaitGroup
