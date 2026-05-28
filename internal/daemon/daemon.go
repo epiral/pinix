@@ -19,6 +19,7 @@ import (
 
 	pinixv2 "github.com/epiral/pinix/gen/go/pinix/v2"
 	"github.com/epiral/pinix/internal/agent"
+	"github.com/epiral/pinix/internal/builtin"
 )
 
 type Daemon struct {
@@ -29,6 +30,7 @@ type Daemon struct {
 	handler      *Handler
 	scheduler    *Scheduler
 	agentHandler *agent.Handler
+	builtin      *builtin.Registry
 
 	mu         sync.Mutex
 	httpServer *http.Server
@@ -207,9 +209,16 @@ func (d *Daemon) hasLocalRuntime() bool {
 	return d != nil && d.process != nil
 }
 
-// SetScheduler attaches a scheduler to this daemon and wires up clip-declared schedule registration.
+// SetScheduler attaches a scheduler to this daemon, registers the builtin scheduler Clip,
+// and wires up clip-declared schedule registration.
 func (d *Daemon) SetScheduler(s *Scheduler) {
 	d.scheduler = s
+
+	// Register builtin scheduler Clip
+	if d.builtin == nil {
+		d.builtin = builtin.NewRegistry()
+	}
+	d.builtin.Register(builtin.NewSchedulerClip(NewSchedulerClipHandler(s)))
 
 	// When a provider registers a clip with schedule declarations, auto-register them.
 	if d.provider != nil {
@@ -230,6 +239,11 @@ func (d *Daemon) SetScheduler(s *Scheduler) {
 			s.RegisterClipSchedules(alias, manifest)
 		})
 	}
+}
+
+// GetBuiltinRegistry returns the builtin clip registry, or nil.
+func (d *Daemon) GetBuiltinRegistry() *builtin.Registry {
+	return d.builtin
 }
 
 // GetScheduler returns the attached scheduler, or nil.

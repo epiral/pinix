@@ -76,6 +76,29 @@ func (h *HubService) ListClips(context.Context, *connect.Request[pinixv2.ListCli
 			Status:      pinixv2.ClipStatus_CLIP_STATUS_RUNNING,
 		})
 	}
+	// Add builtin clips
+	if h.daemon != nil && h.daemon.builtin != nil {
+		for _, bc := range h.daemon.builtin.List() {
+			cmds := make([]*pinixv2.CommandInfo, 0, len(bc.Commands))
+			for _, c := range bc.Commands {
+				cmds = append(cmds, &pinixv2.CommandInfo{
+					Name:        c.Name,
+					Description: c.Description,
+					Input:       c.Input,
+				})
+			}
+			clips = append(clips, &pinixv2.ClipInfo{
+				Name:        bc.Name,
+				Package:     bc.Package,
+				Version:     bc.Version,
+				Domain:      bc.Domain,
+				Description: bc.Description,
+				Provider:    "builtin",
+				Commands:    cmds,
+				Status:      pinixv2.ClipStatus_CLIP_STATUS_RUNNING,
+			})
+		}
+	}
 	sort.Slice(clips, func(i, j int) bool {
 		return clips[i].GetName() < clips[j].GetName()
 	})
@@ -218,6 +241,31 @@ func (h *HubService) Invoke(ctx context.Context, req *connect.Request[pinixv2.In
 			)
 		}
 		return err
+	}
+
+	// Builtin clips: intercept BEFORE resolveClipName (builtins are not in registry)
+	if h.daemon != nil && h.daemon.builtin != nil {
+		if clip, ok := h.daemon.builtin.Get(reqClipName); ok {
+			slog.Info("hub.invoke: start",
+				"trace_id", traceID, "target", reqClipName, "command", command, "route", "builtin",
+			)
+			output, invokeErr := clip.Invoke(ctx, command, req.Msg.GetInput())
+			if invokeErr != nil {
+				slog.Error("hub.invoke: error",
+					"trace_id", traceID, "target", reqClipName, "command", command,
+					"route", "builtin", "duration_ms", time.Since(start).Milliseconds(), "error", invokeErr,
+				)
+				return connect.NewError(connect.CodeInternal, invokeErr)
+			}
+			if err := stream.Send(&pinixv2.InvokeResponse{Output: output}); err != nil {
+				return err
+			}
+			slog.Info("hub.invoke: done",
+				"trace_id", traceID, "target", reqClipName, "command", command,
+				"route", "builtin", "duration_ms", time.Since(start).Milliseconds(),
+			)
+			return nil
+		}
 	}
 
 	clipName, err := h.resolveClipName(reqClipName)
@@ -1365,183 +1413,4 @@ func (h *HubService) resolveClipName(name string) (string, error) {
 	}
 }
 
-// ============================================================
-//  Schedule RPCs
-// ============================================================
 
-func (h *HubService) requireScheduler() (*Scheduler, error) {
-	if h.daemon == nil || h.daemon.scheduler == nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("scheduler is not available"))
-	}
-	return h.daemon.scheduler, nil
-}
-
-func (h *HubService) ListSchedules(ctx context.Context, req *connect.Request[pinixv2.ListSchedulesRequest]) (*connect.Response[pinixv2.ListSchedulesResponse], error) {
-	sched, err := h.requireScheduler()
-	if err != nil {
-		return nil, err
-	}
-	statuses, err := sched.List()
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	pbStatuses := make([]*pinixv2.ScheduleStatus, 0, len(statuses))
-	for _, s := range statuses {
-		pbStatuses = append(pbStatuses, scheduleStatusToProto(s))
-	}
-	return connect.NewResponse(&pinixv2.ListSchedulesResponse{
-		Schedules: pbStatuses,
-	}), nil
-}
-
-func (h *HubService) AddSchedule(ctx context.Context, req *connect.Request[pinixv2.AddScheduleRequest]) (*connect.Response[pinixv2.AddScheduleResponse], error) {
-	sched, err := h.requireScheduler()
-	if err != nil {
-		return nil, err
-	}
-	sc := ScheduleConfig{
-		ID:          strings.TrimSpace(req.Msg.GetId()),
-		Clip:        strings.TrimSpace(req.Msg.GetClip()),
-		Command:     strings.TrimSpace(req.Msg.GetCommand()),
-		Cron:        strings.TrimSpace(req.Msg.GetCron()),
-		Input:       req.Msg.GetInput(),
-		Description: req.Msg.GetDescription(),
-		Enabled:     true,
-	}
-	if sc.ID == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("id is required"))
-	}
-	if sc.Clip == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("clip is required"))
-	}
-	if sc.Command == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("command is required"))
-	}
-	if sc.Cron == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("cron is required"))
-	}
-	if err := sched.Add(sc); err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
-	}
-	return connect.NewResponse(&pinixv2.AddScheduleResponse{
-		Rule: scheduleConfigToProto(sc),
-	}), nil
-}
-
-func (h *HubService) RemoveSchedule(ctx context.Context, req *connect.Request[pinixv2.RemoveScheduleRequest]) (*connect.Response[pinixv2.RemoveScheduleResponse], error) {
-	sched, err := h.requireScheduler()
-	if err != nil {
-		return nil, err
-	}
-	id := strings.TrimSpace(req.Msg.GetId())
-	if id == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("id is required"))
-	}
-	if err := sched.Remove(id); err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, err)
-	}
-	return connect.NewResponse(&pinixv2.RemoveScheduleResponse{}), nil
-}
-
-func (h *HubService) PauseSchedule(ctx context.Context, req *connect.Request[pinixv2.PauseScheduleRequest]) (*connect.Response[pinixv2.PauseScheduleResponse], error) {
-	sched, err := h.requireScheduler()
-	if err != nil {
-		return nil, err
-	}
-	id := strings.TrimSpace(req.Msg.GetId())
-	if id == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("id is required"))
-	}
-	if err := sched.Pause(id); err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, err)
-	}
-	return connect.NewResponse(&pinixv2.PauseScheduleResponse{}), nil
-}
-
-func (h *HubService) ResumeSchedule(ctx context.Context, req *connect.Request[pinixv2.ResumeScheduleRequest]) (*connect.Response[pinixv2.ResumeScheduleResponse], error) {
-	sched, err := h.requireScheduler()
-	if err != nil {
-		return nil, err
-	}
-	id := strings.TrimSpace(req.Msg.GetId())
-	if id == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("id is required"))
-	}
-	if err := sched.Resume(id); err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, err)
-	}
-	return connect.NewResponse(&pinixv2.ResumeScheduleResponse{}), nil
-}
-
-func (h *HubService) RunSchedule(ctx context.Context, req *connect.Request[pinixv2.RunScheduleRequest]) (*connect.Response[pinixv2.RunScheduleResponse], error) {
-	sched, err := h.requireScheduler()
-	if err != nil {
-		return nil, err
-	}
-	id := strings.TrimSpace(req.Msg.GetId())
-	if id == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("id is required"))
-	}
-	if err := sched.RunNow(id); err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, err)
-	}
-	return connect.NewResponse(&pinixv2.RunScheduleResponse{}), nil
-}
-
-func (h *HubService) GetScheduleHistory(ctx context.Context, req *connect.Request[pinixv2.GetScheduleHistoryRequest]) (*connect.Response[pinixv2.GetScheduleHistoryResponse], error) {
-	sched, err := h.requireScheduler()
-	if err != nil {
-		return nil, err
-	}
-	id := strings.TrimSpace(req.Msg.GetId())
-	if id == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("id is required"))
-	}
-	executions := sched.History(id)
-	pbExecs := make([]*pinixv2.ScheduleExecution, 0, len(executions))
-	for _, e := range executions {
-		pbExecs = append(pbExecs, scheduleExecToProto(e))
-	}
-	return connect.NewResponse(&pinixv2.GetScheduleHistoryResponse{
-		Executions: pbExecs,
-	}), nil
-}
-
-// --- Proto conversion helpers ---
-
-func scheduleConfigToProto(sc ScheduleConfig) *pinixv2.ScheduleRule {
-	return &pinixv2.ScheduleRule{
-		Id:          sc.ID,
-		Clip:        sc.Clip,
-		Command:     sc.Command,
-		Cron:        sc.Cron,
-		Input:       sc.Input,
-		Description: sc.Description,
-		Enabled:     sc.Enabled,
-	}
-}
-
-func scheduleStatusToProto(s ScheduleStatus) *pinixv2.ScheduleStatus {
-	ps := &pinixv2.ScheduleStatus{
-		Rule: scheduleConfigToProto(s.Config),
-	}
-	if s.NextRun != nil {
-		ps.NextRun = s.NextRun.Format(time.RFC3339)
-	}
-	if s.LastRun != nil {
-		ps.LastRun = scheduleExecToProto(*s.LastRun)
-	}
-	return ps
-}
-
-func scheduleExecToProto(e ScheduleExecution) *pinixv2.ScheduleExecution {
-	return &pinixv2.ScheduleExecution{
-		ScheduleId: e.ScheduleID,
-		StartedAt:  e.StartedAt.Format(time.RFC3339),
-		FinishedAt: e.FinishedAt.Format(time.RFC3339),
-		DurationMs: e.DurationMs,
-		Success:    e.Success,
-		Output:     e.Output,
-		Error:      e.Error,
-	}
-}
