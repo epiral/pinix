@@ -157,7 +157,7 @@ func (h *Handler) handleTopicList(_ context.Context, input json.RawMessage) (jso
 	if topics == nil {
 		topics = []Topic{}
 	}
-	return json.Marshal(topics)
+	return json.Marshal(map[string]any{"topics": topics})
 }
 
 func (h *Handler) handleTopicGet(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
@@ -179,6 +179,9 @@ func (h *Handler) handleTopicGet(_ context.Context, input json.RawMessage) (json
 	msgs, err := h.runtime.store.ListMessages(topic.ID)
 	if err != nil {
 		return nil, err
+	}
+	if msgs == nil {
+		msgs = []Message{}
 	}
 
 	result := map[string]any{
@@ -308,7 +311,7 @@ func (h *Handler) handleAgentList(_ context.Context) (json.RawMessage, error) {
 	for i := range agents {
 		agents[i].APIKey = maskKey(agents[i].APIKey)
 	}
-	return json.Marshal(agents)
+	return json.Marshal(map[string]any{"agents": agents})
 }
 
 func (h *Handler) handleAgentGet(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
@@ -452,7 +455,7 @@ func (h *Handler) handleEventList(_ context.Context, input json.RawMessage) (jso
 	if events == nil {
 		events = []Event{}
 	}
-	return json.Marshal(events)
+	return json.Marshal(map[string]any{"events": events})
 }
 
 func (h *Handler) handleEventUpdate(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
