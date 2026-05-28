@@ -145,11 +145,12 @@ func (h *SchedulerClipHandler) history(input json.RawMessage) (json.RawMessage, 
 	}
 	execs := h.sched.History(id)
 	type execEntry struct {
-		StartedAt  string `json:"started_at"`
-		FinishedAt string `json:"finished_at"`
-		DurationMs int64  `json:"duration_ms"`
-		Success    bool   `json:"success"`
-		Error      string `json:"error,omitempty"`
+		StartedAt  string          `json:"started_at"`
+		FinishedAt string          `json:"finished_at"`
+		DurationMs int64           `json:"duration_ms"`
+		Success    bool            `json:"success"`
+		Output     json.RawMessage `json:"output,omitempty"`
+		Error      string          `json:"error,omitempty"`
 	}
 	entries := make([]execEntry, 0, len(execs))
 	for _, e := range execs {
@@ -158,6 +159,7 @@ func (h *SchedulerClipHandler) history(input json.RawMessage) (json.RawMessage, 
 			FinishedAt: e.FinishedAt.Format("2006-01-02T15:04:05Z07:00"),
 			DurationMs: e.DurationMs,
 			Success:    e.Success,
+			Output:     e.Output,
 			Error:      e.Error,
 		})
 	}
