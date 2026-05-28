@@ -189,7 +189,7 @@ func runDaemon(opts daemonOptions) error {
 		defer func() { _ = d.Close() }()
 
 		// Start scheduler (invokes through external Hub)
-		sched := daemon.NewScheduler(registry, hubURL)
+		sched := daemon.NewScheduler(registry, hubURL, filepath.Join(registry.RootDir(), "data", "scheduler"))
 		sched.SetHubToken(hubToken)
 		d.SetScheduler(sched)
 		if err := sched.Start(); err != nil {
@@ -209,7 +209,7 @@ func runDaemon(opts daemonOptions) error {
 	}
 
 	// Start scheduler on hubDaemon (invokes through local Hub)
-	sched := daemon.NewScheduler(registry, localHubURL)
+	sched := daemon.NewScheduler(registry, localHubURL, filepath.Join(registry.RootDir(), "data", "scheduler"))
 	hubDaemon.SetScheduler(sched)
 	if err := sched.Start(); err != nil {
 		slog.Warn("scheduler: failed to start", "error", err)
