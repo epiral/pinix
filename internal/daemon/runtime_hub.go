@@ -19,6 +19,7 @@ import (
 
 	connect "connectrpc.com/connect"
 	pinixv2 "github.com/epiral/pinix/gen/go/pinix/v2"
+	"github.com/epiral/pinix/internal/builtin"
 	clientpkg "github.com/epiral/pinix/internal/client"
 	"github.com/epiral/pinix/internal/ipc"
 )
@@ -346,9 +347,11 @@ func (c *runtimeHubConnector) registerMessage(ctx context.Context) (*pinixv2.Pro
 		registrations = append(registrations, localClipToRegistration(clip))
 	}
 
-	// Register the built-in agent virtual clip so it appears on remote Hubs
-	if c.daemon.agentHandler != nil {
-		registrations = append(registrations, agentClipRegistration())
+	// Register builtin clips so they appear on remote Hubs
+	if c.daemon.builtin != nil {
+		for _, bc := range c.daemon.builtin.List() {
+			registrations = append(registrations, builtinClipToRegistration(bc))
+		}
 	}
 
 	select {
@@ -493,22 +496,24 @@ func (c *runtimeHubConnector) handleInvokeCommand(ctx context.Context, stream *c
 		return
 	}
 
-	// Agent virtual clip: route to built-in Go Agent Runtime
-	if clipName == "agent" && c.daemon.agentHandler != nil {
-		onChunk := func(chunk json.RawMessage) {
-			_ = c.sendInvokeResult(stream, &pinixv2.InvokeResult{RequestId: requestID, Output: chunk})
-		}
-		result, err := c.daemon.agentHandler.HandleInvoke(ctx, commandName, json.RawMessage(command.GetInput()), onChunk)
-		if err != nil {
-			c.sendInvokeError(stream, requestID, err)
+	// Builtin clips: route to in-process handlers
+	if c.daemon.builtin != nil {
+		if bc, ok := c.daemon.builtin.Get(clipName); ok {
+			onChunk := func(chunk json.RawMessage) {
+				_ = c.sendInvokeResult(stream, &pinixv2.InvokeResult{RequestId: requestID, Output: chunk})
+			}
+			result, err := bc.Invoke(ctx, commandName, json.RawMessage(command.GetInput()), onChunk)
+			if err != nil {
+				c.sendInvokeError(stream, requestID, err)
+				return
+			}
+			if len(result) > 0 {
+				_ = c.sendInvokeResult(stream, &pinixv2.InvokeResult{RequestId: requestID, Output: result, Done: true})
+			} else {
+				_ = c.sendInvokeResult(stream, &pinixv2.InvokeResult{RequestId: requestID, Output: []byte(`{}`), Done: true})
+			}
 			return
 		}
-		if len(result) > 0 {
-			_ = c.sendInvokeResult(stream, &pinixv2.InvokeResult{RequestId: requestID, Output: result, Done: true})
-		} else {
-			_ = c.sendInvokeResult(stream, &pinixv2.InvokeResult{RequestId: requestID, Output: []byte(`{}`), Done: true})
-		}
-		return
 	}
 
 	clip, ok, err := c.daemon.registry.GetClip(clipName)
@@ -862,36 +867,23 @@ func localClipToRegistration(clip ClipConfig) *pinixv2.ClipRegistration {
 	}
 }
 
-// agentClipRegistration returns a ClipRegistration for the built-in agent virtual clip.
-func agentClipRegistration() *pinixv2.ClipRegistration {
+// builtinClipToRegistration converts a builtin.Clip to a proto ClipRegistration.
+func builtinClipToRegistration(bc *builtin.Clip) *pinixv2.ClipRegistration {
+	cmds := make([]*pinixv2.CommandInfo, 0, len(bc.Commands))
+	for _, c := range bc.Commands {
+		cmds = append(cmds, &pinixv2.CommandInfo{
+			Name:        c.Name,
+			Description: c.Description,
+			Input:       c.Input,
+		})
+	}
 	return &pinixv2.ClipRegistration{
-		Alias:       "agent",
-		Package:     "@pinix/agent",
-		Version:     "1.0.0",
-		Domain:      "ai",
-		Description: "Built-in AI Agent Runtime",
-		Commands: []*pinixv2.CommandInfo{
-			{Name: "chat", Description: "Send a message and get a streaming response",
-				Input: `{"type":"object","properties":{"agent_id":{"type":"string"},"topic_id":{"type":"string"},"message":{"type":"string"}},"required":["agent_id","message"]}`},
-			{Name: "topic list", Description: "List all topics for an agent"},
-			{Name: "topic get", Description: "Get topic details with messages"},
-			{Name: "topic create", Description: "Create a new topic"},
-			{Name: "topic delete", Description: "Delete a topic"},
-			{Name: "topic rename", Description: "Rename a topic"},
-			{Name: "topic search", Description: "Search across topics"},
-			{Name: "run get", Description: "Get run details"},
-			{Name: "run cancel", Description: "Cancel a running run"},
-			{Name: "agent list", Description: "List all agent configurations"},
-			{Name: "agent get", Description: "Get agent details"},
-			{Name: "agent create", Description: "Create a new agent"},
-			{Name: "agent update", Description: "Update agent configuration"},
-			{Name: "agent delete", Description: "Delete an agent"},
-			{Name: "event create", Description: "Create a scheduled event"},
-			{Name: "event list", Description: "List scheduled events"},
-			{Name: "event update", Description: "Update a scheduled event"},
-			{Name: "event cancel", Description: "Cancel a scheduled event"},
-			{Name: "config get", Description: "Get global agent configuration"},
-		},
+		Alias:       bc.Name,
+		Package:     bc.Package,
+		Version:     bc.Version,
+		Domain:      bc.Domain,
+		Description: bc.Description,
+		Commands:    cmds,
 	}
 }
 

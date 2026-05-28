@@ -64,18 +64,6 @@ func (h *HubService) ListClips(context.Context, *connect.Request[pinixv2.ListCli
 	if h.daemon != nil && h.daemon.provider != nil {
 		clips = append(clips, h.daemon.provider.ListClipInfos()...)
 	}
-	// Add agent virtual clip
-	if h.daemon != nil && h.daemon.agentHandler != nil {
-		clips = append(clips, &pinixv2.ClipInfo{
-			Name:        "agent",
-			Package:     "@pinix/agent",
-			Version:     "1.0.0",
-			Domain:      "ai",
-			Description: "Built-in AI Agent Runtime",
-			Provider:    "local",
-			Status:      pinixv2.ClipStatus_CLIP_STATUS_RUNNING,
-		})
-	}
 	// Add builtin clips
 	if h.daemon != nil && h.daemon.builtin != nil {
 		for _, bc := range h.daemon.builtin.List() {
@@ -222,43 +210,28 @@ func (h *HubService) Invoke(ctx context.Context, req *connect.Request[pinixv2.In
 		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("command is required"))
 	}
 
-	// Agent virtual clip: intercept BEFORE resolveClipName (agent is not in registry)
-	reqClipName := strings.TrimSpace(req.Msg.GetClipName())
-	if reqClipName == "agent" && h.daemon != nil && h.daemon.agentHandler != nil {
-		slog.Info("hub.invoke: start",
-			"trace_id", traceID, "target", "agent", "command", command, "route", "agent",
-		)
-		err := h.invokeAgentClip(ctx, command, req.Msg.GetInput(), stream)
-		if err != nil {
-			slog.Error("hub.invoke: error",
-				"trace_id", traceID, "target", "agent", "command", command,
-				"route", "agent", "duration_ms", time.Since(start).Milliseconds(), "error", err,
-			)
-		} else {
-			slog.Info("hub.invoke: done",
-				"trace_id", traceID, "target", "agent", "command", command,
-				"route", "agent", "duration_ms", time.Since(start).Milliseconds(),
-			)
-		}
-		return err
-	}
-
 	// Builtin clips: intercept BEFORE resolveClipName (builtins are not in registry)
+	reqClipName := strings.TrimSpace(req.Msg.GetClipName())
 	if h.daemon != nil && h.daemon.builtin != nil {
 		if clip, ok := h.daemon.builtin.Get(reqClipName); ok {
 			slog.Info("hub.invoke: start",
 				"trace_id", traceID, "target", reqClipName, "command", command, "route", "builtin",
 			)
-			output, invokeErr := clip.Invoke(ctx, command, req.Msg.GetInput())
+			onChunk := func(chunk json.RawMessage) {
+				_ = stream.Send(&pinixv2.InvokeResponse{Output: chunk})
+			}
+			output, invokeErr := clip.Invoke(ctx, command, req.Msg.GetInput(), onChunk)
 			if invokeErr != nil {
 				slog.Error("hub.invoke: error",
 					"trace_id", traceID, "target", reqClipName, "command", command,
 					"route", "builtin", "duration_ms", time.Since(start).Milliseconds(), "error", invokeErr,
 				)
-				return connect.NewError(connect.CodeInternal, invokeErr)
+				return sendInvokeApplicationError(stream, invokeErr)
 			}
-			if err := stream.Send(&pinixv2.InvokeResponse{Output: output}); err != nil {
-				return err
+			if len(output) > 0 {
+				if err := stream.Send(&pinixv2.InvokeResponse{Output: output}); err != nil {
+					return err
+				}
 			}
 			slog.Info("hub.invoke: done",
 				"trace_id", traceID, "target", reqClipName, "command", command,
@@ -913,21 +886,6 @@ func (h *HubService) invokeProviderClipCallback(ctx context.Context, clipName, c
 			return nil
 		}
 	}
-}
-
-func (h *HubService) invokeAgentClip(ctx context.Context, command string, input []byte, stream *connect.ServerStream[pinixv2.InvokeResponse]) error {
-	onChunk := func(chunk json.RawMessage) {
-		_ = stream.Send(&pinixv2.InvokeResponse{Output: chunk})
-	}
-
-	result, err := h.daemon.agentHandler.HandleInvoke(ctx, command, json.RawMessage(input), onChunk)
-	if err != nil {
-		return sendInvokeApplicationError(stream, err)
-	}
-	if len(result) > 0 {
-		_ = stream.Send(&pinixv2.InvokeResponse{Output: result})
-	}
-	return nil
 }
 
 func (h *HubService) invokeLocalClip(ctx context.Context, clip ClipConfig, command string, input []byte, clipToken string, stream *connect.ServerStream[pinixv2.InvokeResponse]) error {

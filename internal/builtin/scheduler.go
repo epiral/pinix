@@ -17,14 +17,8 @@ type SchedulerInvoker interface {
 
 // NewSchedulerClip creates a builtin Clip backed by a SchedulerInvoker.
 func NewSchedulerClip(invoker SchedulerInvoker) *Clip {
-	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
-		// This will be overridden per-command below; placeholder.
-		return nil, nil
-	}
-	_ = handler
-
 	makeHandler := func(command string) CommandHandler {
-		return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		return func(ctx context.Context, input json.RawMessage, _ ChunkFunc) (json.RawMessage, error) {
 			return invoker.HandleCommand(ctx, command, input)
 		}
 	}

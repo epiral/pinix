@@ -11,8 +11,13 @@ import (
 	"strings"
 )
 
+// ChunkFunc is called to send streaming output chunks.
+type ChunkFunc func(json.RawMessage)
+
 // CommandHandler handles a single command invocation.
-type CommandHandler func(ctx context.Context, input json.RawMessage) (json.RawMessage, error)
+// onChunk may be nil for non-streaming callers; handlers that support streaming
+// should check before calling it.
+type CommandHandler func(ctx context.Context, input json.RawMessage, onChunk ChunkFunc) (json.RawMessage, error)
 
 // CommandDef describes a command exposed by a builtin Clip.
 type CommandDef struct {
@@ -33,11 +38,12 @@ type Clip struct {
 }
 
 // Invoke dispatches a command to the matching handler.
-func (c *Clip) Invoke(ctx context.Context, command string, input json.RawMessage) (json.RawMessage, error) {
+// onChunk may be nil for non-streaming callers.
+func (c *Clip) Invoke(ctx context.Context, command string, input json.RawMessage, onChunk ChunkFunc) (json.RawMessage, error) {
 	command = strings.TrimSpace(command)
 	for _, cmd := range c.Commands {
 		if cmd.Name == command {
-			return cmd.Handler(ctx, input)
+			return cmd.Handler(ctx, input, onChunk)
 		}
 	}
 	return nil, fmt.Errorf("command %q not found on builtin clip %q", command, c.Name)

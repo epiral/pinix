@@ -23,14 +23,13 @@ import (
 )
 
 type Daemon struct {
-	registry     *Registry
-	process      *ProcessManager
-	provider     *ProviderManager
-	runtime      *RuntimeManager
-	handler      *Handler
-	scheduler    *Scheduler
-	agentHandler *agent.Handler
-	builtin      *builtin.Registry
+	registry  *Registry
+	process   *ProcessManager
+	provider  *ProviderManager
+	runtime   *RuntimeManager
+	handler   *Handler
+	scheduler *Scheduler
+	builtin   *builtin.Registry
 
 	mu         sync.Mutex
 	httpServer *http.Server
@@ -50,12 +49,13 @@ func NewDaemon(registry *Registry, process *ProcessManager) (*Daemon, error) {
 		process:  process,
 		provider: NewProviderManager(registry),
 		runtime:  NewRuntimeManager(),
+		builtin:  builtin.NewRegistry(),
 	}
 	d.process.provider = d.provider
 	d.provider.registry = registry
 	d.handler = NewHandler(registry, process)
 
-	// Initialize agent runtime
+	// Register builtin clips
 	d.initAgentRuntime()
 
 	return d, nil
@@ -76,7 +76,8 @@ func (d *Daemon) initAgentRuntime() {
 	}
 
 	rt := agent.NewRuntime(store, invoker, getClips)
-	d.agentHandler = agent.NewHandler(rt)
+	handler := agent.NewHandler(rt)
+	d.builtin.Register(builtin.NewAgentClip(handler))
 	slog.Info("agent: runtime initialized", "data_dir", dataDir)
 }
 
@@ -197,9 +198,10 @@ func NewHubDaemon(registry *Registry) (*Daemon, error) {
 		registry: registry,
 		provider: NewProviderManager(nil),
 		runtime:  NewRuntimeManager(),
+		builtin:  builtin.NewRegistry(),
 	}
 
-	// Initialize agent runtime (also in hub-only mode)
+	// Register builtin clips (also in hub-only mode)
 	d.initAgentRuntime()
 
 	return d, nil
@@ -215,9 +217,6 @@ func (d *Daemon) SetScheduler(s *Scheduler) {
 	d.scheduler = s
 
 	// Register builtin scheduler Clip
-	if d.builtin == nil {
-		d.builtin = builtin.NewRegistry()
-	}
 	d.builtin.Register(builtin.NewSchedulerClip(NewSchedulerClipHandler(s)))
 
 	// When a provider registers a clip with schedule declarations, auto-register them.
