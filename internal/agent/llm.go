@@ -38,6 +38,7 @@ type ChatStreamInput struct {
 	MaxTokens       int
 	EnableReasoning bool
 	OnDelta         func(StreamEvent) // called for each streaming chunk
+	OnRequest       func(body []byte) // debug: called with serialized request body before sending
 }
 
 // ChatStream performs a streaming chat completion and returns the accumulated result.
@@ -47,6 +48,10 @@ func (c *LLMClient) ChatStream(ctx context.Context, input ChatStreamInput) (*LLM
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	if input.OnRequest != nil {
+		input.OnRequest(jsonBody)
 	}
 
 	url := strings.TrimRight(input.BaseURL, "/") + "/chat/completions"
