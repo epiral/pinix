@@ -72,6 +72,10 @@ message ClipInfo {
   ClipStatus status = 10;
   string status_message = 11;
   string description = 12;
+  // Sharing: set when the clip is from another scope via Clip Sharing.
+  string source = 13; // "" = local, "shared" = from another scope
+  string owner = 14;  // owner scope (e.g. "@cp"), empty for local clips
+  int64 price_per_invoke = 15; // credit cost per invoke (0 = free)
 }
 
 message DependencySlot {
