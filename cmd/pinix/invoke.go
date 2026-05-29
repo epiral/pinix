@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	pinixv2 "github.com/epiral/pinix/gen/go/pinix/v2"
 	"github.com/epiral/pinix/internal/client"
 	"github.com/spf13/cobra"
 )
@@ -31,21 +32,207 @@ Connection flags can appear anywhere in the command:
   pinix invoke todo list --server https://hub.pinix.ai --auth-token <token>
   pinix invoke --server https://hub.pinix.ai todo list
 
+Help:
+  pinix invoke <clip> --help         Show all commands for a Clip
+  pinix invoke <clip> <cmd> --help   Show parameters for a specific command
+
 Flags:
   --server       Hub URL (default: auto-discover)
   --auth-token   Hub auth token
   --clip-token   Clip-specific auth token`,
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			for _, arg := range args {
-				if arg == "--help" || arg == "-h" {
-					return cmd.Help()
-				}
-			}
-			return runInvoke(args)
+			return runInvokeOrHelp(cmd, args)
 		},
 	}
 	return cmd
+}
+
+func runInvokeOrHelp(cmd *cobra.Command, args []string) error {
+	// Check if --help appears in args
+	hasHelp := false
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			hasHelp = true
+			break
+		}
+	}
+	if !hasHelp {
+		return runInvoke(args)
+	}
+
+	// Strip --help/-h from args and extract global flags
+	var cleaned []string
+	for _, arg := range args {
+		if arg != "--help" && arg != "-h" {
+			cleaned = append(cleaned, arg)
+		}
+	}
+	globals, rest := splitInvokeArgs(cleaned)
+	serverURL, hubToken, _ := parseInvokeFlags(globals)
+
+	// No clip name → show invoke's own help
+	if len(rest) == 0 {
+		return cmd.Help()
+	}
+
+	// Has clip name → show clip manifest help
+	clipName := rest[0]
+	var filterCommand string
+	if len(rest) > 1 {
+		filterCommand, _ = parseCommandPath(rest[1:])
+	}
+	return showClipHelp(clipName, filterCommand, serverURL, hubToken)
+}
+
+func showClipHelp(clipName, filterCommand, serverURL, hubToken string) error {
+	cli, err := client.New(serverURL)
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+
+	// Try GetManifest first; fallback to ListClips for provider-backed clips.
+	manifest, err := cli.GetManifest(ctx, clipName, hubToken)
+	if err != nil {
+		// Fallback: search ListClips for the clip
+		clips, listErr := cli.ListClips(ctx, hubToken)
+		if listErr != nil {
+			return fmt.Errorf("cannot get help for %q: %w", clipName, err)
+		}
+		for _, clip := range clips {
+			if clip.GetName() == clipName {
+				return showClipInfoHelp(clip, filterCommand)
+			}
+		}
+		return fmt.Errorf("clip %q not found", clipName)
+	}
+
+	return showManifestHelp(clipName, manifest, filterCommand)
+}
+
+type clipHelpData struct {
+	name        string
+	version     string
+	description string
+	domain      string
+	patterns    []string
+	commands    []*pinixv2.CommandInfo
+}
+
+func showManifestHelp(clipName string, m *pinixv2.ClipManifest, filterCommand string) error {
+	desc := m.GetDescription()
+	if desc == "" {
+		desc = m.GetDomain()
+	}
+	return printClipHelp(clipHelpData{
+		name:        clipName,
+		version:     m.GetVersion(),
+		description: desc,
+		patterns:    m.GetPatterns(),
+		commands:    m.GetCommands(),
+	}, filterCommand)
+}
+
+func showClipInfoHelp(clip *pinixv2.ClipInfo, filterCommand string) error {
+	return printClipHelp(clipHelpData{
+		name:        clip.GetName(),
+		version:     clip.GetVersion(),
+		description: clip.GetDomain(),
+		commands:    clip.GetCommands(),
+	}, filterCommand)
+}
+
+func printClipHelp(h clipHelpData, filterCommand string) error {
+	fmt.Printf("%s", h.name)
+	if h.version != "" {
+		fmt.Printf(" v%s", h.version)
+	}
+	fmt.Println()
+	if h.description != "" {
+		fmt.Printf("  %s\n", h.description)
+	}
+	if len(h.patterns) > 0 {
+		fmt.Println()
+		fmt.Println("Patterns:")
+		for _, p := range h.patterns {
+			fmt.Printf("  %s\n", p)
+		}
+	}
+	fmt.Println()
+
+	if len(h.commands) == 0 {
+		fmt.Println("(no commands)")
+		return nil
+	}
+
+	// If filtering to a specific command
+	if filterCommand != "" {
+		for _, c := range h.commands {
+			if c.GetName() == filterCommand {
+				printCommandHelp(h.name, c)
+				return nil
+			}
+		}
+		return fmt.Errorf("unknown command %q in clip %q", filterCommand, h.name)
+	}
+
+	// List all commands
+	fmt.Println("Commands:")
+	for _, c := range h.commands {
+		printCommandHelp(h.name, c)
+	}
+	return nil
+}
+
+func printCommandHelp(clipName string, c interface{ GetName() string; GetDescription() string; GetInput() string }) {
+	fmt.Printf("  %s", c.GetName())
+	if d := c.GetDescription(); d != "" {
+		fmt.Printf(" - %s", d)
+	}
+	fmt.Println()
+
+	// Parse input JSON schema to show parameters
+	inputSchema := c.GetInput()
+	if inputSchema == "" || inputSchema == "{}" {
+		return
+	}
+	var schema struct {
+		Properties map[string]struct {
+			Type        string `json:"type"`
+			Description string `json:"description"`
+			Default     any    `json:"default"`
+		} `json:"properties"`
+		Required []string `json:"required"`
+	}
+	if err := json.Unmarshal([]byte(inputSchema), &schema); err != nil || len(schema.Properties) == 0 {
+		return
+	}
+
+	requiredSet := make(map[string]bool)
+	for _, r := range schema.Required {
+		requiredSet[r] = true
+	}
+	for name, prop := range schema.Properties {
+		req := "optional"
+		if requiredSet[name] {
+			req = "required"
+		}
+		typeName := prop.Type
+		if typeName == "" {
+			typeName = "string"
+		}
+		line := fmt.Sprintf("      --%-16s %s (%s)", name, typeName, req)
+		if prop.Description != "" {
+			line += "  " + prop.Description
+		}
+		if prop.Default != nil {
+			line += fmt.Sprintf(" (default: %v)", prop.Default)
+		}
+		fmt.Println(line)
+	}
+	fmt.Println()
 }
 
 func runInvoke(args []string) error {
