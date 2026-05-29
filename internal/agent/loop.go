@@ -162,18 +162,22 @@ func (r *Runtime) runLoop(ctx context.Context, agt *Agent, topic *Topic, run *Ru
 		}
 
 		// Compress context if needed
+		preCompChars := totalContextSize(llmMessages)
 		llmMessages = CompressContext(llmMessages)
+		postCompChars := totalContextSize(llmMessages)
+		compressed := preCompChars != postCompChars
 
 		slog.Info("agent.loop: calling LLM",
 			"topic", topic.ID,
 			"run", run.ID,
 			"iteration", iteration,
 			"messages", len(llmMessages),
-			"context_chars", totalContextSize(llmMessages),
+			"context_chars", postCompChars,
+			"compressed", compressed,
 		)
 
 		// Call LLM
-		result, err := r.llm.ChatStream(ctx, ChatStreamInput{
+		streamInput := ChatStreamInput{
 			BaseURL:         agt.BaseURL,
 			APIKey:          agt.APIKey,
 			Model:           agt.LLMModel,
@@ -183,9 +187,37 @@ func (r *Runtime) runLoop(ctx context.Context, agt *Agent, topic *Topic, run *Ru
 			MaxTokens:       agt.MaxTokens,
 			EnableReasoning: agt.EnableReasoning,
 			OnDelta:         onEvent,
-		})
+		}
+
+		if dbg := GetDebugDumper(); dbg != nil {
+			sysChars := 0
+			if len(llmMessages) > 0 {
+				sysChars = len(llmMessages[0].Content)
+			}
+			entry := DebugEntry{
+				TopicID:      topic.ID,
+				RunID:        run.ID,
+				Iteration:    iteration,
+				Model:        agt.LLMModel,
+				MsgCount:     len(llmMessages),
+				TotalChars:   postCompChars,
+				SystemChars:  sysChars,
+				Compressed:   compressed,
+				PreCompChars: preCompChars,
+			}
+			streamInput.OnRequest = func(body []byte) {
+				dbg.DumpRequest(entry, body)
+			}
+		}
+
+		result, err := r.llm.ChatStream(ctx, streamInput)
 		if err != nil {
 			return fmt.Errorf("LLM call failed: %w", err)
+		}
+
+		// Debug: dump response
+		if dbg := GetDebugDumper(); dbg != nil {
+			dbg.DumpResponse(run.ID, iteration, result)
 		}
 
 		// Save assistant message
