@@ -159,7 +159,9 @@ buf generate
 
 ./pinix --server http://127.0.0.1:9000 list
 ./pinix --server http://127.0.0.1:9000 add clip-todo
-./pinix --server http://127.0.0.1:9000 todo add -- --title "Ship Pinix V2"
+./pinix --server http://127.0.0.1:9000 invoke todo add --title "Ship Pinix V2"
+./pinix invoke todo --help           # 显示 clip 所有命令和参数
+./pinix invoke todo add --help       # 显示单个命令的参数
 ./pinix mcp --all --server http://127.0.0.1:9000
 ./pinix chat                         # TUI Agent 交互（bubbletea v2）
 ```
