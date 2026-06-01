@@ -34,7 +34,7 @@ Clip 的 manifest 告诉 Agent：我能做什么（commands + patterns）、什�
 
 可组合、可复用、可沉淀——clip 用 clip，越用越厚。
 
-Clip 可以依赖其他 Clip，形成能力网络。一个 twitter Clip 可以依赖 browser Clip，一个 agent-clip 可以调度所有已安装的 Clip。
+Clip 可以依赖其他 Clip，形成能力网络。一个 twitter Clip 可以依赖 browser Clip，Agent 可以调度所有已安装的 Clip。
 
 ### Clip vs MCP Tool vs GPTs
 
@@ -80,25 +80,25 @@ Provider 是连接协议——通过 ProviderStream 把 Clip 注册到 Hub、转
 
 SDK Clip = 应用/服务——由 Runtime 管理生命周期，通过 `pinix add` 安装，crash recovery。
 
-SDK Clip 不依赖特定硬件，跑在 Runtime 上。示例：twitter clip、todo clip、agent-clip。
+SDK Clip 不依赖特定硬件，跑在 Runtime 上。示例：twitter clip、todo clip。
 
 ---
 
-## What is agent-clip?
+## Agent 与 Clip 的关系
 
-agent-clip 是 Pinix 专属 Agent——围绕 Clip 生态设计的 AI Agent。
+Pinix 的 Agent 功能由云端 pinixai.com 提供。Agent 围绕 Clip 生态设计，核心原则是 **Agent 薄，Clip 厚**。
 
 ### 核心原则：Agent 薄，Clip 厚
 
 ```
-agent-clip 的职责：
+Agent 的职责：
   ├── 意图识别 -> 理解用户想做什么
   ├── Clip 选择 -> 从 manifest（patterns/entities/schema）选对 Clip
   ├── 调度执行 -> 调对 Command，传对参数
-  ├── 记忆 -> memory clip（跨会话上下文）
+  ├── 记忆 -> 跨会话上下文
   └── 技能 -> clip 就是 skill，不需要内建任何能力
 
-agent-clip 不做的事：
+Agent 不做的事：
   ├── 不做复杂业务逻辑（在 Clip 里）
   ├── 不做设备操作（在 Edge Clip 里）
   └── 不需要 SOTA 模型（Sonnet 级别就够，因为只做路由）
@@ -115,7 +115,7 @@ Clip 的知识层（manifest）已经告诉了 Agent：我能做什么、什么�
 ```
 用户："帮我搜一下推特上 AI 的热门"
   |
-agent-clip：
+Agent：
   1. 读 manifest -> twitter clip 有 search command，pattern 匹配
   2. 构造参数 -> {query: "AI", sort: "hot"}
   3. 调用 twitter.search -> Hub 路由 -> twitter clip 执行
