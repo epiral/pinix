@@ -204,6 +204,11 @@ message InvokeResult {
   bytes output = 2;
   HubError error = 3;
   bool done = 4;
+  // True when the error is a clip application-level rejection (e.g. "Not logged in"),
+  // safe to surface to the caller. False/absent means an internal/runtime error
+  // (process crash, IPC failure) whose message should not be leaked to end users.
+  // Old providers that don't set this default to false — the safe (non-surfacing) path.
+  bool error_is_command = 5;
 }
 
 message GetClipWebCommand {
@@ -251,6 +256,10 @@ message InvokeCommand {
   string command = 3;
   bytes input = 4;
   string clip_token = 5;
+  // Per-invoke timeout in milliseconds. 0 or absent means no explicit timeout
+  // (caller relies on context/stream cancellation). Providers should respect this
+  // as a deadline for the clip command execution.
+  int32 timeout_ms = 6;
 }
 
 message InvokeInput {
@@ -332,6 +341,10 @@ message InvokeRequest {
 message InvokeResponse {
   bytes output = 1;
   HubError error = 2;
+  // Forwarded from InvokeResult.error_is_command — indicates whether the error
+  // originated from the clip's application logic (safe to display) or from
+  // a runtime/transport failure (should be shown as a generic error).
+  bool error_is_command = 3;
 }
 
 message InvokeStreamMessage {

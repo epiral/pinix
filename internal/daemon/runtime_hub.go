@@ -567,7 +567,14 @@ func (c *runtimeHubConnector) handleInvokeCommand(ctx context.Context, stream *c
 			if invokeErr == nil {
 				invokeErr = &ipc.Error{Message: "invoke failed"}
 			}
-			c.sendInvokeError(stream, requestID, invokeErr)
+			// Clip 子进程主动返回的 error 是应用级错误（比如 "Not logged in"），
+			// 标记 error_is_command=true，Hub 可以安全地透传给调用方。
+			_ = c.sendInvokeResult(stream, &pinixv2.InvokeResult{
+				RequestId:      requestID,
+				Error:          invokeErrorToHubError(invokeErr),
+				Done:           true,
+				ErrorIsCommand: true,
+			})
 			return
 		case ipc.MessageTypeChunk:
 			if len(event.output) == 0 {

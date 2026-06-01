@@ -104,9 +104,10 @@ type providerClipRef struct {
 }
 
 type providerInvokeChunk struct {
-	output []byte
-	err    *ResponseError
-	done   bool
+	output         []byte
+	err            *ResponseError
+	done           bool
+	errorIsCommand bool
 }
 
 type providerClipWebEvent struct {
@@ -834,9 +835,10 @@ func (s *providerSession) handleInvokeResult(message *pinixv2.InvokeResult) {
 		return
 	}
 	s.dispatchInvoke(strings.TrimSpace(message.GetRequestId()), providerInvokeChunk{
-		output: cloneBytes(message.GetOutput()),
-		err:    hubErrorToResponseError(message.GetError()),
-		done:   message.GetDone(),
+		output:         cloneBytes(message.GetOutput()),
+		err:            hubErrorToResponseError(message.GetError()),
+		done:           message.GetDone(),
+		errorIsCommand: message.GetErrorIsCommand(),
 	})
 }
 

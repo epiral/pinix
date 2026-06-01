@@ -920,7 +920,10 @@ func (h *HubService) invokeProviderClip(ctx context.Context, clipName, command s
 			return connectErrorFromErr(err)
 		}
 		if chunk.err != nil {
-			return stream.Send(&pinixv2.InvokeResponse{Error: responseErrorToHubError(chunk.err)})
+			return stream.Send(&pinixv2.InvokeResponse{
+				Error:          responseErrorToHubError(chunk.err),
+				ErrorIsCommand: chunk.errorIsCommand,
+			})
 		}
 		if len(chunk.output) > 0 || (chunk.done && !sent) {
 			payload := cloneBytes(chunk.output)
@@ -1021,7 +1024,10 @@ func (h *HubService) invokeStreamProviderClip(ctx context.Context, start *pinixv
 			return connectErrorFromErr(err)
 		}
 		if chunk.err != nil {
-			return stream.Send(&pinixv2.InvokeResponse{Error: responseErrorToHubError(chunk.err)})
+			return stream.Send(&pinixv2.InvokeResponse{
+				Error:          responseErrorToHubError(chunk.err),
+				ErrorIsCommand: chunk.errorIsCommand,
+			})
 		}
 		payload := cloneBytes(chunk.output)
 		if len(payload) > 0 || chunk.done {
@@ -1043,7 +1049,10 @@ func drainProviderInvokeResponses(stream *connect.BidiStream[pinixv2.InvokeStrea
 		select {
 		case chunk := <-handle.responses:
 			if chunk.err != nil {
-				return true, stream.Send(&pinixv2.InvokeResponse{Error: responseErrorToHubError(chunk.err)})
+				return true, stream.Send(&pinixv2.InvokeResponse{
+					Error:          responseErrorToHubError(chunk.err),
+					ErrorIsCommand: chunk.errorIsCommand,
+				})
 			}
 			payload := cloneBytes(chunk.output)
 			if len(payload) > 0 || chunk.done {
