@@ -75,7 +75,6 @@ Docker:
 	rootCmd.AddCommand(newConfigCommand())
 	rootCmd.AddCommand(newScheduleCommand())
 	rootCmd.AddCommand(newUpgradeCommand())
-	rootCmd.AddCommand(newChatCommand())
 
 	return rootCmd
 }
