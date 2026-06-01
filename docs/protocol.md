@@ -118,16 +118,13 @@ sequenceDiagram
     participant CLI as pinix CLI
     participant Hub as Hub (HubService)
     participant Runtime as pinixd Runtime
-    participant Clip as clip-agent (Bun)
+    participant Clip as clip-todo (Bun)
 
-    CLI->>Hub: RPC Invoke {clip_name:"agent", command:"chat", input:{message:"你好"}}
+    CLI->>Hub: RPC Invoke {clip_name:"todo", command:"list", input:{}}
     Hub->>Runtime: ProcessManager.InvokeStream()
-    Runtime->>Clip: IPC {"id":"1","type":"invoke","command":"chat","input":{...}}
-    Clip->>Runtime: IPC {"id":"1","type":"chunk","output":"你"}
-    Runtime->>Hub: InvokeResponse {output: "你"}
-    Hub->>CLI: stream InvokeResponse
-    Clip->>Runtime: IPC {"id":"1","type":"chunk","output":"好"}
-    Runtime->>Hub: InvokeResponse {output: "好"}
+    Runtime->>Clip: IPC {"id":"1","type":"invoke","command":"list","input":{...}}
+    Clip->>Runtime: IPC {"id":"1","type":"chunk","output":"{\"items\":[...]}"}
+    Runtime->>Hub: InvokeResponse {output: "{\"items\":[...]}"}
     Hub->>CLI: stream InvokeResponse
     Clip->>Runtime: IPC {"id":"1","type":"done"}
     Runtime->>Hub: stream 结束
@@ -319,8 +316,8 @@ sequenceDiagram
 
     Note over Browser: 流式调用 (Accept: text/event-stream)
 
-    Browser->>Pinixd: POST /clips/agent/api/chat (SSE)
-    Pinixd->>Clip: IPC invoke "chat"
+    Browser->>Pinixd: POST /clips/todo/api/list (SSE)
+    Pinixd->>Clip: IPC invoke "list"
     Clip-->>Pinixd: IPC chunk, chunk, ..., done
     Pinixd-->>Browser: SSE data 事件流
 ```
@@ -392,7 +389,7 @@ Proto 定义文件：`proto/pinix/v2/hub.proto`
 | 模式 | RPC | 场景示例 | 响应方式 |
 |---|---|---|---|
 | 简单调用 | `Invoke` | `todo.list` | 1 个 InvokeResponse |
-| 流式输出 | `Invoke` | `agent.chat` (LLM token 流) | N 个 InvokeResponse |
+| 流式输出 | `Invoke` | LLM token 流等场景 | N 个 InvokeResponse |
 | 双向流 | `InvokeStream` | `voice.talk` (音频流) | 流入 InputChunk + 流出 InvokeResponse |
 
 ### 3.5 关键 Protobuf 类型

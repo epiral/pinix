@@ -60,9 +60,9 @@ Pinix 是高度产品化的平台（不只是协议）。
 ```
 开箱即用                          可集成
 ├── 装 clip-dock                  ├── pinix mcp -> Claude Code / Cursor
-├── 内置 agent-clip               ├── CLI -> 任何 shell 环境
-│   (设个 API key 就能用)          ├── HTTP -> 任何 Agent 框架
-├── Portal 里直接对话              └── SDK -> 开发者自定义
+├── pinixai.com 云端 Agent         ├── CLI -> 任何 shell 环境
+│   (注册即用)                     ├── HTTP -> 任何 Agent 框架
+├── Console 里直接对话             └── SDK -> 开发者自定义
 └── 零依赖，不需要先装别的工具
 ```
 
@@ -76,7 +76,7 @@ Pinix 是高度产品化的平台（不只是协议）。
 Claude Code + pinix = 私人助理
 Cursor + pinix = 私人助理
 自建 Agent + pinix = 私人助理
-agent-clip (内置) + pinix = 私人助理（开箱即用保底）
+pinixai.com Agent + pinix = 私人助理（开箱即用保底）
 ```
 
 **Pinix 不替代 Agent，Pinix 赋能 Agent。** Pinix 骑在所有 Agent 的增长上，不和任何 Agent 竞争。

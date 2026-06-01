@@ -16,7 +16,6 @@ Pinix V2 是一个 **Clip runtime + routing Hub**：
   - `cmd/pinix/`
   - `internal/daemon/`
   - `internal/builtin/`
-  - `internal/agent/`
   - `internal/client/`
   - `internal/ipc/`
   - `proto/pinix/v2/`
@@ -87,7 +86,6 @@ Pinix V2 的核心是：**Hub 只看到 Clip**。
 - 在 ListClips 中显示为 `provider=builtin`，通过 ProviderStream 注册到 Cloud Hub。
 - 支持流式输出（`onChunk`）。
 - 当前 builtin clips：
-  - **agent** — AI Agent Runtime（`internal/agent/`），LLM 对话、topic/run 管理
   - **scheduler** — 定时任务管理（`internal/daemon/scheduler.go`），cron 调度 + SQLite 执行历史
 
 ### 添加新的 Builtin Clip
@@ -109,14 +107,12 @@ Pinix V2 的核心是：**Hub 只看到 Clip**。
 ```text
 pinix/
 ├── cmd/
-│   ├── pinix/             # 当前 CLI + MCP gateway + `pinix chat`（TUI 入口）
+│   ├── pinix/             # 当前 CLI + MCP gateway
 │   ├── pinixd/            # 当前 daemon entrypoint（全包 / hub-only / --hub）
 │   └── edge-test/         # Provider 协议联调用的小工具
 ├── internal/
 │   ├── daemon/            # V2 核心：HubService、Provider 管理、Runtime、Portal HTTP、Clip Web 代理、Scheduler
-│   ├── builtin/           # Builtin Clip 框架：Registry + agent/scheduler Clip 桥接
-│   ├── agent/             # Go Agent Runtime：LLM client、tool loop、context manager、SQLite storage
-│   ├── tui/               # TUI（bubbletea v2），`pinix chat` 终端交互界面
+│   ├── builtin/           # Builtin Clip 框架：Registry + scheduler Clip 桥接
 │   ├── client/            # V2 Connect-RPC client（CLI / Provider 复用）
 │   └── ipc/               # pinixd <-> 本地 Clip 的 IPC v2 NDJSON 定义
 ├── proto/pinix/v2/        # 当前外部协议定义
@@ -163,7 +159,6 @@ buf generate
 ./pinix invoke todo --help           # 显示 clip 所有命令和参数
 ./pinix invoke todo add --help       # 显示单个命令的参数
 ./pinix mcp --all --server http://127.0.0.1:9000
-./pinix chat                         # TUI Agent 交互（bubbletea v2）
 ```
 
 - 运行本地 Runtime 时需要 `bun`；`pinixd` 会从 `PATH` 或 `~/.bun/bin/bun` 自动探测。
@@ -356,7 +351,7 @@ go test ./...
 
 ### 变更边界
 
-- 新的 V2 功能优先落在：`cmd/pinixd`、`cmd/pinix`、`internal/daemon`、`internal/builtin`、`internal/agent`、`internal/tui`、`internal/client`、`internal/ipc`、`proto/pinix/v2`、`web`。
+- 新的 V2 功能优先落在：`cmd/pinixd`、`cmd/pinix`、`internal/daemon`、`internal/builtin`、`internal/client`、`internal/ipc`、`proto/pinix/v2`、`web`。
 - 除非明确在做遗留清理，不要把新功能继续写到 v1 遗留目录。
 - 不要在注释、文档、PR 描述里把当前架构写回旧双服务、旧 YAML 配置或旧命令体系。
 
