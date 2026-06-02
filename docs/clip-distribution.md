@@ -73,8 +73,8 @@ github/user/repo     -> GitHub                   [github]
 ## Registry 架构
 
 ```
-registry.pinix.ai    -> API 地址（pinix add / publish / search 解析到这里）
-clips.pinix.ai       -> Web 网站（人在浏览器浏览/发现 Clip）
+registry.pinixai.com    -> API 地址（pinix add / publish / search 解析到这里）
+clips.pinixai.com       -> Web 网站（人在浏览器浏览/发现 Clip）
 ```
 
 类比 npm：
@@ -89,13 +89,13 @@ www.npmjs.com        -> 网站
 
 ```
 # 包查询
-GET  registry.pinix.ai/packages/@scope/name              -> 包信息（所有版本）
-GET  registry.pinix.ai/packages/@scope/name/:version      -> 特定版本
-GET  registry.pinix.ai/packages/@scope/name/:version/download -> 下载 tarball
-GET  registry.pinix.ai/search?q=:query&domain=:domain     -> 搜索
+GET  registry.pinixai.com/packages/@scope/name              -> 包信息（所有版本）
+GET  registry.pinixai.com/packages/@scope/name/:version      -> 特定版本
+GET  registry.pinixai.com/packages/@scope/name/:version/download -> 下载 tarball
+GET  registry.pinixai.com/search?q=:query&domain=:domain     -> 搜索
 
 # 发布
-PUT  registry.pinix.ai/packages/@scope/name/versions      -> 发布新版本
+PUT  registry.pinixai.com/packages/@scope/name/versions      -> 发布新版本
 
 # 认证
 # CLI 登录后拿到 JWT，Registry 和 API 共用同一套 token
@@ -105,7 +105,7 @@ PUT  registry.pinix.ai/packages/@scope/name/versions      -> 发布新版本
 
 ```bash
 # 默认（不用配）
-pinix add @cp/todo  -> registry.pinix.ai
+pinix add @cp/todo  -> registry.pinixai.com
 
 # 企业自建（可选）
 pinix config set registry https://registry.my-company.com

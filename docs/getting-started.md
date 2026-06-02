@@ -129,7 +129,7 @@ go build -o pinix ./cmd/pinix
 
 ### 配置 Registry
 
-默认 Registry 是 `https://api.pinix.ai`。可以通过 `pinix config` 修改：
+默认 Registry 是 `https://api.pinixai.com`。可以通过 `pinix config` 修改：
 
 ```bash
 ./pinix config set registry https://your-registry.example.com
@@ -249,10 +249,10 @@ Cursor 的 MCP 配置界面使用同样的 `command` 和 `args` 即可。
 
 ```bash
 # 命令行
-./pinixd --port 9001 --hub https://hub.pinix.ai --hub-token <jwt>
+./pinixd --port 9001 --hub https://hub.pinixai.com --hub-token <jwt>
 
 # 或持久化配置
-./pinix config set hub https://hub.pinix.ai
+./pinix config set hub https://hub.pinixai.com
 ./pinix config set hub-token <jwt>
 ./pinixd --port 9001
 ```

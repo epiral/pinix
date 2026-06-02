@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://pinix.ai/logo.svg" alt="Pinix" width="120" />
+  <img src="https://pinixai.com/logo.svg" alt="Pinix" width="120" />
 </p>
 
 <h1 align="center">Pinix</h1>
@@ -53,7 +53,7 @@ pinix invoke todo list                          # see results
 open http://localhost:9000                       # open Console
 ```
 
-After `pinix login`, your local Clips are accessible from any device through pinix.ai Cloud Hub.
+After `pinix login`, your local Clips are accessible from any device through pinixai.com Cloud Hub.
 
 ## What You Get
 
@@ -63,7 +63,7 @@ When `pinix start` runs, you get a complete local capability stack:
 pinix start
   ├── Hub        routes invoke calls to the right Clip
   ├── Runtime    manages local Bun/TS Clip processes
-  ├── Registry   installs Clips from pinix.ai
+  ├── Registry   installs Clips from pinixai.com
   └── Console    web UI at localhost:9000
 ```
 
@@ -86,10 +86,10 @@ Your browser's login sessions, cookies, SSO, and intranet access work out of the
 - [x] **Clip Runtime** — install, run, and manage Bun/TS Clips locally
 - [x] **Hub Routing** — route invoke calls by alias, auto-discover by package name
 - [x] **Edge Clips** — BB-Browser, clipboard, screen, device APIs register automatically
-- [x] **Clip Web** — Clips ship their own Web UI, served at `{alias}.hub.pinix.ai`
+- [x] **Clip Web** — Clips ship their own Web UI, served at `{alias}.hub.pinixai.com`
 - [x] **Console** — manage Clips, view status, embed Clip Web via iframe
-- [x] **Registry** — search, install, publish Clips to pinix.ai
-- [x] **pinix.ai Cloud Hub** — cross-network routing, access Clips from any device
+- [x] **Registry** — search, install, publish Clips to pinixai.com
+- [x] **pinixai.com Cloud Hub** — cross-network routing, access Clips from any device
 - [x] **`pinix login`** — device code flow, auto-restarts daemon to connect Cloud Hub
 - [x] **Single binary** — one `pinix` binary: `start`, `stop`, `status`, `login`, `invoke`
 - [x] **Auto-connect** — reads saved token, connects to Cloud Hub automatically
@@ -128,7 +128,7 @@ pinix invoke twitter search --query "AI agent"
 
 103 commands across 36 platforms out of the box. Agent can also generate new site adapters autonomously.
 
-## Connect to pinix.ai
+## Connect to pinixai.com
 
 ```bash
 pinix login
