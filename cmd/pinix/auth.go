@@ -388,14 +388,11 @@ func decodeAuthError(resp *http.Response, action string) error {
 // hubURLFromAuthServer derives the Hub URL from the auth server URL.
 // e.g. "https://api.pinixai.com" → "https://hub.pinixai.com"
 //
-//	"https://api.pinix.ai" → "https://hub.pinix.ai"
+//	"https://api.pinixai.com" → "https://hub.pinixai.com"
 func hubURLFromAuthServer(serverURL string) string {
 	serverURL = strings.TrimRight(serverURL, "/")
 	if strings.Contains(serverURL, "api.pinixai.com") {
 		return "https://hub.pinixai.com"
-	}
-	if strings.Contains(serverURL, "api.pinix.ai") {
-		return "https://hub.pinix.ai"
 	}
 	// Generic: replace "api." with "hub."
 	return strings.Replace(serverURL, "://api.", "://hub.", 1)

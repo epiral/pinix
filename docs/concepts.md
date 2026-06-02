@@ -55,7 +55,7 @@ Hub 是路由中心，所有 Clip 在 Hub 上被发现和调用。
 
 - Hub 是唯一路由器。Agent 通过 Hub 调用 Clip，不直接连 Clip。
 - Hub 管理 alias 分配——每个 Clip 在 Hub 上有唯一别名。
-- `pinixd --port 9000` 启动本地 Hub。Cloud Hub（hub.pinix.ai）提供云端版本。
+- `pinixd --port 9000` 启动本地 Hub。Cloud Hub（hub.pinixai.com）提供云端版本。
 
 ---
 

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://pinix.ai/logo.svg" alt="Pinix" width="120" />
+  <img src="https://pinixai.com/logo.svg" alt="Pinix" width="120" />
 </p>
 
 <h1 align="center">Pinix</h1>
@@ -53,7 +53,7 @@ pinix invoke todo list                          # 查看结果
 open http://localhost:9000                       # 打开 Console
 ```
 
-`pinix login` 后，你的本地 Clips 通过 pinix.ai Cloud Hub 在任何设备上都可以访问。
+`pinix login` 后，你的本地 Clips 通过 pinixai.com Cloud Hub 在任何设备上都可以访问。
 
 ## 启动后你得到什么
 
@@ -86,10 +86,10 @@ $ pinix hub list
 - [x] **Clip Runtime** — 本地安装、运行和管理 Bun/TS Clips
 - [x] **Hub 路由** — 按 alias 路由 invoke，按 package name 自动发现
 - [x] **Edge Clips** — BB-Browser、clipboard、screen 等自动注册
-- [x] **Clip Web** — Clip 自带 Web UI，通过 `{alias}.hub.pinix.ai` 访问
+- [x] **Clip Web** — Clip 自带 Web UI，通过 `{alias}.hub.pinixai.com` 访问
 - [x] **Console** — 管理 Clips、查看状态、iframe 嵌入 Clip Web
-- [x] **Registry** — 搜索、安装、发布 Clips 到 pinix.ai
-- [x] **pinix.ai Cloud Hub** — 跨网络路由，从任何设备访问 Clips
+- [x] **Registry** — 搜索、安装、发布 Clips 到 pinixai.com
+- [x] **pinixai.com Cloud Hub** — 跨网络路由，从任何设备访问 Clips
 - [x] **`pinix login`** — device code flow，登录后自动重启 daemon 连接 Cloud Hub
 - [x] **单一 binary** — 一个 `pinix`：`start`、`stop`、`status`、`login`、`invoke`
 - [x] **自动连接** — 读取已保存 token，自动连 Cloud Hub
@@ -128,7 +128,7 @@ pinix invoke twitter search --query "AI agent"
 
 内置 103 个命令覆盖 36 个平台。Agent 还能自主生成新的 site adapter。
 
-## 连接 pinix.ai
+## 连接 pinixai.com
 
 ```bash
 pinix login

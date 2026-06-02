@@ -150,7 +150,7 @@ Pinix V2 使用三种来源前缀标识 Clip 包：
 
 当 CLI 收到 `@scope/name` 格式的来源时：
 
-1. CLI 从 flag `--registry` > 环境变量 `PINIX_REGISTRY` > `~/.pinix/client.json` 中的 `registry` 字段 > 默认值 `https://api.pinix.ai` 解析 Registry URL。
+1. CLI 从 flag `--registry` > 环境变量 `PINIX_REGISTRY` > `~/.pinix/client.json` 中的 `registry` 字段 > 默认值 `https://api.pinixai.com` 解析 Registry URL。
 2. 构造内部规范形式 `registry:<url>#@scope/name[@version]`，发送给 Hub。
 3. Runtime 从 Registry 下载 tarball、校验 shasum、解压、`bun install`。
 
@@ -188,14 +188,14 @@ Runtime 可以连接到远端 Cloud Hub，通过 `ProviderStream` + `RuntimeStre
 
 ```bash
 # 命令行参数
-pinixd --hub https://hub.pinix.ai --hub-token <jwt>
+pinixd --hub https://hub.pinixai.com --hub-token <jwt>
 
 # 环境变量
-PINIX_HUB=https://hub.pinix.ai
+PINIX_HUB=https://hub.pinixai.com
 PINIX_HUB_TOKEN=<jwt>
 
 # 持久化配置
-pinix config set hub https://hub.pinix.ai
+pinix config set hub https://hub.pinixai.com
 pinix config set hub-token <jwt>
 ```
 
@@ -204,7 +204,7 @@ pinix config set hub-token <jwt>
 ### Registry 配置
 
 ```bash
-pinix config set registry https://api.pinix.ai
+pinix config set registry https://api.pinixai.com
 ```
 
 ## 当前代码里的运行模式

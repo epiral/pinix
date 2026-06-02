@@ -209,8 +209,8 @@ sequenceDiagram
     participant Registry as Pinix Registry
     participant Clip as clip-todo (Bun)
 
-    CLI->>CLI: normalizeAddSource("@pinixai/todo") → "registry:https://api.pinix.ai#@pinixai/todo"
-    CLI->>Hub: RPC AddClip {source:"registry:https://api.pinix.ai#@pinixai/todo"}
+    CLI->>CLI: normalizeAddSource("@pinixai/todo") → "registry:https://api.pinixai.com#@pinixai/todo"
+    CLI->>Hub: RPC AddClip {source:"registry:https://api.pinixai.com#@pinixai/todo"}
     Hub->>Hub: 校验 super_token (Authorization header)
     Hub->>Hub: ReserveAlias → auto-generate "todo-a3f1"
     Hub->>Runtime: handler.handleAdd()

@@ -29,8 +29,8 @@ Arguments after <clip> are the command path (supports sub-commands):
   pinix invoke memex schema list --topLevel true
 
 Connection flags can appear anywhere in the command:
-  pinix invoke todo list --server https://hub.pinix.ai --auth-token <token>
-  pinix invoke --server https://hub.pinix.ai todo list
+  pinix invoke todo list --server https://hub.pinixai.com --auth-token <token>
+  pinix invoke --server https://hub.pinixai.com todo list
 
 Help:
   pinix invoke <clip> --help         Show all commands for a Clip
