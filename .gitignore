@@ -5,6 +5,7 @@ gen/
 *.exe
 *.test
 /pinix
+/pinixd
 
 # Portal frontend
 web/node_modules/
