@@ -550,5 +550,7 @@ func cloneClipInfo(clip *pinixv2.ClipInfo) *pinixv2.ClipInfo {
 		HasWeb:         clip.GetHasWeb(),
 		TokenProtected: clip.GetTokenProtected(),
 		Dependencies:   normalizeStrings(clip.GetDependencies()),
+		Patterns:       clip.GetPatterns(),
+		Entities:       clip.GetEntities(),
 	}
 }

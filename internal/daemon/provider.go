@@ -1141,6 +1141,8 @@ func providerClipToClipInfo(providerName string, clip *providerClip) *pinixv2.Cl
 		Dependencies:   normalizeStrings(registration.GetDependencies()),
 		Status:         status,
 		StatusMessage:  clip.statusMessage,
+		Patterns:       registration.GetPatterns(),
+		Entities:       registration.GetEntities(),
 	}
 }
 

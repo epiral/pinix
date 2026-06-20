@@ -1085,6 +1085,8 @@ func clipToClipInfo(clip ClipConfig, providerName string) *pinixv2.ClipInfo {
 		HasWeb:         manifest.HasWeb,
 		TokenProtected: clip.Token != "",
 		Dependencies:   dependencySlots(manifest.Dependencies),
+		Patterns:       manifest.Patterns,
+		Entities:       entitiesToProto(manifest.Entities),
 	}
 }
 

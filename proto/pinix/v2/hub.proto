@@ -76,6 +76,8 @@ message ClipInfo {
   string source = 13; // "" = local, "shared" = from another scope
   string owner = 14;  // owner scope (e.g. "@cp"), empty for local clips
   int64 price_per_invoke = 15; // credit cost per invoke (0 = free)
+  repeated string patterns = 16; // usage patterns / workflow hints for agents
+  map<string, string> entities = 17; // entity type definitions (name → description)
 }
 
 message DependencySlot {
