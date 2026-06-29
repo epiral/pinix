@@ -85,8 +85,7 @@ Pinix V2 的核心是：**Hub 只看到 Clip**。
 - 所有 builtin clip 通过 `builtin.Registry` 注册，统一走 Hub Invoke 路由。
 - 在 ListClips 中显示为 `provider=builtin`，通过 ProviderStream 注册到 Cloud Hub。
 - 支持流式输出（`onChunk`）。
-- 当前 builtin clips：
-  - **scheduler** — 定时任务管理（`internal/daemon/scheduler.go`），cron 调度 + SQLite 执行历史
+- 当前无 builtin clips（scheduler 已移除，由云端 agent scheduler 替代）。
 
 ### 添加新的 Builtin Clip
 
@@ -112,7 +111,7 @@ pinix/
 │   └── edge-test/         # Provider 协议联调用的小工具
 ├── internal/
 │   ├── daemon/            # V2 核心：HubService、Provider 管理、Runtime、Portal HTTP、Clip Web 代理、Scheduler
-│   ├── builtin/           # Builtin Clip 框架：Registry + scheduler Clip 桥接
+│   ├── builtin/           # Builtin Clip 框架：Registry（当前无 builtin clips）
 │   ├── client/            # V2 Connect-RPC client（CLI / Provider 复用）
 │   └── ipc/               # pinixd <-> 本地 Clip 的 IPC v2 NDJSON 定义
 ├── proto/pinix/v2/        # 当前外部协议定义
