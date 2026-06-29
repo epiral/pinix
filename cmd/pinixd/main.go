@@ -158,14 +158,6 @@ func main() {
 		}
 		defer func() { _ = d.Close() }()
 
-		// Start scheduler (invokes through external Hub)
-		sched := daemon.NewScheduler(registry, hubURL, filepath.Join(registry.RootDir(), "data", "scheduler"))
-		sched.SetHubToken(hubToken)
-		d.SetScheduler(sched)
-		if err := sched.Start(); err != nil {
-			slog.Warn("scheduler: failed to start", "error", err)
-		}
-
 		if err := d.ConnectHub(ctx, hubURL, port, hubToken); err != nil {
 			exitErr(err)
 		}
@@ -176,17 +168,9 @@ func main() {
 	addr := fmt.Sprintf(":%d", port)
 	localHubURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 
-	// Start Hub (also hosts the scheduler so RPC handlers can reach it)
 	hubDaemon, err := daemon.NewHubDaemon(registry)
 	if err != nil {
 		exitErr(err)
-	}
-
-	// Start scheduler on hubDaemon (invokes through local Hub)
-	sched := daemon.NewScheduler(registry, localHubURL, filepath.Join(registry.RootDir(), "data", "scheduler"))
-	hubDaemon.SetScheduler(sched)
-	if err := sched.Start(); err != nil {
-		slog.Warn("scheduler: failed to start", "error", err)
 	}
 
 	var wg sync.WaitGroup

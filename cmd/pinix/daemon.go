@@ -188,14 +188,6 @@ func runDaemon(opts daemonOptions) error {
 		}
 		defer func() { _ = d.Close() }()
 
-		// Start scheduler (invokes through external Hub)
-		sched := daemon.NewScheduler(registry, hubURL, filepath.Join(registry.RootDir(), "data", "scheduler"))
-		sched.SetHubToken(hubToken)
-		d.SetScheduler(sched)
-		if err := sched.Start(); err != nil {
-			slog.Warn("scheduler: failed to start", "error", err)
-		}
-
 		return d.ConnectHub(ctx, hubURL, opts.port, hubToken)
 	}
 
@@ -206,13 +198,6 @@ func runDaemon(opts daemonOptions) error {
 	hubDaemon, err := daemon.NewHubDaemon(registry)
 	if err != nil {
 		return err
-	}
-
-	// Start scheduler on hubDaemon (invokes through local Hub)
-	sched := daemon.NewScheduler(registry, localHubURL, filepath.Join(registry.RootDir(), "data", "scheduler"))
-	hubDaemon.SetScheduler(sched)
-	if err := sched.Start(); err != nil {
-		slog.Warn("scheduler: failed to start", "error", err)
 	}
 
 	var wg sync.WaitGroup
@@ -280,12 +265,7 @@ func runDaemon(opts daemonOptions) error {
 			if err != nil {
 				slog.Error("hub: failed to create cloud daemon", "error", err)
 			} else {
-				// Share the scheduler so the scheduler builtin clip is registered
-				// on the Cloud Hub provider stream.
-				if hubDaemon.GetScheduler() != nil {
-					cloudDaemon.SetScheduler(hubDaemon.GetScheduler())
-				}
-				defer func() { _ = cloudDaemon.Close() }()
+					defer func() { _ = cloudDaemon.Close() }()
 				wg.Add(1)
 				go func() {
 					defer wg.Done()

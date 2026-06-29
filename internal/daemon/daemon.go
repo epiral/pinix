@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 
-	pinixv2 "github.com/epiral/pinix/gen/go/pinix/v2"
 	"github.com/epiral/pinix/internal/builtin"
 )
 
@@ -21,9 +20,8 @@ type Daemon struct {
 	process   *ProcessManager
 	provider  *ProviderManager
 	runtime   *RuntimeManager
-	handler   *Handler
-	scheduler *Scheduler
-	builtin   *builtin.Registry
+	handler *Handler
+	builtin *builtin.Registry
 
 	mu         sync.Mutex
 	httpServer *http.Server
@@ -71,43 +69,9 @@ func (d *Daemon) hasLocalRuntime() bool {
 	return d != nil && d.process != nil
 }
 
-// SetScheduler attaches a scheduler to this daemon, registers the builtin scheduler Clip,
-// and wires up clip-declared schedule registration.
-func (d *Daemon) SetScheduler(s *Scheduler) {
-	d.scheduler = s
-
-	// Register builtin scheduler Clip
-	d.builtin.Register(builtin.NewSchedulerClip(NewSchedulerClipHandler(s)))
-
-	// When a provider registers a clip with schedule declarations, auto-register them.
-	if d.provider != nil {
-		d.provider.SetOnClipAdded(func(alias string, registration *pinixv2.ClipRegistration) {
-			if s == nil || registration == nil || len(registration.GetSchedules()) == 0 {
-				return
-			}
-			decls := make([]ManifestScheduleDecl, 0, len(registration.GetSchedules()))
-			for _, sd := range registration.GetSchedules() {
-				decls = append(decls, ManifestScheduleDecl{
-					Command:     sd.GetCommand(),
-					Cron:        sd.GetCron(),
-					Input:       sd.GetInput(),
-					Description: sd.GetDescription(),
-				})
-			}
-			manifest := &ManifestCache{Schedules: decls}
-			s.RegisterClipSchedules(alias, manifest)
-		})
-	}
-}
-
 // GetBuiltinRegistry returns the builtin clip registry, or nil.
 func (d *Daemon) GetBuiltinRegistry() *builtin.Registry {
 	return d.builtin
-}
-
-// GetScheduler returns the attached scheduler, or nil.
-func (d *Daemon) GetScheduler() *Scheduler {
-	return d.scheduler
 }
 
 func (d *Daemon) GetManifest(ctx context.Context, name string) (*ManifestCache, error) {
@@ -173,9 +137,6 @@ func (d *Daemon) Close() error {
 	d.mu.Unlock()
 
 	var errs []error
-	if d.scheduler != nil {
-		d.scheduler.Stop()
-	}
 	if httpServer != nil {
 		if err := httpServer.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errs = append(errs, err)
